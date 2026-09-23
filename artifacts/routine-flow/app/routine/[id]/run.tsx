@@ -1,5 +1,6 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Speech from 'expo-speech';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -13,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { formatDuration, getStepSeconds } from '@/types/routines';
+import type { Routine } from '@/types/routines';
 
 function formatClock(totalSeconds: number) {
   const safeSeconds = Math.max(0, totalSeconds);
@@ -20,6 +22,31 @@ function formatClock(totalSeconds: number) {
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   const seconds = safeSeconds % 60;
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
+}
+
+function describeDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+  if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+  if (seconds > 0 || parts.length === 0) {
+    parts.push(`${seconds} ${seconds === 1 ? 'second' : 'seconds'}`);
+  }
+  return parts.join(' and ');
+}
+
+function announceStep(routine: Routine, index: number, enabled: boolean) {
+  if (!enabled) return;
+  const step = routine.steps[index];
+  if (!step) return;
+  void Speech.stop();
+  Speech.speak(
+    `Step ${index + 1}. ${step.title}. You have ${describeDuration(getStepSeconds(step))}.`,
+    { rate: 0.92, pitch: 1 },
+  );
 }
 
 export default function RoutineRunScreen() {
@@ -34,6 +61,13 @@ export default function RoutineRunScreen() {
   );
   const [isRunning, setIsRunning] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+
+  useEffect(() => {
+    return () => {
+      void Speech.stop();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isRunning) return undefined;
@@ -49,6 +83,7 @@ export default function RoutineRunScreen() {
     if (activeIndex >= currentRoutine.steps.length - 1) {
       setIsRunning(false);
       setIsFinished(true);
+      void Speech.stop();
       void completeRoutine(currentRoutine.id);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return;
@@ -56,8 +91,9 @@ export default function RoutineRunScreen() {
     const nextIndex = activeIndex + 1;
     setActiveIndex(nextIndex);
     setRemainingSeconds(getStepSeconds(currentRoutine.steps[nextIndex]));
+    announceStep(currentRoutine, nextIndex, voiceEnabled);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [activeIndex, completeRoutine, isRunning, remainingSeconds, routine]);
+  }, [activeIndex, completeRoutine, isRunning, remainingSeconds, routine, voiceEnabled]);
 
   if (!routine) {
     return (
@@ -79,6 +115,11 @@ export default function RoutineRunScreen() {
 
   function startOrPause() {
     if (isFinished) return;
+    if (isRunning) {
+      void Speech.stop();
+    } else {
+      announceStep(currentRoutine, activeIndex, voiceEnabled);
+    }
     setIsRunning((running) => !running);
     void Haptics.selectionAsync();
   }
@@ -88,6 +129,7 @@ export default function RoutineRunScreen() {
     setRemainingSeconds(getStepSeconds(currentRoutine.steps[0]));
     setIsFinished(false);
     setIsRunning(true);
+    announceStep(currentRoutine, 0, voiceEnabled);
     void Haptics.selectionAsync();
   }
 
@@ -99,6 +141,7 @@ export default function RoutineRunScreen() {
     const nextIndex = activeIndex + 1;
     setActiveIndex(nextIndex);
     setRemainingSeconds(getStepSeconds(currentRoutine.steps[nextIndex]));
+    announceStep(currentRoutine, nextIndex, voiceEnabled);
     void Haptics.selectionAsync();
   }
 
@@ -120,7 +163,18 @@ export default function RoutineRunScreen() {
             <Text style={[styles.headerLabel, { color: colors.mutedForeground }]}>RUNNING ROUTINE</Text>
             <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>{currentRoutine.title}</Text>
           </View>
-          <View style={styles.headerSpacer} />
+          <Pressable
+            accessibilityLabel={voiceEnabled ? 'Mute step voice' : 'Turn on step voice'}
+            onPress={() => {
+              setVoiceEnabled((enabled) => {
+                if (enabled) void Speech.stop();
+                return !enabled;
+              });
+            }}
+            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+          >
+            <Ionicons name={voiceEnabled ? 'volume-high' : 'volume-mute'} size={22} color={colors.foreground} />
+          </Pressable>
         </View>
 
         <View style={[styles.timerCard, { backgroundColor: colors.hero }]}>
