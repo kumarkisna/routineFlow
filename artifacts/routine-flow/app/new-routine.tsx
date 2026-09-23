@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { formatDuration, getStepSeconds } from '@/types/routines';
 import type { RoutineStep } from '@/types/routines';
 
 export default function NewRoutineScreen() {
@@ -23,6 +24,9 @@ export default function NewRoutineScreen() {
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [stepDraft, setStepDraft] = useState('');
+  const [hoursDraft, setHoursDraft] = useState('0');
+  const [minutesDraft, setMinutesDraft] = useState('5');
+  const [secondsDraft, setSecondsDraft] = useState('0');
   const [steps, setSteps] = useState<RoutineStep[]>([]);
   const [error, setError] = useState('');
 
@@ -31,11 +35,23 @@ export default function NewRoutineScreen() {
   function addStep() {
     const nextTitle = stepDraft.trim();
     if (!nextTitle) return;
+    const hours = Math.max(0, Number.parseInt(hoursDraft, 10) || 0);
+    const minutes = Math.min(59, Math.max(0, Number.parseInt(minutesDraft, 10) || 0));
+    const seconds = Math.min(59, Math.max(0, Number.parseInt(secondsDraft, 10) || 0));
+    const durationSeconds = hours * 3600 + minutes * 60 + seconds;
+    if (durationSeconds === 0) {
+      setError('Give this step a duration before adding it.');
+      return;
+    }
     setSteps((current) => [
       ...current,
-      { id: `${Date.now().toString()}-${Math.random().toString(36).slice(2, 7)}`, title: nextTitle },
+      { id: `${Date.now().toString()}-${Math.random().toString(36).slice(2, 7)}`, title: nextTitle, durationSeconds },
     ]);
     setStepDraft('');
+    setHoursDraft('0');
+    setMinutesDraft('5');
+    setSecondsDraft('0');
+    setError('');
     void Haptics.selectionAsync();
   }
 
@@ -125,30 +141,70 @@ export default function NewRoutineScreen() {
           <Text style={[styles.stepCount, { color: colors.mutedForeground }]}>{steps.length} added</Text>
         </View>
         <View style={[styles.stepComposer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <TextInput
-            accessibilityLabel="New routine step"
-            placeholder="Add a step"
-            placeholderTextColor={colors.mutedForeground}
-            value={stepDraft}
-            onChangeText={(value) => {
-              setStepDraft(value);
-              setError('');
-            }}
-            onSubmitEditing={addStep}
-            returnKeyType="done"
-            style={[styles.stepInput, { color: colors.foreground }]}
-          />
-          <Pressable
-            accessibilityLabel="Add step"
-            onPress={addStep}
-            style={({ pressed }) => [
-              styles.addStepButton,
-              { backgroundColor: stepDraft.trim() ? colors.primary : colors.secondary },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons name="add" size={22} color={stepDraft.trim() ? colors.primaryForeground : colors.mutedForeground} />
-          </Pressable>
+          <View style={styles.stepComposerTop}>
+            <TextInput
+              accessibilityLabel="New routine step"
+              placeholder="Add a step"
+              placeholderTextColor={colors.mutedForeground}
+              value={stepDraft}
+              onChangeText={(value) => {
+                setStepDraft(value);
+                setError('');
+              }}
+              onSubmitEditing={addStep}
+              returnKeyType="done"
+              style={[styles.stepInput, { color: colors.foreground }]}
+            />
+            <Pressable
+              accessibilityLabel="Add step"
+              onPress={addStep}
+              style={({ pressed }) => [
+                styles.addStepButton,
+                { backgroundColor: stepDraft.trim() ? colors.primary : colors.secondary },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons name="add" size={22} color={stepDraft.trim() ? colors.primaryForeground : colors.mutedForeground} />
+            </Pressable>
+          </View>
+          <View style={styles.durationComposer}>
+            <Text style={[styles.durationLabel, { color: colors.mutedForeground }]}>Timer</Text>
+            <View style={styles.timeInputs}>
+              <TextInput
+                accessibilityLabel="Step hours"
+                keyboardType="number-pad"
+                maxLength={2}
+                onChangeText={setHoursDraft}
+                placeholder="00"
+                placeholderTextColor={colors.mutedForeground}
+                style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border }]}
+                value={hoursDraft}
+              />
+              <Text style={[styles.timeColon, { color: colors.mutedForeground }]}>:</Text>
+              <TextInput
+                accessibilityLabel="Step minutes"
+                keyboardType="number-pad"
+                maxLength={2}
+                onChangeText={setMinutesDraft}
+                placeholder="05"
+                placeholderTextColor={colors.mutedForeground}
+                style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border }]}
+                value={minutesDraft}
+              />
+              <Text style={[styles.timeColon, { color: colors.mutedForeground }]}>:</Text>
+              <TextInput
+                accessibilityLabel="Step seconds"
+                keyboardType="number-pad"
+                maxLength={2}
+                onChangeText={setSecondsDraft}
+                placeholder="00"
+                placeholderTextColor={colors.mutedForeground}
+                style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border }]}
+                value={secondsDraft}
+              />
+              <Text style={[styles.timeHint, { color: colors.mutedForeground }]}>h&nbsp;&nbsp; m&nbsp;&nbsp; s</Text>
+            </View>
+          </View>
         </View>
 
         {steps.map((step, index) => (
@@ -156,7 +212,12 @@ export default function NewRoutineScreen() {
             <View style={[styles.number, { backgroundColor: colors.sageSoft }]}>
               <Text style={[styles.numberText, { color: colors.success }]}>{index + 1}</Text>
             </View>
-            <Text style={[styles.stepTitle, { color: colors.foreground }]}>{step.title}</Text>
+            <View style={styles.stepCopy}>
+              <Text style={[styles.stepTitle, { color: colors.foreground }]}>{step.title}</Text>
+              <Text style={[styles.stepDuration, { color: colors.mutedForeground }]}>
+                {formatDuration(getStepSeconds(step))}
+              </Text>
+            </View>
             <Pressable
               accessibilityLabel={`Remove ${step.title}`}
               onPress={() => setSteps((current) => current.filter((item) => item.id !== step.id))}
@@ -196,13 +257,22 @@ const styles = StyleSheet.create({
   descriptionInput: { fontFamily: 'Inter_400Regular', fontSize: 14 },
   stepsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 9 },
   stepCount: { fontFamily: 'Inter_400Regular', fontSize: 13 },
-  stepComposer: { minHeight: 56, borderWidth: 1, borderRadius: 15, flexDirection: 'row', alignItems: 'center', paddingLeft: 16, paddingRight: 7, marginBottom: 10 },
+  stepComposer: { borderWidth: 1, borderRadius: 15, padding: 8, marginBottom: 10 },
+  stepComposerTop: { minHeight: 48, flexDirection: 'row', alignItems: 'center', paddingLeft: 8, paddingRight: 0 },
   stepInput: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 15 },
   addStepButton: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  durationComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingBottom: 4, paddingTop: 5 },
+  durationLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  timeInputs: { flexDirection: 'row', alignItems: 'center' },
+  timeInput: { width: 35, height: 30, borderWidth: 1, borderRadius: 8, textAlign: 'center', fontFamily: 'Inter_600SemiBold', fontSize: 12, padding: 0 },
+  timeColon: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginHorizontal: 3 },
+  timeHint: { fontFamily: 'Inter_400Regular', fontSize: 9, marginLeft: 6 },
   stepRow: { minHeight: 60, borderWidth: 1, borderRadius: 15, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   number: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   numberText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
-  stepTitle: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
+  stepCopy: { flex: 1 },
+  stepTitle: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
+  stepDuration: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 3 },
   removeButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   error: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 7 },
   pressed: { opacity: 0.72 },

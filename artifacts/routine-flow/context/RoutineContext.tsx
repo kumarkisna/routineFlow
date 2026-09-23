@@ -21,10 +21,10 @@ const seedRoutines: Routine[] = [
     tone: 'coral',
     createdAt: '2026-09-01T08:00:00.000Z',
     steps: [
-      { id: 'morning-water', title: 'Drink a glass of water', duration: '2 min' },
-      { id: 'morning-breathe', title: 'Take five slow breaths', duration: '3 min' },
-      { id: 'morning-stretch', title: 'Move through a light stretch', duration: '5 min' },
-      { id: 'morning-intention', title: 'Choose one intention for today', duration: '2 min' },
+      { id: 'morning-water', title: 'Drink a glass of water', durationSeconds: 120 },
+      { id: 'morning-breathe', title: 'Take five slow breaths', durationSeconds: 180 },
+      { id: 'morning-stretch', title: 'Move through a light stretch', durationSeconds: 300 },
+      { id: 'morning-intention', title: 'Choose one intention for today', durationSeconds: 120 },
     ],
   },
   {
@@ -35,9 +35,9 @@ const seedRoutines: Routine[] = [
     tone: 'sage',
     createdAt: '2026-09-01T08:00:00.000Z',
     steps: [
-      { id: 'work-clear', title: 'Clear your desk and close distractions', duration: '3 min' },
-      { id: 'work-focus', title: 'Set a single outcome for this block', duration: '2 min' },
-      { id: 'work-timer', title: 'Work with focus for 45 minutes', duration: '45 min' },
+      { id: 'work-clear', title: 'Clear your desk and close distractions', durationSeconds: 180 },
+      { id: 'work-focus', title: 'Set a single outcome for this block', durationSeconds: 120 },
+      { id: 'work-timer', title: 'Work with focus for 45 minutes', durationSeconds: 2700 },
     ],
   },
   {
@@ -48,10 +48,10 @@ const seedRoutines: Routine[] = [
     tone: 'lavender',
     createdAt: '2026-09-01T08:00:00.000Z',
     steps: [
-      { id: 'evening-reset', title: 'Put tomorrow’s essentials in place', duration: '5 min' },
-      { id: 'evening-reflect', title: 'Name one thing that went well', duration: '2 min' },
-      { id: 'evening-screen', title: 'Leave your phone outside the bedroom', duration: '1 min' },
-      { id: 'evening-rest', title: 'Get comfortable and rest', duration: '10 min' },
+      { id: 'evening-reset', title: 'Put tomorrow’s essentials in place', durationSeconds: 300 },
+      { id: 'evening-reflect', title: 'Name one thing that went well', durationSeconds: 120 },
+      { id: 'evening-screen', title: 'Leave your phone outside the bedroom', durationSeconds: 60 },
+      { id: 'evening-rest', title: 'Get comfortable and rest', durationSeconds: 600 },
     ],
   },
 ];

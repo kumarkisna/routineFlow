@@ -23,6 +23,7 @@ Routine Flow helps people save repeatable routines and move through them one sma
 
 - `artifacts/routine-flow/app/(tabs)/index.tsx` — today screen and routine library
 - `artifacts/routine-flow/app/routine/[id].tsx` — routine run screen
+- `artifacts/routine-flow/app/routine/[id]/run.tsx` — sequential timer runner
 - `artifacts/routine-flow/app/new-routine.tsx` — create routine flow
 - `artifacts/routine-flow/context/RoutineContext.tsx` — local routine and daily progress state
 - `artifacts/routine-flow/constants/colors.ts` — mobile theme tokens
@@ -36,7 +37,7 @@ Routine Flow helps people save repeatable routines and move through them one sma
 ## Product
 
 - Ships with Morning Reset, Deep Work, and Evening Wind-down starter routines.
-- Users can create routines, add and remove steps, run any routine, mark individual steps complete, mark all complete, and reset today’s progress.
+- Users can create routines, add and remove timed steps, run any routine as a sequential countdown, pause or skip steps, mark individual steps complete, mark all complete, and reset today’s progress.
 
 ## User preferences
 

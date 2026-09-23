@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { formatDuration, getStepSeconds } from '@/types/routines';
 
 export default function RoutineDetailScreen() {
   const colors = useColors();
@@ -40,6 +41,7 @@ export default function RoutineDetailScreen() {
   const today = new Date();
   const day = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const todayProgress = progress[day] ?? {};
+  const totalSeconds = currentRoutine.steps.reduce((sum, step) => sum + getStepSeconds(step), 0);
 
   function confirmDelete() {
     Alert.alert('Delete this routine?', 'This removes the routine from your library.', [
@@ -97,7 +99,7 @@ export default function RoutineDetailScreen() {
             <View style={styles.metaItem}>
               <Ionicons name="time-outline" size={16} color={colors.heroForeground} />
               <Text style={[styles.metaText, { color: colors.heroForeground }]}>
-                {currentRoutine.steps.length * 3 + 2} min
+                {formatDuration(totalSeconds)}
               </Text>
             </View>
             <View style={styles.metaDivider} />
@@ -152,9 +154,9 @@ export default function RoutineDetailScreen() {
                   <Text style={[styles.stepTitle, { color: isDone ? colors.success : colors.foreground }, isDone && styles.completedText]}>
                     {step.title}
                   </Text>
-                  {step.duration ? (
-                    <Text style={[styles.duration, { color: colors.mutedForeground }]}>{step.duration}</Text>
-                  ) : null}
+                  <Text style={[styles.duration, { color: colors.mutedForeground }]}>
+                    {formatDuration(getStepSeconds(step))}
+                  </Text>
                 </View>
                 <Ionicons name={isDone ? 'checkmark-circle' : 'ellipse-outline'} size={23} color={isDone ? colors.success : colors.border} />
               </Pressable>
@@ -162,17 +164,30 @@ export default function RoutineDetailScreen() {
           })}
 
           <Pressable
+            accessibilityLabel="Run routine timer"
+            onPress={() => router.push({ pathname: '/routine/[id]/run', params: { id: currentRoutine.id } })}
+            style={({ pressed }) => [
+              styles.runButton,
+              { backgroundColor: colors.primary },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Feather name="play" size={17} color={colors.primaryForeground} />
+            <Text style={[styles.completeButtonText, { color: colors.primaryForeground }]}>Run routine</Text>
+          </Pressable>
+
+          <Pressable
             accessibilityLabel={done ? 'Routine complete' : 'Complete routine'}
             disabled={done}
             onPress={() => void handleComplete()}
             style={({ pressed }) => [
               styles.completeButton,
-              { backgroundColor: done ? colors.sageSoft : colors.primary },
+              { backgroundColor: done ? colors.sageSoft : colors.secondary },
               pressed && styles.pressed,
             ]}
           >
-            <Feather name={done ? 'check' : 'play'} size={17} color={done ? colors.success : colors.primaryForeground} />
-            <Text style={[styles.completeButtonText, { color: done ? colors.success : colors.primaryForeground }]}>
+            <Feather name={done ? 'check' : 'check-circle'} size={17} color={done ? colors.success : colors.inkSoft} />
+            <Text style={[styles.completeButtonText, { color: done ? colors.success : colors.inkSoft }]}>
               {done ? 'Routine complete' : 'Mark all complete'}
             </Text>
           </Pressable>
@@ -211,6 +226,7 @@ const styles = StyleSheet.create({
   completedText: { textDecorationLine: 'line-through' },
   duration: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 4 },
   completeButton: { minHeight: 54, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 22 },
+  runButton: { minHeight: 54, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 22 },
   completeButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   missingTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 18 },
