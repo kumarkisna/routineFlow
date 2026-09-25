@@ -19,7 +19,7 @@
     "web": {
       "favicon": "./assets/images/icon.png"
     },
-    "plugins": ["expo-router"],
+    "plugins": ["expo-router", "expo-notifications"],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

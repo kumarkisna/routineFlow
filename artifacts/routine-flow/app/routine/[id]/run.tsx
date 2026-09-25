@@ -1,20 +1,44 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
+  AppState,
+  type AppStateStatus,
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
-import { formatDuration, getStepSeconds } from '@/types/routines';
-import type { Routine } from '@/types/routines';
+import {
+  formatDuration,
+  getStepSeconds,
+  type Routine,
+  type RoutineNotificationSettings,
+} from '@/types/routines';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
+
+const DEFAULT_NOTIFICATION_SETTINGS: RoutineNotificationSettings = {
+  stepCompletion: false,
+  routineCompletion: false,
+};
 
 function formatClock(totalSeconds: number) {
   const safeSeconds = Math.max(0, totalSeconds);
@@ -55,45 +79,174 @@ export default function RoutineRunScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { routines, completeRoutine } = useRoutines();
   const routine = routines.find((item) => item.id === id);
+  const initialRemainingSeconds = routine ? getStepSeconds(routine.steps[0]) : 0;
   const [activeIndex, setActiveIndex] = useState(0);
-  const [remainingSeconds, setRemainingSeconds] = useState(
-    routine ? getStepSeconds(routine.steps[0]) : 0,
-  );
+  const [remainingSeconds, setRemainingSeconds] = useState(initialRemainingSeconds);
   const [isRunning, setIsRunning] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [notificationSettings, setNotificationSettings] = useState<RoutineNotificationSettings>(
+    DEFAULT_NOTIFICATION_SETTINGS,
+  );
+  const activeIndexRef = useRef(0);
+  const remainingMillisecondsRef = useRef(initialRemainingSeconds * 1000);
+  const stepEndsAtRef = useRef<number | null>(null);
+  const isRunningRef = useRef(false);
+  const isFinishedRef = useRef(false);
+  const notificationSettingsRef = useRef(notificationSettings);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const scheduledStepNotificationIdsRef = useRef<string[]>([]);
+  const scheduledRoutineNotificationIdsRef = useRef<string[]>([]);
 
-  useEffect(() => {
-    return () => {
+  useEffect(
+    () => () => {
       void Speech.stop();
-    };
+    },
+    [],
+  );
+
+  const cancelNotifications = useCallback(async (includeRoutineCompletion = true) => {
+    const ids = [
+      ...scheduledStepNotificationIdsRef.current,
+      ...(includeRoutineCompletion ? scheduledRoutineNotificationIdsRef.current : []),
+    ];
+    if (includeRoutineCompletion) {
+      scheduledRoutineNotificationIdsRef.current = [];
+    }
+    scheduledStepNotificationIdsRef.current = [];
+    await Promise.all(
+      ids.map((notificationId) =>
+        Notifications.cancelScheduledNotificationAsync(notificationId).catch(() => undefined),
+      ),
+    );
   }, []);
+
+  const scheduleNotifications = useCallback(async () => {
+    if (
+      Platform.OS === 'web' ||
+      !routine ||
+      !isRunningRef.current ||
+      isFinishedRef.current ||
+      (!notificationSettingsRef.current.stepCompletion &&
+        !notificationSettingsRef.current.routineCompletion)
+    ) {
+      return;
+    }
+
+    await cancelNotifications();
+    const stepNotificationIds: string[] = [];
+    const routineNotificationIds: string[] = [];
+    const settings = notificationSettingsRef.current;
+    const now = Date.now();
+    let stepEndAt = stepEndsAtRef.current;
+    if (!stepEndAt) return;
+
+    for (let index = activeIndexRef.current; index < routine.steps.length; index += 1) {
+      if (stepEndAt > now && settings.stepCompletion) {
+        const notificationId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'Step complete',
+            body:
+              index === routine.steps.length - 1
+                ? `${routine.title} is complete.`
+                : `${routine.steps[index].title} is complete.`,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: new Date(stepEndAt),
+          },
+        });
+        stepNotificationIds.push(notificationId);
+      }
+
+      if (index === routine.steps.length - 1 && stepEndAt > now && settings.routineCompletion) {
+        const notificationId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: 'Routine complete',
+            body: `${routine.title} is complete.`,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: new Date(stepEndAt),
+          },
+        });
+        routineNotificationIds.push(notificationId);
+      }
+
+      if (index < routine.steps.length - 1) {
+        stepEndAt += getStepSeconds(routine.steps[index + 1]) * 1000;
+      }
+    }
+
+    scheduledStepNotificationIdsRef.current = stepNotificationIds;
+    scheduledRoutineNotificationIdsRef.current = routineNotificationIds;
+  }, [cancelNotifications, routine]);
+
+  const reconcileTimer = useCallback(
+    (now: number) => {
+      if (!routine || !isRunningRef.current || isFinishedRef.current) return;
+      let index = activeIndexRef.current;
+      let stepEndAt = stepEndsAtRef.current;
+      if (!stepEndAt) return;
+
+      while (stepEndAt <= now) {
+        if (index >= routine.steps.length - 1) {
+          activeIndexRef.current = index;
+          remainingMillisecondsRef.current = 0;
+          stepEndsAtRef.current = null;
+          isRunningRef.current = false;
+          isFinishedRef.current = true;
+          setActiveIndex(index);
+          setRemainingSeconds(0);
+          setIsRunning(false);
+          setIsFinished(true);
+          void Speech.stop();
+          void cancelNotifications(false);
+          void completeRoutine(routine.id);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          return;
+        }
+
+        index += 1;
+        stepEndAt += getStepSeconds(routine.steps[index]) * 1000;
+        activeIndexRef.current = index;
+        setActiveIndex(index);
+        announceStep(routine, index, voiceEnabled);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+
+      activeIndexRef.current = index;
+      stepEndsAtRef.current = stepEndAt;
+      remainingMillisecondsRef.current = Math.max(0, stepEndAt - now);
+      setRemainingSeconds(Math.ceil(remainingMillisecondsRef.current / 1000));
+    },
+    [cancelNotifications, completeRoutine, routine, voiceEnabled],
+  );
 
   useEffect(() => {
     if (!isRunning) return undefined;
-    const interval = setInterval(() => {
-      setRemainingSeconds((value) => Math.max(0, value - 1));
-    }, 1000);
+    const interval = setInterval(() => reconcileTimer(Date.now()), 250);
     return () => clearInterval(interval);
-  }, [isRunning]);
+  }, [isRunning, reconcileTimer]);
 
   useEffect(() => {
-    if (!isRunning || remainingSeconds > 0 || !routine) return;
-    const currentRoutine = routine;
-    if (activeIndex >= currentRoutine.steps.length - 1) {
-      setIsRunning(false);
-      setIsFinished(true);
-      void Speech.stop();
-      void completeRoutine(currentRoutine.id);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      return;
-    }
-    const nextIndex = activeIndex + 1;
-    setActiveIndex(nextIndex);
-    setRemainingSeconds(getStepSeconds(currentRoutine.steps[nextIndex]));
-    announceStep(currentRoutine, nextIndex, voiceEnabled);
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [activeIndex, completeRoutine, isRunning, remainingSeconds, routine, voiceEnabled]);
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+      if (nextState === 'active' && previousState !== 'active') {
+        reconcileTimer(Date.now());
+      }
+    });
+    return () => subscription.remove();
+  }, [reconcileTimer]);
+
+  useEffect(
+    () => () => {
+      isRunningRef.current = false;
+      void cancelNotifications();
+    },
+    [cancelNotifications],
+  );
 
   if (!routine) {
     return (
@@ -115,34 +268,96 @@ export default function RoutineRunScreen() {
 
   function startOrPause() {
     if (isFinished) return;
-    if (isRunning) {
+    if (isRunningRef.current) {
       void Speech.stop();
+      const now = Date.now();
+      reconcileTimer(now);
+      const stepEndAt = stepEndsAtRef.current;
+      if (stepEndAt) {
+        remainingMillisecondsRef.current = Math.max(0, stepEndAt - now);
+      }
+      stepEndsAtRef.current = null;
+      isRunningRef.current = false;
+      setIsRunning(false);
+      void cancelNotifications();
     } else {
       announceStep(currentRoutine, activeIndex, voiceEnabled);
+      const now = Date.now();
+      stepEndsAtRef.current = now + remainingMillisecondsRef.current;
+      isRunningRef.current = true;
+      setIsRunning(true);
+      void scheduleNotifications();
     }
-    setIsRunning((running) => !running);
     void Haptics.selectionAsync();
   }
 
   function restart() {
+    const firstStepSeconds = getStepSeconds(currentRoutine.steps[0]);
+    activeIndexRef.current = 0;
+    remainingMillisecondsRef.current = firstStepSeconds * 1000;
+    stepEndsAtRef.current = Date.now() + remainingMillisecondsRef.current;
+    isRunningRef.current = true;
+    isFinishedRef.current = false;
     setActiveIndex(0);
-    setRemainingSeconds(getStepSeconds(currentRoutine.steps[0]));
+    setRemainingSeconds(firstStepSeconds);
     setIsFinished(false);
     setIsRunning(true);
     announceStep(currentRoutine, 0, voiceEnabled);
+    void scheduleNotifications();
     void Haptics.selectionAsync();
   }
 
   function skipStep() {
     if (activeIndex >= currentRoutine.steps.length - 1) {
-      setRemainingSeconds(0);
+      if (isRunningRef.current) reconcileTimer(Date.now() + remainingMillisecondsRef.current);
       return;
     }
     const nextIndex = activeIndex + 1;
+    const nextStepMilliseconds = getStepSeconds(currentRoutine.steps[nextIndex]) * 1000;
+    activeIndexRef.current = nextIndex;
+    remainingMillisecondsRef.current = nextStepMilliseconds;
+    stepEndsAtRef.current = isRunningRef.current ? Date.now() + nextStepMilliseconds : null;
     setActiveIndex(nextIndex);
-    setRemainingSeconds(getStepSeconds(currentRoutine.steps[nextIndex]));
+    setRemainingSeconds(Math.ceil(nextStepMilliseconds / 1000));
     announceStep(currentRoutine, nextIndex, voiceEnabled);
+    void cancelNotifications();
+    if (isRunningRef.current) void scheduleNotifications();
     void Haptics.selectionAsync();
+  }
+
+  async function updateNotificationSetting(
+    setting: keyof RoutineNotificationSettings,
+    enabled: boolean,
+  ) {
+    if (enabled) {
+      if (Platform.OS === 'web') {
+        Alert.alert('Notifications unavailable', 'Enable notifications on your phone to use reminders.');
+        return;
+      }
+      try {
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync('routine-flow', {
+            name: 'Routine Flow',
+            importance: Notifications.AndroidImportance.DEFAULT,
+          });
+        }
+        let permission = await Notifications.getPermissionsAsync();
+        if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
+        if (!permission.granted) {
+          Alert.alert('Notifications are off', 'Allow notifications in Settings to receive routine reminders.');
+          return;
+        }
+      } catch {
+        Alert.alert('Notifications unavailable', 'This device could not enable routine reminders.');
+        return;
+      }
+    }
+
+    const nextSettings = { ...notificationSettingsRef.current, [setting]: enabled };
+    notificationSettingsRef.current = nextSettings;
+    setNotificationSettings(nextSettings);
+    if (isRunningRef.current) void scheduleNotifications();
+    else if (!enabled) void cancelNotifications();
   }
 
   return (
@@ -234,6 +449,42 @@ export default function RoutineRunScreen() {
             </Pressable>
           </View>
 
+          <View style={[styles.notificationCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.notificationHeader}>
+              <View style={[styles.notificationIcon, { backgroundColor: colors.coralSoft }]}>
+                <Ionicons name="notifications-outline" size={18} color={colors.primary} />
+              </View>
+              <View style={styles.notificationCopy}>
+                <Text style={[styles.notificationTitle, { color: colors.foreground }]}>Reminders</Text>
+                <Text style={[styles.notificationDescription, { color: colors.mutedForeground }]}>
+                  Get a reminder even when your phone is locked.
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.notificationRow, { borderTopColor: colors.border }]}>
+              <Text style={[styles.notificationLabel, { color: colors.foreground }]}>When a step finishes</Text>
+              <Switch
+                accessibilityLabel="Notify when a step finishes"
+                testID="step-completion-notifications"
+                value={notificationSettings.stepCompletion}
+                onValueChange={(enabled) => void updateNotificationSetting('stepCompletion', enabled)}
+                trackColor={{ false: colors.secondary, true: colors.sage }}
+                thumbColor={notificationSettings.stepCompletion ? colors.success : colors.card}
+              />
+            </View>
+            <View style={[styles.notificationRow, { borderTopColor: colors.border }]}>
+              <Text style={[styles.notificationLabel, { color: colors.foreground }]}>When the routine finishes</Text>
+              <Switch
+                accessibilityLabel="Notify when the routine finishes"
+                testID="routine-completion-notifications"
+                value={notificationSettings.routineCompletion}
+                onValueChange={(enabled) => void updateNotificationSetting('routineCompletion', enabled)}
+                trackColor={{ false: colors.secondary, true: colors.sage }}
+                thumbColor={notificationSettings.routineCompletion ? colors.success : colors.card}
+              />
+            </View>
+          </View>
+
           <View style={styles.stepsHeader}>
             <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>SEQUENCE</Text>
             <Text style={[styles.totalTime, { color: colors.mutedForeground }]}>{formatDuration(totalSeconds)} total</Text>
@@ -295,6 +546,14 @@ const styles = StyleSheet.create({
   secondaryControl: { width: 52, height: 52, borderRadius: 17, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   primaryControl: { minWidth: 130, height: 52, borderRadius: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 21 },
   primaryControlText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  notificationCard: { borderRadius: 18, borderWidth: 1, marginTop: 22, paddingHorizontal: 15 },
+  notificationHeader: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15 },
+  notificationIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginRight: 11 },
+  notificationCopy: { flex: 1 },
+  notificationTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  notificationDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 3 },
+  notificationRow: { minHeight: 51, borderTopWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  notificationLabel: { fontFamily: 'Inter_500Medium', fontSize: 13 },
   stepsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 34, marginBottom: 12 },
   sectionLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 11, letterSpacing: 1.1 },
   totalTime: { fontFamily: 'Inter_400Regular', fontSize: 12 },

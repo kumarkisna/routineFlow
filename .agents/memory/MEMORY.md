@@ -1,0 +1,1 @@
+- [Expo notification versions](expo-notifications.md) — notification packages must match the installed Expo SDK major version before native builds.

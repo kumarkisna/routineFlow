@@ -18,6 +18,11 @@ export type Routine = {
   createdAt: string;
 };
 
+export type RoutineNotificationSettings = {
+  stepCompletion: boolean;
+  routineCompletion: boolean;
+};
+
 export type CompletionMap = Record<string, Record<string, boolean>>;
 
 export function getStepSeconds(step: RoutineStep) {
