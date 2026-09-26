@@ -82,13 +82,23 @@ export default function RoutineDetailScreen() {
             >
               <Ionicons name="arrow-back" size={23} color={colors.heroForeground} />
             </Pressable>
-            <Pressable
-              accessibilityLabel="Delete routine"
-              onPress={confirmDelete}
-              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-            >
-              <Ionicons name="ellipsis-horizontal" size={23} color={colors.heroForeground} />
-            </Pressable>
+            <View style={styles.heroActions}>
+              <Pressable
+                accessibilityLabel="Edit routine"
+                testID="edit-routine"
+                onPress={() => router.push({ pathname: '/new-routine', params: { editId: currentRoutine.id } })}
+                style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="create-outline" size={23} color={colors.heroForeground} />
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Delete routine"
+                onPress={confirmDelete}
+                style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="trash-outline" size={21} color={colors.heroForeground} />
+              </Pressable>
+            </View>
           </View>
           <View style={styles.heroIcon}>
             <Ionicons name={currentRoutine.icon as keyof typeof Ionicons.glyphMap} size={25} color={colors.accentForeground} />
@@ -201,6 +211,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   hero: { paddingHorizontal: 20, paddingBottom: 26, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
   heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 23 },
+  heroActions: { flexDirection: 'row', alignItems: 'center' },
   iconButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   heroIcon: { width: 48, height: 48, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 17 },
   heroTitle: { fontFamily: 'Inter_700Bold', fontSize: 28, letterSpacing: -0.7 },

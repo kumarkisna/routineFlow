@@ -1,6 +1,6 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
   Keyboard,
@@ -15,26 +15,64 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { formatDuration, getStepSeconds } from '@/types/routines';
-import type { RoutineStep } from '@/types/routines';
+import type { Routine, RoutineStep } from '@/types/routines';
 
 export default function NewRoutineScreen() {
+  const { editId } = useLocalSearchParams<{ editId?: string }>();
+  const { routines, loading } = useRoutines();
+  const editingRoutine = editId ? routines.find((item) => item.id === editId) : undefined;
+  if (editId && (loading || !editingRoutine)) {
+    return (
+      <View style={styles.missing}>
+        <Text>{loading ? 'Loading routine…' : 'Routine not found'}</Text>
+        {!loading ? <Pressable onPress={() => router.back()}><Text>Go back</Text></Pressable> : null}
+      </View>
+    );
+  }
+  return <RoutineForm key={editId ?? 'new'} editingRoutine={editingRoutine} />;
+}
+
+function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { createRoutine } = useRoutines();
-  const [title, setTitle] = useState('');
-  const [subtitle, setSubtitle] = useState('');
+  const { createRoutine, updateRoutine } = useRoutines();
+  const [title, setTitle] = useState(editingRoutine?.title ?? '');
+  const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
   const [stepDraft, setStepDraft] = useState('');
   const [hoursDraft, setHoursDraft] = useState('0');
   const [minutesDraft, setMinutesDraft] = useState('5');
   const [secondsDraft, setSecondsDraft] = useState('0');
-  const [steps, setSteps] = useState<RoutineStep[]>([]);
+  const [steps, setSteps] = useState<RoutineStep[]>(editingRoutine?.steps ?? []);
+  const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const canSave = useMemo(() => title.trim().length > 0 && steps.length > 0, [title, steps.length]);
 
+  function clearStepDraft() {
+    setEditingStepId(null);
+    setStepDraft('');
+    setHoursDraft('0');
+    setMinutesDraft('5');
+    setSecondsDraft('0');
+  }
+
+  function editStep(step: RoutineStep) {
+    const duration = getStepSeconds(step);
+    setEditingStepId(step.id);
+    setStepDraft(step.title);
+    setHoursDraft(String(Math.floor(duration / 3600)));
+    setMinutesDraft(String(Math.floor((duration % 3600) / 60)));
+    setSecondsDraft(String(duration % 60));
+    setError('');
+  }
+
   function addStep() {
     const nextTitle = stepDraft.trim();
-    if (!nextTitle) return;
+    if (!nextTitle) {
+      setError('Give this step a name.');
+      return;
+    }
     const hours = Math.max(0, Number.parseInt(hoursDraft, 10) || 0);
     const minutes = Math.min(59, Math.max(0, Number.parseInt(minutesDraft, 10) || 0));
     const seconds = Math.min(59, Math.max(0, Number.parseInt(secondsDraft, 10) || 0));
@@ -43,19 +81,23 @@ export default function NewRoutineScreen() {
       setError('Give this step a duration before adding it.');
       return;
     }
-    setSteps((current) => [
-      ...current,
-      { id: `${Date.now().toString()}-${Math.random().toString(36).slice(2, 7)}`, title: nextTitle, durationSeconds },
-    ]);
-    setStepDraft('');
-    setHoursDraft('0');
-    setMinutesDraft('5');
-    setSecondsDraft('0');
+    if (editingStepId) {
+      setSteps((current) => current.map((step) =>
+        step.id === editingStepId ? { id: step.id, title: nextTitle, durationSeconds } : step,
+      ));
+    } else {
+      setSteps((current) => [
+        ...current,
+        { id: `${Date.now().toString()}-${Math.random().toString(36).slice(2, 7)}`, title: nextTitle, durationSeconds },
+      ]);
+    }
+    clearStepDraft();
     setError('');
     void Haptics.selectionAsync();
   }
 
   async function save() {
+    if (saving) return;
     if (!title.trim()) {
       setError('Give your routine a name first.');
       return;
@@ -64,14 +106,26 @@ export default function NewRoutineScreen() {
       setError('Add at least one step to make this routine repeatable.');
       return;
     }
+    if (editingStepId) {
+      setError('Update or cancel the step you are editing before saving.');
+      return;
+    }
     Keyboard.dismiss();
-    const routine = await createRoutine(
-      title.trim(),
-      subtitle.trim() || 'A routine made for your day',
-      steps,
-    );
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
+    setSaving(true);
+    try {
+      if (editingRoutine) {
+        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', steps);
+        router.back();
+      } else {
+        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', steps);
+        router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
+      }
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      setError('Could not save the routine. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -84,19 +138,19 @@ export default function NewRoutineScreen() {
         >
           <Ionicons name="close" size={24} color={colors.foreground} />
         </Pressable>
-        <Text style={[styles.topTitle, { color: colors.foreground }]}>New routine</Text>
+        <Text style={[styles.topTitle, { color: colors.foreground }]}>{editingRoutine ? 'Edit routine' : 'New routine'}</Text>
         <Pressable
           accessibilityLabel="Save routine"
-          disabled={!canSave}
+          disabled={!canSave || saving || Boolean(editingStepId)}
           onPress={() => void save()}
           style={({ pressed }) => [
             styles.saveButton,
-            { backgroundColor: canSave ? colors.primary : colors.secondary },
+            { backgroundColor: canSave && !saving && !editingStepId ? colors.primary : colors.secondary },
             pressed && styles.pressed,
           ]}
         >
-          <Text style={[styles.saveText, { color: canSave ? colors.primaryForeground : colors.mutedForeground }]}>
-            Save
+          <Text style={[styles.saveText, { color: canSave && !saving && !editingStepId ? colors.primaryForeground : colors.mutedForeground }]}>
+            {saving ? 'Saving' : 'Save'}
           </Text>
         </Pressable>
       </View>
@@ -109,9 +163,9 @@ export default function NewRoutineScreen() {
           <View style={[styles.introIcon, { backgroundColor: colors.accent }]}>
             <Feather name="plus" size={20} color={colors.accentForeground} />
           </View>
-          <Text style={[styles.introTitle, { color: colors.heroForeground }]}>Make it easy to begin</Text>
+          <Text style={[styles.introTitle, { color: colors.heroForeground }]}>{editingRoutine ? 'Make this flow yours' : 'Make it easy to begin'}</Text>
           <Text style={[styles.introText, { color: colors.heroForeground }]}>
-            Save the small sequence you want to return to again and again.
+            {editingRoutine ? 'Update your steps and timers for the next time you run this routine.' : 'Save the small sequence you want to return to again and again.'}
           </Text>
         </View>
 
@@ -143,7 +197,7 @@ export default function NewRoutineScreen() {
         <View style={[styles.stepComposer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.stepComposerTop}>
             <TextInput
-              accessibilityLabel="New routine step"
+               accessibilityLabel={editingStepId ? 'Edit routine step' : 'New routine step'}
               placeholder="Add a step"
               placeholderTextColor={colors.mutedForeground}
               value={stepDraft}
@@ -156,7 +210,7 @@ export default function NewRoutineScreen() {
               style={[styles.stepInput, { color: colors.foreground }]}
             />
             <Pressable
-              accessibilityLabel="Add step"
+               accessibilityLabel={editingStepId ? 'Update step' : 'Add step'}
               onPress={addStep}
               style={({ pressed }) => [
                 styles.addStepButton,
@@ -164,7 +218,7 @@ export default function NewRoutineScreen() {
                 pressed && styles.pressed,
               ]}
             >
-              <Ionicons name="add" size={22} color={stepDraft.trim() ? colors.primaryForeground : colors.mutedForeground} />
+               <Ionicons name={editingStepId ? 'checkmark' : 'add'} size={22} color={stepDraft.trim() ? colors.primaryForeground : colors.mutedForeground} />
             </Pressable>
           </View>
           <View style={styles.durationComposer}>
@@ -205,6 +259,11 @@ export default function NewRoutineScreen() {
               <Text style={[styles.timeHint, { color: colors.mutedForeground }]}>h&nbsp;&nbsp; m&nbsp;&nbsp; s</Text>
             </View>
           </View>
+          {editingStepId ? (
+            <Pressable accessibilityLabel="Cancel editing step" onPress={clearStepDraft} style={styles.cancelEdit}>
+              <Text style={[styles.cancelEditText, { color: colors.primary }]}>Cancel editing step</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {steps.map((step, index) => (
@@ -219,8 +278,19 @@ export default function NewRoutineScreen() {
               </Text>
             </View>
             <Pressable
+              accessibilityLabel={`Edit ${step.title}`}
+              testID={`edit-step-${step.id}`}
+              onPress={() => editStep(step)}
+              style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="pencil-outline" size={19} color={colors.primary} />
+            </Pressable>
+            <Pressable
               accessibilityLabel={`Remove ${step.title}`}
-              onPress={() => setSteps((current) => current.filter((item) => item.id !== step.id))}
+              onPress={() => {
+                if (editingStepId === step.id) clearStepDraft();
+                setSteps((current) => current.filter((item) => item.id !== step.id));
+              }}
               style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
             >
               <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
@@ -274,6 +344,9 @@ const styles = StyleSheet.create({
   stepTitle: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
   stepDuration: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 3 },
   removeButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  cancelEdit: { alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 8 },
+  cancelEditText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   error: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 7 },
   pressed: { opacity: 0.72 },
 });

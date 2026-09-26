@@ -63,6 +63,7 @@ type RoutineContextValue = {
   toggleStep: (routineId: string, stepId: string) => Promise<void>;
   completeRoutine: (routineId: string) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[]) => Promise<Routine>;
+  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => Promise<void>;
   deleteRoutine: (routineId: string) => Promise<void>;
   resetToday: () => Promise<void>;
   getCompletedCount: (routine: Routine) => number;
@@ -155,6 +156,20 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
     [routines],
   );
 
+  const updateRoutine = useCallback(
+    async (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => {
+      if (!routines.some((routine) => routine.id === routineId)) {
+        throw new Error('Routine not found');
+      }
+      const nextRoutines = routines.map((routine) =>
+        routine.id === routineId ? { ...routine, title, subtitle, steps } : routine,
+      );
+      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      setRoutines(nextRoutines);
+    },
+    [routines],
+  );
+
   const deleteRoutine = useCallback(
     async (routineId: string) => {
       const nextRoutines = routines.filter((routine) => routine.id !== routineId);
@@ -186,6 +201,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       toggleStep,
       completeRoutine,
       createRoutine,
+      updateRoutine,
       deleteRoutine,
       resetToday,
       getCompletedCount,
@@ -197,6 +213,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       toggleStep,
       completeRoutine,
       createRoutine,
+      updateRoutine,
       deleteRoutine,
       resetToday,
       getCompletedCount,
