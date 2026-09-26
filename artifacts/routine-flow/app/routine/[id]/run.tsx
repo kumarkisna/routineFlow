@@ -1,6 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -19,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { Notifications } from '@/lib/localNotifications';
 import {
   formatDuration,
   getStepSeconds,

@@ -14,3 +14,9 @@ Expo's compatibility check may briefly request newly released SDK patch versions
 **Why:** A just-published Expo patch was reported as the expected version but rejected by the package mirror, while the existing aligned app successfully type-checked and bundled.
 
 **How to apply:** If `expo install --fix` fails with a minimum-release-age or maturity error, keep the current lockfile versions, record the compatibility-check warning, and retry once the mirror allows the requested patch.
+
+When using only local reminders on Android Expo Go, avoid importing the `expo-notifications` package root; import only the local-notification entrypoints. The package root eagerly loads remote push-token modules.
+
+**Why:** Android Expo Go no longer supports remote push notifications, and the push-token module throws during route loading even when the app never requests a push token. This can make a timer screen appear to hang before rendering.
+
+**How to apply:** If adding notification use to an Expo Go screen, inspect the import graph for remote push modules. Keep local scheduling, permissions, channels, and foreground handlers separate from push registration; preserve the reminder behavior rather than disabling it.
