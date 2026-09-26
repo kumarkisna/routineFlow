@@ -1,7 +1,7 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,6 +14,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { downloadRoutineBackup, selectRoutineBackup } from '@/lib/routineFiles';
+import { createRoutineBackup, parseRoutineBackup, type RoutineBackup } from '@/types/routineBackup';
 import type { Routine } from '@/types/routines';
 
 function formatDate() {
@@ -23,7 +25,11 @@ function formatDate() {
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { routines, loading, getCompletedCount, resetToday } = useRoutines();
+  const { routines, progress: savedProgress, loading, getCompletedCount, resetToday, importBackup } = useRoutines();
+  const [pendingBackup, setPendingBackup] = useState<RoutineBackup | null>(null);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferMessage, setTransferMessage] = useState('');
+  const [transferError, setTransferError] = useState('');
   const totalSteps = routines.reduce((sum, routine) => sum + routine.steps.length, 0);
   const completedSteps = routines.reduce((sum, routine) => sum + getCompletedCount(routine), 0);
   const progress = totalSteps ? completedSteps / totalSteps : 0;
@@ -33,6 +39,57 @@ export default function HomeScreen() {
   function openRoutine(routine: Routine) {
     void Haptics.selectionAsync();
     router.push({ pathname: '/routine/[id]', params: { id: routine.id } });
+  }
+
+  async function handleExport() {
+    if (loading || transferBusy) return;
+    setTransferBusy(true);
+    setTransferError('');
+    setTransferMessage('');
+    try {
+      const content = createRoutineBackup(routines, savedProgress);
+      parseRoutineBackup(content);
+      await downloadRoutineBackup(content);
+      setTransferMessage('Backup file ready to save.');
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : 'Could not export your routines.');
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
+  async function handlePickBackup() {
+    if (loading || transferBusy) return;
+    setTransferBusy(true);
+    setTransferError('');
+    setTransferMessage('');
+    try {
+      const content = await selectRoutineBackup();
+      if (content !== null) setPendingBackup(parseRoutineBackup(content));
+    } catch (error) {
+      setTransferError(error instanceof Error ? error.message : 'Could not read the backup file.');
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
+  async function handleImport(mode: 'add' | 'replace') {
+    if (!pendingBackup || transferBusy) return;
+    setTransferBusy(true);
+    setTransferError('');
+    try {
+      const result = await importBackup(pendingBackup, mode);
+      setPendingBackup(null);
+      setTransferMessage(
+        mode === 'replace'
+          ? `Restored ${result.added} routines and their progress.`
+          : `Added ${result.added} routines. Skipped ${result.skipped} already on this device.`,
+      );
+    } catch {
+      setTransferError('Could not import the backup. No changes were applied.');
+    } finally {
+      setTransferBusy(false);
+    }
   }
 
   return (
@@ -144,6 +201,80 @@ export default function HomeScreen() {
         }
         ListFooterComponent={
           <View style={styles.footer}>
+            <View style={[styles.backupCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.backupTitle, { color: colors.foreground }]}>Back up your routines</Text>
+              <Text style={[styles.backupDescription, { color: colors.mutedForeground }]}>
+                Save your routines and daily progress as a JSON file, or import a Routine Flow backup.
+              </Text>
+              <View style={styles.backupActions}>
+                <Pressable
+                  accessibilityLabel="Download routine backup"
+                  testID="export-routines"
+                  disabled={loading || transferBusy}
+                  onPress={() => void handleExport()}
+                  style={({ pressed }) => [
+                    styles.backupButton,
+                    { backgroundColor: colors.primary },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="download-outline" size={17} color={colors.primaryForeground} />
+                  <Text style={[styles.backupButtonText, { color: colors.primaryForeground }]}>Export</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Upload routine backup"
+                  testID="import-routines"
+                  disabled={loading || transferBusy}
+                  onPress={() => void handlePickBackup()}
+                  style={({ pressed }) => [
+                    styles.backupButton,
+                    { backgroundColor: colors.secondary },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="cloud-upload-outline" size={17} color={colors.inkSoft} />
+                  <Text style={[styles.backupButtonText, { color: colors.inkSoft }]}>Import</Text>
+                </Pressable>
+              </View>
+              {transferBusy ? <ActivityIndicator color={colors.primary} style={styles.backupStatus} /> : null}
+              {transferMessage ? <Text style={[styles.backupStatus, { color: colors.success }]}>{transferMessage}</Text> : null}
+              {transferError ? <Text style={[styles.backupStatus, { color: colors.destructive }]}>{transferError}</Text> : null}
+              {pendingBackup ? (
+                <View style={[styles.importPreview, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.previewTitle, { color: colors.foreground }]}>
+                    {pendingBackup.routines.length} routines in backup
+                  </Text>
+                  <Text style={[styles.backupDescription, { color: colors.mutedForeground }]}>
+                    Add missing keeps everything already on this device. Restore replaces all local routines and progress with the backup.
+                  </Text>
+                  <Pressable
+                    accessibilityLabel="Add missing routines from backup"
+                    testID="confirm-add-backup"
+                    disabled={transferBusy}
+                    onPress={() => void handleImport('add')}
+                    style={[styles.importOption, { backgroundColor: colors.sageSoft }]}
+                  >
+                    <Text style={[styles.backupButtonText, { color: colors.success }]}>Add missing routines</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel="Replace all local routines with backup"
+                    testID="confirm-restore-backup"
+                    disabled={transferBusy}
+                    onPress={() => void handleImport('replace')}
+                    style={[styles.importOption, { backgroundColor: colors.coralSoft }]}
+                  >
+                    <Text style={[styles.backupButtonText, { color: colors.destructive }]}>Replace everything with backup</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel="Cancel backup import"
+                    onPress={() => setPendingBackup(null)}
+                    style={styles.cancelImport}
+                  >
+                    <Text style={[styles.resetText, { color: colors.mutedForeground }]}>Cancel</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
             <Pressable
               accessibilityLabel="Reset today's progress"
               onPress={() => {
@@ -197,6 +328,17 @@ const styles = StyleSheet.create({
   emptyText: { fontFamily: 'Inter_400Regular', fontSize: 13, textAlign: 'center', lineHeight: 19, marginTop: 6 },
   loading: { paddingVertical: 12 },
   footer: { alignItems: 'center', paddingTop: 19 },
+  backupCard: { alignSelf: 'stretch', borderWidth: 1, borderRadius: 19, padding: 18, marginBottom: 14 },
+  backupTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
+  backupDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 7 },
+  backupActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  backupButton: { flex: 1, minHeight: 44, borderRadius: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  backupButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  backupStatus: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 12 },
+  importPreview: { borderTopWidth: 1, marginTop: 16, paddingTop: 14 },
+  previewTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  importOption: { minHeight: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 10, paddingHorizontal: 8 },
+  cancelImport: { alignItems: 'center', padding: 10, marginTop: 2 },
   resetButton: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8 },
   resetText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   pressed: { opacity: 0.72 },

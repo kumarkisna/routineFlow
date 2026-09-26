@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import type { CompletionMap, Routine, RoutineStep } from '@/types/routines';
+import type { RoutineBackup } from '@/types/routineBackup';
 
 const ROUTINES_KEY = '@routine-flow/routines';
 const PROGRESS_KEY = '@routine-flow/progress';
@@ -64,6 +65,7 @@ type RoutineContextValue = {
   completeRoutine: (routineId: string) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[]) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => Promise<void>;
+  importBackup: (backup: RoutineBackup, mode: 'add' | 'replace') => Promise<{ added: number; skipped: number }>;
   deleteRoutine: (routineId: string) => Promise<void>;
   resetToday: () => Promise<void>;
   getCompletedCount: (routine: Routine) => number;
@@ -170,6 +172,44 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
     [routines],
   );
 
+  const importBackup = useCallback(
+    async (backup: RoutineBackup, mode: 'add' | 'replace') => {
+      const existingIds = new Set(routines.map((routine) => routine.id));
+      const addedRoutines = mode === 'replace'
+        ? backup.routines
+        : backup.routines.filter((routine) => !existingIds.has(routine.id));
+      const skipped = mode === 'replace' ? 0 : backup.routines.length - addedRoutines.length;
+      const nextRoutines = mode === 'replace' ? addedRoutines : [...routines, ...addedRoutines];
+      const nextProgress: CompletionMap = mode === 'replace' ? backup.progress : { ...progress };
+
+      if (mode === 'add') {
+        const importedKeys = new Set(addedRoutines.flatMap((routine) =>
+          routine.steps.map((step) => `${routine.id}:${step.id}`),
+        ));
+        for (const [day, entries] of Object.entries(backup.progress)) {
+          const completed = Object.entries(entries).filter(([key, done]) => importedKeys.has(key) && done);
+          if (completed.length) {
+            nextProgress[day] = {
+              ...(nextProgress[day] ?? {}),
+              ...Object.fromEntries(completed),
+            };
+          }
+        }
+      }
+
+      if (mode === 'replace' || addedRoutines.length > 0) {
+        await AsyncStorage.multiSet([
+          [ROUTINES_KEY, JSON.stringify(nextRoutines)],
+          [PROGRESS_KEY, JSON.stringify(nextProgress)],
+        ]);
+        setRoutines(nextRoutines);
+        setProgress(nextProgress);
+      }
+      return { added: addedRoutines.length, skipped };
+    },
+    [progress, routines],
+  );
+
   const deleteRoutine = useCallback(
     async (routineId: string) => {
       const nextRoutines = routines.filter((routine) => routine.id !== routineId);
@@ -202,6 +242,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       completeRoutine,
       createRoutine,
       updateRoutine,
+      importBackup,
       deleteRoutine,
       resetToday,
       getCompletedCount,
@@ -214,6 +255,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       completeRoutine,
       createRoutine,
       updateRoutine,
+      importBackup,
       deleteRoutine,
       resetToday,
       getCompletedCount,
