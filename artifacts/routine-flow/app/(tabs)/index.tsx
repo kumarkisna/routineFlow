@@ -17,7 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
-import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializeRoutines } from '@/lib/routineTransfer';
+import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializeRoutines, type RoutineBackup } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
 
 function formatDate() {
@@ -27,7 +27,7 @@ function formatDate() {
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { routines, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday } = useRoutines();
+  const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday } = useRoutines();
   const [showHidden, setShowHidden] = React.useState(false);
   const [reordering, setReordering] = React.useState(false);
   const [orderBusy, setOrderBusy] = React.useState(false);
@@ -39,6 +39,8 @@ export default function HomeScreen() {
   const [transferBusy, setTransferBusy] = React.useState<'export' | 'import' | null>(null);
   const [transferStatus, setTransferStatus] = React.useState<{ message: string; error: boolean } | null>(null);
   const transferLock = React.useRef(false);
+  const [includeHistory, setIncludeHistory] = React.useState(false);
+  const [pendingBackup, setPendingBackup] = React.useState<RoutineBackup | null>(null);
   const visibleRoutines = loading ? [] : routines.filter((routine) => !routine.hidden);
   const displayedRoutines = showHidden ? routines : visibleRoutines;
   const hiddenCount = loading ? 0 : routines.length - visibleRoutines.length;
@@ -70,7 +72,7 @@ export default function HomeScreen() {
   }
 
   async function changeOrder(index: number, direction: -1 | 1) {
-    if (orderLock.current || visibilityLock.current || transferLock.current) return;
+    if (orderLock.current || visibilityLock.current || transferLock.current || pendingBackup) return;
     const routine = displayedRoutines[index];
     const adjacent = displayedRoutines[index + direction];
     if (!routine || !adjacent) return;
@@ -95,7 +97,10 @@ export default function HomeScreen() {
     setTransferStatus(null);
     try {
       const filename = `routine-flow-routines-${new Date().toISOString().slice(0, 10)}.json`;
-      const contents = serializeRoutines(routines);
+      const contents = serializeRoutines(routines, includeHistory ? dailyProgress : undefined);
+      if (new Blob([contents]).size > MAX_ROUTINE_FILE_BYTES) {
+        throw new Error('This backup is too large to import (5 MB maximum). Export without daily progress.');
+      }
       if (Platform.OS === 'web') {
         const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
         const link = document.createElement('a');
@@ -113,7 +118,7 @@ export default function HomeScreen() {
         await FileSystem.writeAsStringAsync(uri, contents, { encoding: FileSystem.EncodingType.UTF8 });
         await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export routines' });
       }
-      setTransferStatus({ message: `${routines.length} routines ready to save or share.`, error: false });
+      setTransferStatus({ message: `${routines.length} routines${includeHistory ? ' with daily progress' : ''} ready to save or share.`, error: false });
     } catch (error) {
       setTransferStatus({ message: error instanceof Error ? error.message : 'Could not export routines.', error: true });
     } finally {
@@ -123,7 +128,7 @@ export default function HomeScreen() {
   }
 
   async function importRoutinesFile() {
-    if (transferLock.current || visibilityLock.current || orderLock.current || loading) return;
+    if (transferLock.current || visibilityLock.current || orderLock.current || loading || pendingBackup) return;
     transferLock.current = true;
     setTransferBusy('import');
     setTransferStatus(null);
@@ -139,14 +144,39 @@ export default function HomeScreen() {
         ? file.file ? await file.file.text() : await (await fetch(file.uri)).text()
         : await FileSystem.readAsStringAsync(file.uri);
       const imported = parseRoutinesFile(contents);
-      const result = await importRoutines(imported);
-      const details = [
-        `${result.added} ${result.added === 1 ? 'routine' : 'routines'} imported`,
-        result.skipped ? `${result.skipped} already present` : null,
-        result.renamed ? `${result.renamed} kept as a separate copy` : null,
-      ].filter(Boolean).join(' · ');
-      setTransferStatus({ message: details, error: false });
-      if (result.added) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (imported.progress !== undefined) {
+        setPendingBackup(imported);
+      } else {
+        await applyImport(imported, false);
+      }
+    } catch (error) {
+      setTransferStatus({ message: error instanceof Error ? error.message : 'Could not import routines.', error: true });
+    } finally {
+      transferLock.current = false;
+      setTransferBusy(null);
+    }
+  }
+
+  async function applyImport(backup: RoutineBackup, restoreHistory: boolean) {
+    const result = await importRoutines(backup, restoreHistory);
+    const details = [
+      `${result.added} ${result.added === 1 ? 'routine' : 'routines'} imported`,
+      result.skipped ? `${result.skipped} already present` : null,
+      result.renamed ? `${result.renamed} kept as a separate copy` : null,
+      restoreHistory ? `${result.progressAdded} completed steps added${result.progressKept ? ` (${result.progressKept} local entries kept)` : ''}` : null,
+    ].filter(Boolean).join(' · ');
+    setTransferStatus({ message: details, error: false });
+    if (result.added || result.progressAdded) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+  async function confirmImport(restoreHistory: boolean) {
+    if (!pendingBackup || transferLock.current || orderLock.current) return;
+    transferLock.current = true;
+    setTransferBusy('import');
+    setTransferStatus(null);
+    try {
+      await applyImport(pendingBackup, restoreHistory);
+      setPendingBackup(null);
     } catch (error) {
       setTransferStatus({ message: error instanceof Error ? error.message : 'Could not import routines.', error: true });
     } finally {
@@ -207,7 +237,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={reordering ? 'Done reordering routines' : 'Reorder routines'}
                     testID="toggle-reorder-routines"
-                    disabled={orderBusy || transferBusy !== null || visibilityBusyId !== null}
+                    disabled={orderBusy || transferBusy !== null || visibilityBusyId !== null || pendingBackup !== null}
                     onPress={() => {
                       setReordering((current) => !current);
                       setOrderError('');
@@ -315,7 +345,7 @@ export default function HomeScreen() {
                 <Pressable
                   accessibilityLabel={`${item.hidden ? 'Show' : 'Hide'} ${item.title}`}
                   testID={`toggle-routine-visibility-${item.id}`}
-                  disabled={visibilityBusyId !== null || transferBusy !== null}
+                  disabled={visibilityBusyId !== null || transferBusy !== null || pendingBackup !== null}
                   onPress={() => void changeVisibility(item)}
                   style={({ pressed }) => [styles.visibilityButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -341,13 +371,25 @@ export default function HomeScreen() {
             <View style={[styles.transferCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.transferTitle, { color: colors.foreground }]}>Move your routines</Text>
               <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
-                Export or import routines and steps as JSON. Daily progress is not included.
+                Export or import routines and steps as JSON. Choose whether to include daily progress.
               </Text>
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: includeHistory }}
+                accessibilityLabel="Include daily progress in export"
+                testID="include-daily-progress"
+                disabled={transferBusy !== null || pendingBackup !== null}
+                onPress={() => setIncludeHistory((current) => !current)}
+                style={styles.historyOption}
+              >
+                <Ionicons name={includeHistory ? 'checkbox' : 'square-outline'} size={22} color={colors.primary} />
+                <Text style={[styles.historyLabel, { color: colors.foreground }]}>Include daily progress in export</Text>
+              </Pressable>
               <View style={styles.transferActions}>
                 <Pressable
                   accessibilityLabel="Export routines"
                   testID="export-routines"
-                  disabled={loading || transferBusy !== null || visibilityBusyId !== null}
+                  disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || pendingBackup !== null}
                   onPress={() => void exportRoutinesFile()}
                   style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -359,7 +401,7 @@ export default function HomeScreen() {
                 <Pressable
                   accessibilityLabel="Import routines"
                   testID="import-routines"
-                  disabled={loading || transferBusy !== null || visibilityBusyId !== null}
+                  disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || pendingBackup !== null}
                   onPress={() => void importRoutinesFile()}
                   style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -369,6 +411,43 @@ export default function HomeScreen() {
                   </Text>
                 </Pressable>
               </View>
+              {pendingBackup ? (
+                <View style={[styles.importChoice, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.historyLabel, { color: colors.foreground }]}>This backup includes daily progress.</Text>
+                  <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                    Restore completed steps too? Existing progress stays unchanged; only missing completions are added.
+                  </Text>
+                  <View style={styles.transferActions}>
+                    <Pressable
+                      testID="import-with-progress"
+                      accessibilityLabel="Import routines and daily progress"
+                      disabled={transferBusy !== null}
+                      onPress={() => void confirmImport(true)}
+                      style={[styles.transferButton, { borderColor: colors.primary }]}
+                    >
+                      <Text style={[styles.transferButtonText, { color: colors.primary }]}>Include progress</Text>
+                    </Pressable>
+                    <Pressable
+                      testID="import-without-progress"
+                      accessibilityLabel="Import routines only"
+                      disabled={transferBusy !== null}
+                      onPress={() => void confirmImport(false)}
+                      style={[styles.transferButton, { borderColor: colors.border }]}
+                    >
+                      <Text style={[styles.transferButtonText, { color: colors.foreground }]}>Routines only</Text>
+                    </Pressable>
+                  </View>
+                  <Pressable
+                    testID="cancel-import"
+                    accessibilityLabel="Cancel import"
+                    disabled={transferBusy !== null}
+                    onPress={() => { setPendingBackup(null); setTransferStatus(null); }}
+                    style={styles.cancelImport}
+                  >
+                    <Text style={[styles.transferButtonText, { color: colors.mutedForeground }]}>Cancel import</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               {transferStatus ? (
                 <Text accessibilityRole="alert" style={[styles.transferStatus, { color: transferStatus.error ? colors.destructive : colors.success }]}>
                   {transferStatus.message}
@@ -442,6 +521,10 @@ const styles = StyleSheet.create({
   transferCard: { width: '100%', borderWidth: 1, borderRadius: 19, padding: 17 },
   transferTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   transferDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  historyOption: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, minHeight: 36 },
+  historyLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, flexShrink: 1 },
+  importChoice: { borderTopWidth: 1, marginTop: 16, paddingTop: 15 },
+  cancelImport: { alignSelf: 'center', padding: 12, marginTop: 4 },
   transferActions: { flexDirection: 'row', gap: 9, marginTop: 15 },
   transferButton: { flex: 1, minHeight: 44, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 6 },
   transferButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },

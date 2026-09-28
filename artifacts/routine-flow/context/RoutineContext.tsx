@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import type { CompletionMap, Routine, RoutineStep } from '@/types/routines';
 import { makeRoutineCopy } from '@/lib/copyRoutine';
-import { mergeImportedRoutines } from '@/lib/routineTransfer';
+import { mergeImportedProgress, mergeImportedRoutines, type RoutineBackup } from '@/lib/routineTransfer';
 
 const ROUTINES_KEY = '@routine-flow/routines';
 const PROGRESS_KEY = '@routine-flow/progress';
@@ -68,7 +68,9 @@ type RoutineContextValue = {
   copyRoutine: (routineId: string) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => Promise<void>;
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
-  importRoutines: (routines: Routine[]) => Promise<{ added: number; skipped: number; renamed: number }>;
+  importRoutines: (backup: RoutineBackup, includeProgress: boolean) => Promise<{
+    added: number; skipped: number; renamed: number; progressAdded: number; progressKept: number;
+  }>;
   setRoutineHidden: (routineId: string, hidden: boolean) => Promise<void>;
   setStepHidden: (routineId: string, stepId: string, hidden: boolean) => Promise<void>;
   deleteRoutine: (routineId: string) => Promise<void>;
@@ -191,15 +193,23 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const importRoutines = useCallback(
-    async (incoming: Routine[]) => {
-      const result = mergeImportedRoutines(routines, incoming, makeId);
+    async (backup: RoutineBackup, includeProgress: boolean) => {
+      const result = mergeImportedRoutines(routines, backup.routines, makeId);
+      const merged = includeProgress && backup.progress
+        ? mergeImportedProgress(progress, backup.progress, result.idMap)
+        : { progress, added: 0, kept: 0 };
       if (result.added > 0) {
         await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(result.routines));
         setRoutines(result.routines);
       }
-      return { added: result.added, skipped: result.skipped, renamed: result.renamed };
+      if (merged.added > 0) {
+        await AsyncStorage.setItem(PROGRESS_KEY, JSON.stringify(merged.progress));
+        setProgress(merged.progress);
+      }
+      return { added: result.added, skipped: result.skipped, renamed: result.renamed,
+        progressAdded: merged.added, progressKept: merged.kept };
     },
-    [routines],
+    [routines, progress],
   );
 
   const moveRoutine = useCallback(

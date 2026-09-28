@@ -8,3 +8,9 @@ Routine backup imports should be additive and repeatable. Identical routines alr
 **Why:** Starter routines use stable IDs across installations, so an ID collision can represent a customized routine rather than a harmless duplicate. Keeping both avoids accidental loss of either version.
 
 **How to apply:** When extending or changing the routines transfer format, preserve the non-destructive merge behavior or request an explicit user choice before introducing replacement.
+
+Daily completion history follows the same rule: it is optional in backups, requires an affirmative choice to import, and contributes only missing completed steps. Never replace a local completion value (including an explicit incomplete value); remap backup history to whichever local routine represents the imported routine, including a conflict copy.
+
+**Why:** Restoring an older device's progress should not undo deliberate changes on the current device or attach history to a customized routine with a reused ID.
+
+**How to apply:** Keep history import additive and routine-ID-aware in future backup format or merge changes.
