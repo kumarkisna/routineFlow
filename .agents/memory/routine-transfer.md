@@ -1,0 +1,10 @@
+---
+name: Routine transfer safety
+description: Product decision for importing routine backups without replacing local edits
+---
+
+Routine backup imports should be additive and repeatable. Identical routines already present are skipped; if a backed-up routine has the same ID as a changed local routine, retain both by assigning the imported copy a new ID. Do not silently overwrite the local version.
+
+**Why:** Starter routines use stable IDs across installations, so an ID collision can represent a customized routine rather than a harmless duplicate. Keeping both avoids accidental loss of either version.
+
+**How to apply:** When extending or changing the routines transfer format, preserve the non-destructive merge behavior or request an explicit user choice before introducing replacement.

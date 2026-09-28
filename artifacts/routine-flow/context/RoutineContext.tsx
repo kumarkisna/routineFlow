@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import type { CompletionMap, Routine, RoutineStep } from '@/types/routines';
+import { mergeImportedRoutines } from '@/lib/routineTransfer';
 
 const ROUTINES_KEY = '@routine-flow/routines';
 const PROGRESS_KEY = '@routine-flow/progress';
@@ -64,6 +65,7 @@ type RoutineContextValue = {
   completeRoutine: (routineId: string) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[]) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => Promise<void>;
+  importRoutines: (routines: Routine[]) => Promise<{ added: number; skipped: number; renamed: number }>;
   setRoutineHidden: (routineId: string, hidden: boolean) => Promise<void>;
   setStepHidden: (routineId: string, stepId: string, hidden: boolean) => Promise<void>;
   deleteRoutine: (routineId: string) => Promise<void>;
@@ -172,6 +174,18 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
     [routines],
   );
 
+  const importRoutines = useCallback(
+    async (incoming: Routine[]) => {
+      const result = mergeImportedRoutines(routines, incoming, makeId);
+      if (result.added > 0) {
+        await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(result.routines));
+        setRoutines(result.routines);
+      }
+      return { added: result.added, skipped: result.skipped, renamed: result.renamed };
+    },
+    [routines],
+  );
+
   const setRoutineHidden = useCallback(
     async (routineId: string, hidden: boolean) => {
       if (!routines.some((routine) => routine.id === routineId)) throw new Error('Routine not found');
@@ -231,6 +245,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       completeRoutine,
       createRoutine,
       updateRoutine,
+      importRoutines,
       setRoutineHidden,
       setStepHidden,
       deleteRoutine,
@@ -245,6 +260,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       completeRoutine,
       createRoutine,
       updateRoutine,
+      importRoutines,
       setRoutineHidden,
       setStepHidden,
       deleteRoutine,

@@ -1,6 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -14,6 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializeRoutines } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
 
 function formatDate() {
@@ -23,11 +27,14 @@ function formatDate() {
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { routines, loading, getCompletedCount, setRoutineHidden, resetToday } = useRoutines();
+  const { routines, loading, getCompletedCount, setRoutineHidden, importRoutines, resetToday } = useRoutines();
   const [showHidden, setShowHidden] = React.useState(false);
   const [visibilityBusyId, setVisibilityBusyId] = React.useState<string | null>(null);
   const [visibilityError, setVisibilityError] = React.useState('');
   const visibilityLock = React.useRef(false);
+  const [transferBusy, setTransferBusy] = React.useState<'export' | 'import' | null>(null);
+  const [transferStatus, setTransferStatus] = React.useState<{ message: string; error: boolean } | null>(null);
+  const transferLock = React.useRef(false);
   const visibleRoutines = loading ? [] : routines.filter((routine) => !routine.hidden);
   const hiddenCount = loading ? 0 : routines.length - visibleRoutines.length;
   const totalSteps = visibleRoutines.reduce((sum, routine) => sum + routine.steps.filter((step) => !step.hidden).length, 0);
@@ -42,7 +49,7 @@ export default function HomeScreen() {
   }
 
   async function changeVisibility(routine: Routine) {
-    if (visibilityLock.current) return;
+    if (visibilityLock.current || transferLock.current) return;
     visibilityLock.current = true;
     setVisibilityBusyId(routine.id);
     setVisibilityError('');
@@ -54,6 +61,73 @@ export default function HomeScreen() {
     } finally {
       visibilityLock.current = false;
       setVisibilityBusyId(null);
+    }
+  }
+
+  async function exportRoutinesFile() {
+    if (transferLock.current || visibilityLock.current || loading) return;
+    transferLock.current = true;
+    setTransferBusy('export');
+    setTransferStatus(null);
+    try {
+      const filename = `routine-flow-routines-${new Date().toISOString().slice(0, 10)}.json`;
+      const contents = serializeRoutines(routines);
+      if (Platform.OS === 'web') {
+        const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      } else {
+        if (!await Sharing.isAvailableAsync() || !FileSystem.cacheDirectory) {
+          throw new Error('File sharing is unavailable on this device.');
+        }
+        const uri = `${FileSystem.cacheDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(uri, contents, { encoding: FileSystem.EncodingType.UTF8 });
+        await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export routines' });
+      }
+      setTransferStatus({ message: `${routines.length} routines ready to save or share.`, error: false });
+    } catch (error) {
+      setTransferStatus({ message: error instanceof Error ? error.message : 'Could not export routines.', error: true });
+    } finally {
+      transferLock.current = false;
+      setTransferBusy(null);
+    }
+  }
+
+  async function importRoutinesFile() {
+    if (transferLock.current || visibilityLock.current || loading) return;
+    transferLock.current = true;
+    setTransferBusy('import');
+    setTransferStatus(null);
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+      if (picked.canceled) return;
+      const file = picked.assets[0];
+      if (!file) throw new Error('No file was selected.');
+      if (file.size && file.size > MAX_ROUTINE_FILE_BYTES) {
+        throw new Error('This file is too large to import (5 MB maximum).');
+      }
+      const contents = Platform.OS === 'web'
+        ? file.file ? await file.file.text() : await (await fetch(file.uri)).text()
+        : await FileSystem.readAsStringAsync(file.uri);
+      const imported = parseRoutinesFile(contents);
+      const result = await importRoutines(imported);
+      const details = [
+        `${result.added} ${result.added === 1 ? 'routine' : 'routines'} imported`,
+        result.skipped ? `${result.skipped} already present` : null,
+        result.renamed ? `${result.renamed} kept as a separate copy` : null,
+      ].filter(Boolean).join(' · ');
+      setTransferStatus({ message: details, error: false });
+      if (result.added) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      setTransferStatus({ message: error instanceof Error ? error.message : 'Could not import routines.', error: true });
+    } finally {
+      transferLock.current = false;
+      setTransferBusy(null);
     }
   }
 
@@ -174,7 +248,7 @@ export default function HomeScreen() {
               <Pressable
                 accessibilityLabel={`${item.hidden ? 'Show' : 'Hide'} ${item.title}`}
                 testID={`toggle-routine-visibility-${item.id}`}
-                disabled={visibilityBusyId !== null}
+                disabled={visibilityBusyId !== null || transferBusy !== null}
                 onPress={() => void changeVisibility(item)}
                 style={({ pressed }) => [styles.visibilityButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}
               >
@@ -196,6 +270,43 @@ export default function HomeScreen() {
         )}
         ListFooterComponent={
           <View style={styles.footer}>
+            <View style={[styles.transferCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.transferTitle, { color: colors.foreground }]}>Move your routines</Text>
+              <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                Export or import routines and steps as JSON. Daily progress is not included.
+              </Text>
+              <View style={styles.transferActions}>
+                <Pressable
+                  accessibilityLabel="Export routines"
+                  testID="export-routines"
+                  disabled={loading || transferBusy !== null || visibilityBusyId !== null}
+                  onPress={() => void exportRoutinesFile()}
+                  style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
+                >
+                  <Ionicons name="download-outline" size={18} color={colors.primary} />
+                  <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                    {transferBusy === 'export' ? 'Exporting…' : 'Export JSON'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Import routines"
+                  testID="import-routines"
+                  disabled={loading || transferBusy !== null || visibilityBusyId !== null}
+                  onPress={() => void importRoutinesFile()}
+                  style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
+                >
+                  <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
+                  <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                    {transferBusy === 'import' ? 'Importing…' : 'Import JSON'}
+                  </Text>
+                </Pressable>
+              </View>
+              {transferStatus ? (
+                <Text accessibilityRole="alert" style={[styles.transferStatus, { color: transferStatus.error ? colors.destructive : colors.success }]}>
+                  {transferStatus.message}
+                </Text>
+              ) : null}
+            </View>
             <Pressable
               accessibilityLabel="Reset today's progress"
               onPress={() => {
@@ -254,7 +365,14 @@ const styles = StyleSheet.create({
   emptyTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 16, marginTop: 11 },
   emptyText: { fontFamily: 'Inter_400Regular', fontSize: 13, textAlign: 'center', lineHeight: 19, marginTop: 6 },
   loading: { paddingVertical: 12 },
-  footer: { alignItems: 'center', paddingTop: 19 },
+  footer: { alignItems: 'center', paddingTop: 17 },
+  transferCard: { width: '100%', borderWidth: 1, borderRadius: 19, padding: 17 },
+  transferTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  transferDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  transferActions: { flexDirection: 'row', gap: 9, marginTop: 15 },
+  transferButton: { flex: 1, minHeight: 44, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 6 },
+  transferButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  transferStatus: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginTop: 12 },
   resetButton: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8 },
   resetText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   pressed: { opacity: 0.72 },
