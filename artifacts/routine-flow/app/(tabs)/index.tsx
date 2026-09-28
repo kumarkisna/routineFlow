@@ -27,8 +27,12 @@ function formatDate() {
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { routines, loading, getCompletedCount, setRoutineHidden, importRoutines, resetToday } = useRoutines();
+  const { routines, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday } = useRoutines();
   const [showHidden, setShowHidden] = React.useState(false);
+  const [reordering, setReordering] = React.useState(false);
+  const [orderBusy, setOrderBusy] = React.useState(false);
+  const [orderError, setOrderError] = React.useState('');
+  const orderLock = React.useRef(false);
   const [visibilityBusyId, setVisibilityBusyId] = React.useState<string | null>(null);
   const [visibilityError, setVisibilityError] = React.useState('');
   const visibilityLock = React.useRef(false);
@@ -36,6 +40,7 @@ export default function HomeScreen() {
   const [transferStatus, setTransferStatus] = React.useState<{ message: string; error: boolean } | null>(null);
   const transferLock = React.useRef(false);
   const visibleRoutines = loading ? [] : routines.filter((routine) => !routine.hidden);
+  const displayedRoutines = showHidden ? routines : visibleRoutines;
   const hiddenCount = loading ? 0 : routines.length - visibleRoutines.length;
   const totalSteps = visibleRoutines.reduce((sum, routine) => sum + routine.steps.filter((step) => !step.hidden).length, 0);
   const completedSteps = visibleRoutines.reduce((sum, routine) => sum + getCompletedCount(routine), 0);
@@ -49,7 +54,7 @@ export default function HomeScreen() {
   }
 
   async function changeVisibility(routine: Routine) {
-    if (visibilityLock.current || transferLock.current) return;
+    if (visibilityLock.current || transferLock.current || orderLock.current) return;
     visibilityLock.current = true;
     setVisibilityBusyId(routine.id);
     setVisibilityError('');
@@ -64,8 +69,27 @@ export default function HomeScreen() {
     }
   }
 
+  async function changeOrder(index: number, direction: -1 | 1) {
+    if (orderLock.current || visibilityLock.current || transferLock.current) return;
+    const routine = displayedRoutines[index];
+    const adjacent = displayedRoutines[index + direction];
+    if (!routine || !adjacent) return;
+    orderLock.current = true;
+    setOrderBusy(true);
+    setOrderError('');
+    try {
+      await moveRoutine(routine.id, adjacent.id);
+      void Haptics.selectionAsync();
+    } catch {
+      setOrderError('Could not save the new order. Please try again.');
+    } finally {
+      orderLock.current = false;
+      setOrderBusy(false);
+    }
+  }
+
   async function exportRoutinesFile() {
-    if (transferLock.current || visibilityLock.current || loading) return;
+    if (transferLock.current || visibilityLock.current || orderLock.current || loading) return;
     transferLock.current = true;
     setTransferBusy('export');
     setTransferStatus(null);
@@ -99,7 +123,7 @@ export default function HomeScreen() {
   }
 
   async function importRoutinesFile() {
-    if (transferLock.current || visibilityLock.current || loading) return;
+    if (transferLock.current || visibilityLock.current || orderLock.current || loading) return;
     transferLock.current = true;
     setTransferBusy('import');
     setTransferStatus(null);
@@ -134,7 +158,7 @@ export default function HomeScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <FlatList
-        data={loading ? [] : showHidden ? routines : visibleRoutines}
+        data={loading ? [] : displayedRoutines}
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
@@ -178,22 +202,41 @@ export default function HomeScreen() {
                 <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Your routines</Text>
                 <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>Keep the good things close</Text>
               </View>
-              <Pressable
-                accessibilityLabel="Create new routine"
-                onPress={() => router.push('/new-routine')}
-                style={({ pressed }) => [
-                  styles.addButton,
-                  { backgroundColor: colors.primary },
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Ionicons name="add" size={21} color={colors.primaryForeground} />
-              </Pressable>
+              <View style={styles.sectionActions}>
+                {routines.length > 1 && !loading ? (
+                  <Pressable
+                    accessibilityLabel={reordering ? 'Done reordering routines' : 'Reorder routines'}
+                    testID="toggle-reorder-routines"
+                    disabled={orderBusy || transferBusy !== null || visibilityBusyId !== null}
+                    onPress={() => {
+                      setReordering((current) => !current);
+                      setOrderError('');
+                    }}
+                    style={({ pressed }) => [styles.reorderToggle, pressed && styles.pressed]}
+                  >
+                    <Ionicons name={reordering ? 'checkmark' : 'swap-vertical-outline'} size={17} color={colors.primary} />
+                    <Text style={[styles.reorderToggleText, { color: colors.primary }]}>{reordering ? 'Done' : 'Reorder'}</Text>
+                  </Pressable>
+                ) : null}
+                <Pressable
+                  accessibilityLabel="Create new routine"
+                  disabled={orderBusy}
+                  onPress={() => router.push('/new-routine')}
+                  style={({ pressed }) => [
+                    styles.addButton,
+                    { backgroundColor: colors.primary },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="add" size={21} color={colors.primaryForeground} />
+                </Pressable>
+              </View>
             </View>
             {hiddenCount > 0 ? (
               <Pressable
                 accessibilityLabel={showHidden ? 'Hide hidden routines' : `Show hidden routines (${hiddenCount})`}
                 testID="toggle-hidden-routines"
+                disabled={orderBusy}
                 onPress={() => setShowHidden((current) => !current)}
                 style={({ pressed }) => [styles.showHiddenButton, pressed && styles.pressed]}
               >
@@ -204,6 +247,7 @@ export default function HomeScreen() {
               </Pressable>
             ) : null}
             {visibilityError ? <Text style={[styles.visibilityError, { color: colors.destructive }]}>{visibilityError}</Text> : null}
+            {orderError ? <Text style={[styles.visibilityError, { color: colors.destructive }]}>{orderError}</Text> : null}
 
             {loading ? (
               <View style={styles.loading}>
@@ -212,7 +256,7 @@ export default function HomeScreen() {
             ) : null}
           </View>
         }
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const completed = getCompletedCount(item);
           const visibleStepCount = item.steps.filter((step) => !step.hidden).length;
           const itemProgress = visibleStepCount ? completed / visibleStepCount : 0;
@@ -220,6 +264,7 @@ export default function HomeScreen() {
             <View style={[styles.routineCard, { backgroundColor: item.hidden ? colors.secondary : colors.card, borderColor: colors.border }]}>
               <Pressable
                 accessibilityLabel={`Open ${item.title}`}
+                disabled={reordering}
                 onPress={() => openRoutine(item)}
                 style={({ pressed }) => [styles.routineCardContent, pressed && styles.pressed]}
               >
@@ -245,15 +290,38 @@ export default function HomeScreen() {
                   </View>
                 </View>
               </Pressable>
-              <Pressable
-                accessibilityLabel={`${item.hidden ? 'Show' : 'Hide'} ${item.title}`}
-                testID={`toggle-routine-visibility-${item.id}`}
-                disabled={visibilityBusyId !== null || transferBusy !== null}
-                onPress={() => void changeVisibility(item)}
-                style={({ pressed }) => [styles.visibilityButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}
-              >
-                <Ionicons name={item.hidden ? 'eye-outline' : 'eye-off-outline'} size={20} color={colors.primary} />
-              </Pressable>
+              {reordering ? (
+                <View style={[styles.orderActions, { borderLeftColor: colors.border }]}>
+                  <Pressable
+                    accessibilityLabel={`Move ${item.title} up`}
+                    testID={`move-routine-up-${item.id}`}
+                    disabled={index === 0 || orderBusy}
+                    onPress={() => void changeOrder(index, -1)}
+                    style={({ pressed }) => [styles.orderButton, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="chevron-up" size={20} color={index === 0 ? colors.border : colors.primary} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel={`Move ${item.title} down`}
+                    testID={`move-routine-down-${item.id}`}
+                    disabled={index === displayedRoutines.length - 1 || orderBusy}
+                    onPress={() => void changeOrder(index, 1)}
+                    style={({ pressed }) => [styles.orderButton, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="chevron-down" size={20} color={index === displayedRoutines.length - 1 ? colors.border : colors.primary} />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  accessibilityLabel={`${item.hidden ? 'Show' : 'Hide'} ${item.title}`}
+                  testID={`toggle-routine-visibility-${item.id}`}
+                  disabled={visibilityBusyId !== null || transferBusy !== null}
+                  onPress={() => void changeVisibility(item)}
+                  style={({ pressed }) => [styles.visibilityButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}
+                >
+                  <Ionicons name={item.hidden ? 'eye-outline' : 'eye-off-outline'} size={20} color={colors.primary} />
+                </Pressable>
+              )}
             </View>
           );
         }}
@@ -342,6 +410,9 @@ const styles = StyleSheet.create({
   progressValue: { fontFamily: 'Inter_700Bold', fontSize: 21 },
   progressLabel: { fontFamily: 'Inter_500Medium', fontSize: 10, opacity: 0.65, marginTop: 1 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  reorderToggle: { minHeight: 43, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 5 },
+  reorderToggleText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   showHiddenButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, marginBottom: 8 },
   showHiddenText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   visibilityError: { fontFamily: 'Inter_500Medium', fontSize: 12, marginBottom: 12 },
@@ -351,6 +422,8 @@ const styles = StyleSheet.create({
   routineCard: { minHeight: 98, borderRadius: 19, borderWidth: 1, flexDirection: 'row', alignItems: 'center', overflow: 'hidden', marginBottom: 10 },
   routineCardContent: { flex: 1, minWidth: 0, minHeight: 98, paddingLeft: 13, paddingVertical: 13, paddingRight: 8, flexDirection: 'row', alignItems: 'center' },
   visibilityButton: { width: 44, alignSelf: 'stretch', borderLeftWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  orderActions: { width: 44, alignSelf: 'stretch', borderLeftWidth: 1 },
+  orderButton: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   routineIcon: { width: 54, height: 54, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginRight: 13 },
   routineCopy: { flex: 1, minWidth: 0 },
   routineTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

@@ -65,6 +65,7 @@ type RoutineContextValue = {
   completeRoutine: (routineId: string) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[]) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => Promise<void>;
+  moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
   importRoutines: (routines: Routine[]) => Promise<{ added: number; skipped: number; renamed: number }>;
   setRoutineHidden: (routineId: string, hidden: boolean) => Promise<void>;
   setStepHidden: (routineId: string, stepId: string, hidden: boolean) => Promise<void>;
@@ -186,6 +187,21 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
     [routines],
   );
 
+  const moveRoutine = useCallback(
+    async (routineId: string, adjacentId: string) => {
+      const fromIndex = routines.findIndex((routine) => routine.id === routineId);
+      const toIndex = routines.findIndex((routine) => routine.id === adjacentId);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+        throw new Error('Could not find routines to reorder');
+      }
+      const nextRoutines = [...routines];
+      [nextRoutines[fromIndex], nextRoutines[toIndex]] = [nextRoutines[toIndex], nextRoutines[fromIndex]];
+      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      setRoutines(nextRoutines);
+    },
+    [routines],
+  );
+
   const setRoutineHidden = useCallback(
     async (routineId: string, hidden: boolean) => {
       if (!routines.some((routine) => routine.id === routineId)) throw new Error('Routine not found');
@@ -245,6 +261,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       completeRoutine,
       createRoutine,
       updateRoutine,
+      moveRoutine,
       importRoutines,
       setRoutineHidden,
       setStepHidden,
@@ -260,6 +277,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       completeRoutine,
       createRoutine,
       updateRoutine,
+      moveRoutine,
       importRoutines,
       setRoutineHidden,
       setStepHidden,
