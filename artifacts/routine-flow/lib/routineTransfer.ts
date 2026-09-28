@@ -3,7 +3,7 @@ import { MAX_CATEGORY_LENGTH, categoryKey } from '@/lib/routineCategories';
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
-const FILE_VERSION = 3;
+const FILE_VERSION = 4;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
 
 export type RoutineBackup = { routines: Routine[]; progress?: CompletionMap };
@@ -91,24 +91,32 @@ function isDay(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-function parseProgress(value: unknown, routines: Routine[]): CompletionMap {
+function isValidCompletion(value: unknown): value is CompletionMap[string][string] {
+  return typeof value === 'boolean' ||
+    (isRecord(value) && Object.keys(value).length === 2 &&
+      isText(value.routineTitle) && isText(value.stepTitle));
+}
+
+function parseProgress(value: unknown, routines: Routine[], version: number): CompletionMap {
   if (!isRecord(value)) throw new Error('The backup has invalid daily progress.');
   const allowed = new Set(routines.flatMap((routine) =>
     routine.steps.map((step) => `${routine.id}:${step.id}`)));
+  const routineIds = new Set(routines.map((routine) => routine.id));
   const result: CompletionMap = {};
   let count = 0;
   for (const [day, entries] of Object.entries(value)) {
     if (!isDay(day) || !isRecord(entries)) throw new Error('The backup has an invalid progress date.');
     result[day] = {};
     for (const [key, completed] of Object.entries(entries)) {
-      const validValue = typeof completed === 'boolean' ||
-        (isRecord(completed) && Object.keys(completed).length === 2 &&
-          isText(completed.routineTitle) && isText(completed.stepTitle));
-      if (!allowed.has(key) || !validValue || ++count > 100_000) {
+      const separator = key.indexOf(':');
+      // V4 can restore removed steps, but never attach history to an unknown routine.
+      const historicalStep = version >= 4 && separator > 0 &&
+        routineIds.has(key.slice(0, separator)) && isId(key.slice(separator + 1));
+      if (!(allowed.has(key) || historicalStep) || !isValidCompletion(completed) || ++count > 100_000) {
         throw new Error('The backup has invalid step progress.');
       }
-      if (isCompleted(completed as CompletionMap[string][string])) {
-        result[day][key] = completed as CompletionMap[string][string];
+      if (isCompleted(completed)) {
+        result[day][key] = completed;
       }
     }
   }
@@ -116,14 +124,16 @@ function parseProgress(value: unknown, routines: Routine[]): CompletionMap {
 }
 
 export function serializeRoutines(routines: Routine[], progress?: CompletionMap): string {
-  const allowed = new Set(routines.flatMap((routine) =>
-    routine.steps.map((step) => `${routine.id}:${step.id}`)));
+  const routineIds = new Set(routines.map((routine) => routine.id));
   const history: CompletionMap = {};
   if (progress) {
     for (const [day, entries] of Object.entries(progress)) {
       if (!isDay(day) || !isRecord(entries)) continue;
-      const completed = Object.fromEntries(Object.entries(entries).filter(([key, value]) =>
-        allowed.has(key) && isCompleted(value)));
+      const completed = Object.fromEntries(Object.entries(entries).filter(([key, value]) => {
+        const separator = key.indexOf(':');
+        return separator > 0 && routineIds.has(key.slice(0, separator)) &&
+          isId(key.slice(separator + 1)) && isValidCompletion(value) && isCompleted(value);
+      }));
       if (Object.keys(completed).length) history[day] = completed;
     }
   }
@@ -146,7 +156,7 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
   } catch {
     throw new Error('This is not a valid JSON file.');
   }
-  if (!isRecord(value) || value.format !== FILE_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== FILE_VERSION) ||
+  if (!isRecord(value) || value.format !== FILE_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== FILE_VERSION) ||
       !Array.isArray(value.routines) || value.routines.length > 1000) {
     throw new Error('Choose a routines JSON file exported from Routine Flow.');
   }
@@ -159,7 +169,7 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
   }
   return {
     routines,
-    ...(value.progress !== undefined ? { progress: parseProgress(value.progress, routines) } : {}),
+    ...(value.progress !== undefined ? { progress: parseProgress(value.progress, routines, value.version as number) } : {}),
   };
 }
 

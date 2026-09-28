@@ -20,3 +20,9 @@ When a restore has committed routines but fails to confirm the history save, rep
 **Why:** Local storage writes are separate operations. A failed history write may leave routines saved, and even a rejected write may have committed before reporting an error.
 
 **How to apply:** Preserve the saved routine state on partial restore failures and keep repeat imports idempotent so retrying can finish missing history without creating duplicate routines.
+
+Backups may retain completions for removed steps of a routine that remains in the backup, but should not attach history to a routine absent from it without an explicit identity strategy.
+
+**Why:** A surviving routine provides a safe identity for remapping past step keys on import. A deleted routine does not; matching its old ID to an unrelated local routine would misattribute history.
+
+**How to apply:** When expanding history portability to deleted routines, define collision-safe remapping and validate it separately from historical steps of existing routines.

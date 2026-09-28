@@ -11,6 +11,7 @@ import {
   serializeRoutines,
 } from './routineTransfer';
 import type { CompletionMap, Routine } from '@/types/routines';
+import { getHistoryForDay } from './progressHistory';
 
 const day = '2026-09-28';
 const secondDay = '2026-09-29';
@@ -54,7 +55,7 @@ test('reads version 1 backups with legacy step durations but no history', () => 
   );
 });
 
-test('version 3 export and import keep completed labels and legacy booleans', () => {
+test('version 4 export and import keep completed labels and legacy booleans', () => {
   const source = routine();
   const raw = serializeRoutines([source], {
     [day]: { 'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
@@ -62,7 +63,7 @@ test('version 3 export and import keep completed labels and legacy booleans', ()
     'not-a-date': { 'morning:water': true },
   });
   const json = JSON.parse(raw);
-  assert.equal(json.version, 3);
+  assert.equal(json.version, 4);
   assert.deepEqual(json.progress, { [day]: {
     'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
     'morning:stretch': true,
@@ -74,6 +75,56 @@ test('version 3 export and import keep completed labels and legacy booleans', ()
   assert.deepEqual(parseRoutinesFile(backup(2, [source], { [day]: { 'morning:water': false } })).progress, {
     [day]: {},
   });
+});
+
+test('completed removed steps survive export, import, routine ID remapping, and repeat import', () => {
+  const source = routine();
+  source.steps = [source.steps[0]];
+  const oldCompletion = { routineTitle: 'Original morning', stepTitle: 'Stretch before breakfast' };
+  const raw = serializeRoutines([source], {
+    [day]: {
+      'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
+      'morning:stretch': oldCompletion,
+      'morning:legacy': true,
+      'morning:incomplete': false,
+      'deleted:old-step': { routineTitle: 'Deleted', stepTitle: 'Old step' },
+      'morning:bad:step': true,
+    },
+  });
+  const imported = parseRoutinesFile(raw);
+  assert.deepEqual(imported.progress, { [day]: {
+    'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
+    'morning:stretch': oldCompletion,
+    'morning:legacy': true,
+  } });
+
+  const local = { ...routine(), title: 'Edited locally' };
+  const mergedRoutines = mergeImportedRoutines([local], imported.routines, () => 'copy-1');
+  const restored = mergeImportedProgress({}, imported.progress!, mergedRoutines.idMap);
+  assert.deepEqual(restored.progress[day]['copy-1:stretch'], oldCompletion);
+  assert.equal(restored.progress[day]['copy-1:legacy'], true);
+  assert.deepEqual(getHistoryForDay(restored.progress, mergedRoutines.routines, day)
+    .find((item) => item.id === 'copy-1')?.steps.map((step) => [step.title, step.removed]), [
+    ['Drink water', false],
+    ['Stretch before breakfast', true],
+    ['Removed step (legacy)', true],
+  ]);
+  assert.deepEqual(mergeImportedProgress(restored.progress, imported.progress!, mergedRoutines.idMap), {
+    progress: restored.progress, added: 0, kept: 3,
+  });
+});
+
+test('version 3 and earlier reject removed step progress, but still import valid history', () => {
+  const source = routine();
+  source.steps = [source.steps[0]];
+  for (const version of [2, 3]) {
+    assert.throws(() => parseRoutinesFile(backup(version, [source], {
+      [day]: { 'morning:stretch': true },
+    })), /invalid step progress/);
+    assert.deepEqual(parseRoutinesFile(backup(version, [source], {
+      [day]: { 'morning:water': true },
+    })).progress, { [day]: { 'morning:water': true } });
+  }
 });
 
 test('backups preserve categories and treat a category edit as a different routine', () => {
@@ -94,11 +145,17 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
   const source = routine();
   const invalidFiles = [
     '{',
-    backup(4, [source]),
+    backup(5, [source]),
     backup(2, [source], []),
     backup(2, [source], { '2026-02-30': { 'morning:water': true } }),
     backup(2, [source], { [day]: [] }),
     backup(2, [source], { [day]: { 'unknown:water': true } }),
+    backup(4, [source], { [day]: { 'unknown:old-step': { routineTitle: 'Unknown', stepTitle: 'Old' } } }),
+    backup(4, [source], { [day]: { 'morning:old:step': true } }),
+    backup(4, [source], { [day]: { 'morning:': true } }),
+    backup(4, [source], { [day]: { 'morning:old-step': { routineTitle: 'Morning', stepTitle: '' } } }),
+    backup(4, [source], { [day]: { 'morning:old-step': { routineTitle: 'Morning', stepTitle: 'Old', extra: true } } }),
+    backup(4, [source], { '2026-02-30': { 'morning:old-step': true } }),
     backup(2, [source], { [day]: { 'morning:water': 'true' } }),
     backup(3, [source], { [day]: { 'morning:water': { routineTitle: 'Morning' } } }),
     backup(3, [source], { [day]: { 'morning:water': { routineTitle: '', stepTitle: 'Water' } } }),
