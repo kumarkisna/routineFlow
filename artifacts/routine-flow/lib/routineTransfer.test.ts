@@ -54,18 +54,22 @@ test('reads version 1 backups with legacy step durations but no history', () => 
   );
 });
 
-test('version 2 export and import keep only relevant completed history', () => {
+test('version 3 export and import keep completed labels and legacy booleans', () => {
   const source = routine();
   const raw = serializeRoutines([source], {
-    [day]: { 'morning:water': true, 'morning:stretch': false, 'other:water': true },
+    [day]: { 'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
+      'morning:stretch': true, 'other:water': true },
     'not-a-date': { 'morning:water': true },
   });
   const json = JSON.parse(raw);
-  assert.equal(json.version, 2);
-  assert.deepEqual(json.progress, { [day]: { 'morning:water': true } });
+  assert.equal(json.version, 3);
+  assert.deepEqual(json.progress, { [day]: {
+    'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
+    'morning:stretch': true,
+  } });
   assert.deepEqual(parseRoutinesFile(raw), {
     routines: [source],
-    progress: { [day]: { 'morning:water': true } },
+    progress: json.progress,
   });
   assert.deepEqual(parseRoutinesFile(backup(2, [source], { [day]: { 'morning:water': false } })).progress, {
     [day]: {},
@@ -90,12 +94,14 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
   const source = routine();
   const invalidFiles = [
     '{',
-    backup(3, [source]),
+    backup(4, [source]),
     backup(2, [source], []),
     backup(2, [source], { '2026-02-30': { 'morning:water': true } }),
     backup(2, [source], { [day]: [] }),
     backup(2, [source], { [day]: { 'unknown:water': true } }),
     backup(2, [source], { [day]: { 'morning:water': 'true' } }),
+    backup(3, [source], { [day]: { 'morning:water': { routineTitle: 'Morning' } } }),
+    backup(3, [source], { [day]: { 'morning:water': { routineTitle: '', stepTitle: 'Water' } } }),
     backup(2, [source, source]),
     backup(2, [{ ...source, steps: [source.steps[0], source.steps[0]] }]),
     'x'.repeat(MAX_ROUTINE_FILE_BYTES + 1),
@@ -103,6 +109,19 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
   for (const file of invalidFiles) {
     assert.throws(() => parseRoutinesFile(file), Error, file.slice(0, 100));
   }
+});
+
+test('restoring labeled completions remaps routine IDs but keeps original labels', () => {
+  const source = routine();
+  const local = { ...source, title: 'Changed locally' };
+  const completion = { routineTitle: 'Earlier Morning', stepTitle: 'Earlier Water' };
+  const imported = parseRoutinesFile(backup(3, [source], {
+    [day]: { 'morning:water': completion },
+  }));
+  const merged = mergeImportedRoutines([local], imported.routines, () => 'copy-1');
+  assert.deepEqual(mergeImportedProgress({}, imported.progress!, merged.idMap).progress, {
+    [day]: { 'copy-1:water': completion },
+  });
 });
 
 test('conflicting routine IDs create a separate copy and remap progress without changing local flags', () => {

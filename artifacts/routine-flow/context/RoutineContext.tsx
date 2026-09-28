@@ -8,8 +8,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import type { CompletionMap, Routine, RoutineStep } from '@/types/routines';
+import { isCompleted, type CompletionMap, type Routine, type RoutineStep } from '@/types/routines';
 import { makeRoutineCopy } from '@/lib/copyRoutine';
+import { recordCompletion } from '@/lib/progressHistory';
 import { mergeImportedProgress, mergeImportedRoutines, persistImportedBackup, type RoutineBackup } from '@/lib/routineTransfer';
 
 const ROUTINES_KEY = '@routine-flow/routines';
@@ -121,17 +122,23 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
 
   const toggleStep = useCallback(
     async (routineId: string, stepId: string) => {
+      const routine = routines.find((item) => item.id === routineId);
+      const step = routine?.steps.find((item) => item.id === stepId);
+      if (!routine || !step) throw new Error('Step not found');
       const day = todayKey();
+      const key = `${routineId}:${stepId}`;
       const nextProgress = {
         ...progress,
         [day]: {
           ...(progress[day] ?? {}),
-          [`${routineId}:${stepId}`]: !(progress[day]?.[`${routineId}:${stepId}`] ?? false),
+          [key]: isCompleted(progress[day]?.[key])
+            ? false
+            : recordCompletion(routine.title, step.title, progress[day]?.[key]),
         },
       };
       await saveProgress(nextProgress);
     },
-    [progress, saveProgress],
+    [progress, routines, saveProgress],
   );
 
   const completeRoutine = useCallback(
@@ -141,7 +148,8 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       const day = todayKey();
       const nextDay = { ...(progress[day] ?? {}) };
       routine.steps.filter((step) => !step.hidden).forEach((step) => {
-        nextDay[`${routineId}:${step.id}`] = true;
+        const key = `${routineId}:${step.id}`;
+        nextDay[key] = recordCompletion(routine.title, step.title, nextDay[key]);
       });
       await saveProgress({ ...progress, [day]: nextDay });
     },
@@ -276,7 +284,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   const getCompletedCount = useCallback(
     (routine: Routine) => {
       const day = progress[todayKey()] ?? {};
-      return routine.steps.filter((step) => !step.hidden && day[`${routine.id}:${step.id}`]).length;
+      return routine.steps.filter((step) => !step.hidden && isCompleted(day[`${routine.id}:${step.id}`])).length;
     },
     [progress],
   );

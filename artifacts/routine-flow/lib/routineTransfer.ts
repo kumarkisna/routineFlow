@@ -1,9 +1,9 @@
-import { getStepSeconds, type CompletionMap, type Routine, type RoutineStep, type RoutineTone } from '@/types/routines';
+import { getStepSeconds, isCompleted, type CompletionMap, type Routine, type RoutineStep, type RoutineTone } from '@/types/routines';
 import { MAX_CATEGORY_LENGTH, categoryKey } from '@/lib/routineCategories';
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
-const FILE_VERSION = 2;
+const FILE_VERSION = 3;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
 
 export type RoutineBackup = { routines: Routine[]; progress?: CompletionMap };
@@ -101,10 +101,15 @@ function parseProgress(value: unknown, routines: Routine[]): CompletionMap {
     if (!isDay(day) || !isRecord(entries)) throw new Error('The backup has an invalid progress date.');
     result[day] = {};
     for (const [key, completed] of Object.entries(entries)) {
-      if (!allowed.has(key) || typeof completed !== 'boolean' || ++count > 100_000) {
+      const validValue = typeof completed === 'boolean' ||
+        (isRecord(completed) && Object.keys(completed).length === 2 &&
+          isText(completed.routineTitle) && isText(completed.stepTitle));
+      if (!allowed.has(key) || !validValue || ++count > 100_000) {
         throw new Error('The backup has invalid step progress.');
       }
-      if (completed) result[day][key] = true;
+      if (isCompleted(completed as CompletionMap[string][string])) {
+        result[day][key] = completed as CompletionMap[string][string];
+      }
     }
   }
   return result;
@@ -118,7 +123,7 @@ export function serializeRoutines(routines: Routine[], progress?: CompletionMap)
     for (const [day, entries] of Object.entries(progress)) {
       if (!isDay(day) || !isRecord(entries)) continue;
       const completed = Object.fromEntries(Object.entries(entries).filter(([key, value]) =>
-        allowed.has(key) && value === true));
+        allowed.has(key) && isCompleted(value)));
       if (Object.keys(completed).length) history[day] = completed;
     }
   }
@@ -141,7 +146,7 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
   } catch {
     throw new Error('This is not a valid JSON file.');
   }
-  if (!isRecord(value) || value.format !== FILE_FORMAT || (value.version !== 1 && value.version !== FILE_VERSION) ||
+  if (!isRecord(value) || value.format !== FILE_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== FILE_VERSION) ||
       !Array.isArray(value.routines) || value.routines.length > 1000) {
     throw new Error('Choose a routines JSON file exported from Routine Flow.');
   }
@@ -233,7 +238,7 @@ export function mergeImportedProgress(
       if (Object.prototype.hasOwnProperty.call(nextDay, targetKey)) {
         kept++;
       } else {
-        nextDay[targetKey] = true;
+        nextDay[targetKey] = completed;
         added++;
       }
     }

@@ -1,4 +1,4 @@
-import type { CompletionMap, Routine } from '@/types/routines';
+import { isCompleted, type CompletionMap, type CompletionValue, type Routine } from '@/types/routines';
 
 export type HistoryRoutine = {
   id: string;
@@ -7,6 +7,14 @@ export type HistoryRoutine = {
   removed: boolean;
   steps: { id: string; title: string; hidden: boolean; removed: boolean }[];
 };
+
+export function recordCompletion(
+  routineTitle: string,
+  stepTitle: string,
+  previous: CompletionValue | undefined,
+): CompletionValue {
+  return isCompleted(previous) ? previous! : { routineTitle, stepTitle };
+}
 
 function isValidDay(day: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
@@ -21,7 +29,7 @@ export function localDayKey(date: Date): string {
 export function recordedPastDays(progress: CompletionMap, today: string): string[] {
   return Object.entries(progress)
     .filter(([day, entries]) =>
-      isValidDay(day) && day < today && entries && Object.values(entries).some((value) => value === true))
+      isValidDay(day) && day < today && entries && Object.values(entries).some(isCompleted))
     .map(([day]) => day)
     .sort((a, b) => b.localeCompare(a));
 }
@@ -40,9 +48,10 @@ export function getHistoryForDay(
 ): HistoryRoutine[] {
   const byId = new Map(routines.map((routine) => [routine.id, routine]));
   const groups = new Map<string, HistoryRoutine>();
+  const namedGroups = new Set<string>();
 
   for (const [key, completed] of Object.entries(progress[day] ?? {})) {
-    if (completed !== true) continue;
+    if (!isCompleted(completed)) continue;
     const separator = key.indexOf(':');
     if (separator <= 0 || separator === key.length - 1) continue;
     const routineId = key.slice(0, separator);
@@ -52,17 +61,21 @@ export function getHistoryForDay(
     if (!group) {
       group = {
         id: routineId,
-        title: routine?.title ?? `Removed routine (${routineId})`,
+        title: typeof completed === 'object' ? completed.routineTitle : routine?.title ?? `Removed routine (${routineId})`,
         hidden: routine?.hidden ?? false,
         removed: !routine,
         steps: [],
       };
       groups.set(routineId, group);
     }
+    if (typeof completed === 'object' && !namedGroups.has(routineId)) {
+      group.title = completed.routineTitle;
+      namedGroups.add(routineId);
+    }
     const step = routine?.steps.find((item) => item.id === stepId);
     group.steps.push({
       id: stepId,
-      title: step?.title ?? `Removed step (${stepId})`,
+      title: typeof completed === 'object' ? completed.stepTitle : step?.title ?? `Removed step (${stepId})`,
       hidden: step?.hidden ?? false,
       removed: !step,
     });

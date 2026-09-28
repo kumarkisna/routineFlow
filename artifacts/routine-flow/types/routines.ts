@@ -31,7 +31,13 @@ export type RoutineNotificationSettings = {
   routineCompletion: boolean;
 };
 
-export type CompletionMap = Record<string, Record<string, boolean>>;
+/** Older saved completions are booleans; new completions retain their original labels. */
+export type CompletionValue = boolean | { routineTitle: string; stepTitle: string };
+export type CompletionMap = Record<string, Record<string, CompletionValue>>;
+
+export function isCompleted(value: CompletionValue | undefined): boolean {
+  return value === true || (typeof value === 'object' && value !== null);
+}
 
 export function getStepSeconds(step: RoutineStep) {
   if (step.durationSeconds > 0) return step.durationSeconds;
