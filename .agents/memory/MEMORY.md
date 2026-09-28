@@ -4,3 +4,4 @@
 - [Routine transfer safety](routine-transfer.md) — importing a routines backup adds missing data without overwriting current routines.
 - [Routine copies](routine-copies.md) — copied routines retain step settings but start with separate progress.
 - [Expo web confirmations](expo-web-confirmations.md) — use an in-app confirmation for destructive actions that must work in the web preview.
+- [Workspace package installs](workspace-package-installs.md) — pnpm package additions can rewrite workspace YAML comments; preserve the original policy text.
