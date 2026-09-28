@@ -4,7 +4,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +24,10 @@ export default function RoutineDetailScreen() {
   const [copyBusy, setCopyBusy] = React.useState(false);
   const [copyError, setCopyError] = React.useState('');
   const copyLock = React.useRef(false);
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+  const [deleteBusy, setDeleteBusy] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState('');
+  const deleteLock = React.useRef(false);
   const [visibilityBusy, setVisibilityBusy] = React.useState(false);
   const [showHiddenSteps, setShowHiddenSteps] = React.useState(false);
   const [reorderError, setReorderError] = React.useState('');
@@ -63,18 +66,20 @@ export default function RoutineDetailScreen() {
   const todayProgress = progress[day] ?? {};
   const totalSeconds = visibleSteps.reduce((sum, step) => sum + getStepSeconds(step), 0);
 
-  function confirmDelete() {
-    Alert.alert('Delete this routine?', 'This removes the routine from your library.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          void deleteRoutine(currentRoutine.id);
-          router.back();
-        },
-      },
-    ]);
+  async function handleDelete() {
+    if (deleteLock.current) return;
+    deleteLock.current = true;
+    setDeleteBusy(true);
+    setDeleteError('');
+    try {
+      await deleteRoutine(currentRoutine.id);
+      router.replace('/(tabs)');
+    } catch {
+      setDeleteError('Could not delete this routine. Please try again.');
+    } finally {
+      deleteLock.current = false;
+      setDeleteBusy(false);
+    }
   }
 
   async function handleStep(stepId: string) {
@@ -180,7 +185,9 @@ export default function RoutineDetailScreen() {
               </Pressable>
               <Pressable
                 accessibilityLabel="Delete routine"
-                onPress={confirmDelete}
+                testID="delete-routine"
+                disabled={deleteBusy}
+                onPress={() => setConfirmingDelete(true)}
                 style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
               >
                 <Ionicons name="trash-outline" size={21} color={colors.heroForeground} />
@@ -193,6 +200,42 @@ export default function RoutineDetailScreen() {
           <Text style={[styles.heroTitle, { color: colors.heroForeground }]}>{currentRoutine.title}</Text>
           <Text style={[styles.heroSubtitle, { color: colors.heroForeground }]}>{currentRoutine.subtitle}</Text>
           {copyError ? <Text accessibilityRole="alert" style={[styles.copyError, { color: colors.heroForeground }]}>{copyError}</Text> : null}
+          {confirmingDelete ? (
+            <View style={[styles.deletePrompt, { backgroundColor: colors.card }]}>
+              <Text style={[styles.deleteTitle, { color: colors.foreground }]}>Delete this routine?</Text>
+              <Text style={[styles.deleteDescription, { color: colors.mutedForeground }]}>
+                This removes the routine from your library.
+              </Text>
+              {deleteError ? (
+                <Text accessibilityRole="alert" style={[styles.deleteError, { color: colors.destructive }]}>{deleteError}</Text>
+              ) : null}
+              <View style={styles.deleteActions}>
+                <Pressable
+                  accessibilityLabel="Cancel deleting routine"
+                  testID="cancel-delete-routine"
+                  disabled={deleteBusy}
+                  onPress={() => {
+                    setConfirmingDelete(false);
+                    setDeleteError('');
+                  }}
+                  style={({ pressed }) => [styles.deleteCancel, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.deleteActionText, { color: colors.foreground }]}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Confirm delete routine"
+                  testID="confirm-delete-routine"
+                  disabled={deleteBusy}
+                  onPress={() => void handleDelete()}
+                  style={({ pressed }) => [styles.deleteConfirm, { backgroundColor: colors.destructive }, pressed && styles.pressed]}
+                >
+                  {deleteBusy
+                    ? <ActivityIndicator size="small" color={colors.primaryForeground} />
+                    : <Text style={[styles.deleteActionText, { color: colors.primaryForeground }]}>Delete</Text>}
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
           <View style={styles.heroMeta}>
             <View style={styles.metaItem}>
               <Ionicons name="time-outline" size={16} color={colors.heroForeground} />
@@ -368,6 +411,14 @@ const styles = StyleSheet.create({
   heroTitle: { fontFamily: 'Inter_700Bold', fontSize: 28, letterSpacing: -0.7 },
   heroSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 15, opacity: 0.72, marginTop: 7 },
   copyError: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 10 },
+  deletePrompt: { borderRadius: 16, padding: 16, marginTop: 18 },
+  deleteTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },
+  deleteDescription: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, marginTop: 5 },
+  deleteError: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 10 },
+  deleteActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 14 },
+  deleteCancel: { minHeight: 42, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center' },
+  deleteConfirm: { minHeight: 42, borderRadius: 12, paddingHorizontal: 17, alignItems: 'center', justifyContent: 'center' },
+  deleteActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   heroMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 21 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   metaText: { fontFamily: 'Inter_500Medium', fontSize: 13, opacity: 0.8 },

@@ -246,9 +246,10 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
 
   const deleteRoutine = useCallback(
     async (routineId: string) => {
+      if (!routines.some((routine) => routine.id === routineId)) throw new Error('Routine not found');
       const nextRoutines = routines.filter((routine) => routine.id !== routineId);
-      setRoutines(nextRoutines);
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      setRoutines(nextRoutines);
     },
     [routines],
   );

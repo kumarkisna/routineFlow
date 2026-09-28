@@ -3,3 +3,4 @@
 - [Routine visibility behavior](routine-visibility.md) — hidden steps are inactive, not just concealed; keep run and progress logic aligned.
 - [Routine transfer safety](routine-transfer.md) — importing a routines backup adds missing data without overwriting current routines.
 - [Routine copies](routine-copies.md) — copied routines retain step settings but start with separate progress.
+- [Expo web confirmations](expo-web-confirmations.md) — use an in-app confirmation for destructive actions that must work in the web preview.
