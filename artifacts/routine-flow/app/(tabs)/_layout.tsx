@@ -21,6 +21,10 @@ function NativeTabLayout() {
         />
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="history">
+        <NativeTabs.Trigger.Icon sf={{ default: 'calendar', selected: 'calendar' }} />
+        <NativeTabs.Trigger.Label>History</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -72,6 +76,18 @@ function ClassicTabLayout() {
               <SymbolView name="house" tintColor={color} size={24} />
             ) : (
               <Feather name="home" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: 'History',
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="calendar" tintColor={color} size={24} />
+            ) : (
+              <Feather name="calendar" size={22} color={color} />
             ),
         }}
       />
