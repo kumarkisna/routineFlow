@@ -10,6 +10,7 @@ import {
   FlatList,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -17,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { categoryKey, listRoutineCategories } from '@/lib/routineCategories';
 import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializeRoutines, type RoutineBackup } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
 
@@ -29,6 +31,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday } = useRoutines();
   const [showHidden, setShowHidden] = React.useState(false);
+  const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
   const [reordering, setReordering] = React.useState(false);
   const [orderBusy, setOrderBusy] = React.useState(false);
   const [orderError, setOrderError] = React.useState('');
@@ -42,7 +45,11 @@ export default function HomeScreen() {
   const [includeHistory, setIncludeHistory] = React.useState(false);
   const [pendingBackup, setPendingBackup] = React.useState<RoutineBackup | null>(null);
   const visibleRoutines = loading ? [] : routines.filter((routine) => !routine.hidden);
-  const displayedRoutines = showHidden ? routines : visibleRoutines;
+  const categories = listRoutineCategories(routines);
+  const activeCategory = categoryFilter !== null && categoryFilter !== '' &&
+    !categories.some((name) => categoryKey(name) === categoryFilter) ? null : categoryFilter;
+  const displayedRoutines = (showHidden ? routines : visibleRoutines).filter((routine) =>
+    activeCategory === null || categoryKey(routine.category) === activeCategory);
   const hiddenCount = loading ? 0 : routines.length - visibleRoutines.length;
   const totalSteps = visibleRoutines.reduce((sum, routine) => sum + routine.steps.filter((step) => !step.hidden).length, 0);
   const completedSteps = visibleRoutines.reduce((sum, routine) => sum + getCompletedCount(routine), 0);
@@ -233,7 +240,7 @@ export default function HomeScreen() {
                 <Text style={[styles.sectionSubtitle, { color: colors.mutedForeground }]}>Keep the good things close</Text>
               </View>
               <View style={styles.sectionActions}>
-                {routines.length > 1 && !loading ? (
+                {routines.length > 1 && !loading && activeCategory === null ? (
                   <Pressable
                     accessibilityLabel={reordering ? 'Done reordering routines' : 'Reorder routines'}
                     testID="toggle-reorder-routines"
@@ -262,6 +269,44 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
             </View>
+            {categories.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoryFilters}
+                style={styles.categoryFilterScroll}
+              >
+                {[
+                  { key: null, label: 'All' },
+                  { key: '', label: 'No category' },
+                  ...categories.map((name) => ({ key: categoryKey(name), label: name })),
+                ].map((option) => {
+                  const selected = activeCategory === option.key;
+                  return (
+                    <Pressable
+                      key={option.key ?? 'all'}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Filter routines: ${option.label}`}
+                      accessibilityState={{ selected }}
+                      testID={`category-filter-${option.key ?? 'all'}`}
+                      onPress={() => {
+                        setReordering(false);
+                        setCategoryFilter(option.key);
+                      }}
+                      style={({ pressed }) => [
+                        styles.categoryFilter,
+                        { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={[styles.categoryFilterText, { color: selected ? colors.primaryForeground : colors.foreground }]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : null}
             {hiddenCount > 0 ? (
               <Pressable
                 accessibilityLabel={showHidden ? 'Hide hidden routines' : `Show hidden routines (${hiddenCount})`}
@@ -311,6 +356,9 @@ export default function HomeScreen() {
                     {item.hidden ? <Text style={[styles.hiddenLabel, { color: colors.mutedForeground }]}>Hidden</Text> : null}
                   </View>
                   <Text style={[styles.routineSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>{item.subtitle}</Text>
+                  {item.category ? (
+                    <Text style={[styles.routineCategory, { color: colors.primary }]} numberOfLines={1}>{item.category}</Text>
+                  ) : null}
                   <View style={styles.routineBottom}>
                     <Text style={[styles.routineMeta, { color: colors.inkSoft }]}>{visibleStepCount} steps</Text>
                     <View style={[styles.miniTrack, { backgroundColor: colors.secondary }]}>
@@ -359,10 +407,12 @@ export default function HomeScreen() {
           <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Ionicons name="leaf-outline" size={32} color={colors.sage} />
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              {hiddenCount > 0 ? 'All routines are hidden' : 'Your library is ready'}
+              {activeCategory !== null ? 'No routines in this category' : hiddenCount > 0 ? 'All routines are hidden' : 'Your library is ready'}
             </Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              {hiddenCount > 0 ? 'Show hidden routines above to bring one back.' : 'Create a routine to give your day a little shape.'}
+              {activeCategory !== null
+                ? 'Try another category, show hidden routines, or add this category while editing a routine.'
+                : hiddenCount > 0 ? 'Show hidden routines above to bring one back.' : 'Create a routine to give your day a little shape.'}
             </Text>
           </View>
         )}
@@ -489,6 +539,10 @@ const styles = StyleSheet.create({
   progressValue: { fontFamily: 'Inter_700Bold', fontSize: 21 },
   progressLabel: { fontFamily: 'Inter_500Medium', fontSize: 10, opacity: 0.65, marginTop: 1 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  categoryFilterScroll: { marginHorizontal: -20, marginBottom: 14 },
+  categoryFilters: { paddingHorizontal: 20, gap: 8, alignItems: 'center' },
+  categoryFilter: { minHeight: 36, borderRadius: 18, borderWidth: 1, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
+  categoryFilterText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   reorderToggle: { minHeight: 43, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 5 },
   reorderToggleText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
@@ -509,6 +563,7 @@ const styles = StyleSheet.create({
   routineTitle: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   hiddenLabel: { fontFamily: 'Inter_500Medium', fontSize: 11, marginLeft: 5 },
   routineSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 4 },
+  routineCategory: { fontFamily: 'Inter_600SemiBold', fontSize: 11, marginTop: 5 },
   routineBottom: { flexDirection: 'row', alignItems: 'center', marginTop: 13 },
   routineMeta: { fontFamily: 'Inter_500Medium', fontSize: 11 },
   miniTrack: { height: 5, borderRadius: 3, flex: 1, marginHorizontal: 9, overflow: 'hidden' },

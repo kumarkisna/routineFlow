@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
 import { formatDuration, getStepSeconds } from '@/types/routines';
 import type { Routine, RoutineStep } from '@/types/routines';
 
@@ -35,9 +36,10 @@ export default function NewRoutineScreen() {
 function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { createRoutine, updateRoutine } = useRoutines();
+  const { routines, createRoutine, updateRoutine } = useRoutines();
   const [title, setTitle] = useState(editingRoutine?.title ?? '');
   const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
+  const [category, setCategory] = useState(editingRoutine?.category ?? '');
   const [stepDraft, setStepDraft] = useState('');
   const [stepDescriptionDraft, setStepDescriptionDraft] = useState('');
   const [hoursDraft, setHoursDraft] = useState('0');
@@ -49,6 +51,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [saving, setSaving] = useState(false);
 
   const canSave = useMemo(() => title.trim().length > 0 && steps.length > 0, [title, steps.length]);
+  const existingCategories = listRoutineCategories(routines);
 
   function clearStepDraft() {
     setEditingStepId(null);
@@ -136,11 +139,12 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     Keyboard.dismiss();
     setSaving(true);
     try {
+      const savedCategory = normalizeCategory(category, existingCategories);
       if (editingRoutine) {
-        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', steps);
+        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', steps, savedCategory);
         router.back();
       } else {
-        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', steps);
+        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', steps, savedCategory);
         router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -212,6 +216,44 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           onChangeText={setSubtitle}
           style={[styles.input, styles.descriptionInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
         />
+        <Text style={[styles.categoryLabel, { color: colors.inkSoft }]}>Category (optional)</Text>
+        <TextInput
+          accessibilityLabel="Routine category"
+          testID="routine-category-input"
+          placeholder="e.g. Health, Work, Evening"
+          placeholderTextColor={colors.mutedForeground}
+          value={category}
+          maxLength={MAX_CATEGORY_LENGTH}
+          onChangeText={setCategory}
+          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+        />
+        {existingCategories.length > 0 ? (
+          <View style={styles.categorySuggestions}>
+            {existingCategories.map((name) => (
+              <Pressable
+                key={categoryKey(name)}
+                accessibilityLabel={`Use category ${name}`}
+                onPress={() => setCategory(name)}
+                style={({ pressed }) => [
+                  styles.categorySuggestion,
+                  { backgroundColor: categoryKey(category) === categoryKey(name) ? colors.coralSoft : colors.secondary },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={[styles.categorySuggestionText, { color: colors.foreground }]}>{name}</Text>
+              </Pressable>
+            ))}
+            {category.trim() ? (
+              <Pressable
+                accessibilityLabel="Remove category"
+                onPress={() => setCategory('')}
+                style={({ pressed }) => [styles.categorySuggestion, { backgroundColor: colors.secondary }, pressed && styles.pressed]}
+              >
+                <Text style={[styles.categorySuggestionText, { color: colors.mutedForeground }]}>No category</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
 
         <View style={styles.stepsHeader}>
           <Text style={[styles.label, { color: colors.inkSoft, marginBottom: 0 }]}>Steps</Text>
@@ -397,6 +439,10 @@ const styles = StyleSheet.create({
   label: { fontFamily: 'Inter_600SemiBold', fontSize: 13, letterSpacing: 0.3, marginBottom: 9 },
   input: { minHeight: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 16, fontFamily: 'Inter_500Medium', fontSize: 16, marginBottom: 11 },
   descriptionInput: { fontFamily: 'Inter_400Regular', fontSize: 14 },
+  categoryLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13, letterSpacing: 0.3, marginTop: 9, marginBottom: 9 },
+  categorySuggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 3 },
+  categorySuggestion: { borderRadius: 16, paddingHorizontal: 12, minHeight: 32, justifyContent: 'center' },
+  categorySuggestionText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   stepsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 9 },
   stepCount: { fontFamily: 'Inter_400Regular', fontSize: 13 },
   stepComposer: { borderWidth: 1, borderRadius: 15, padding: 8, marginBottom: 10 },

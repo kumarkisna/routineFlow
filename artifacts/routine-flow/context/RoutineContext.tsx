@@ -64,9 +64,9 @@ type RoutineContextValue = {
   loading: boolean;
   toggleStep: (routineId: string, stepId: string) => Promise<void>;
   completeRoutine: (routineId: string) => Promise<void>;
-  createRoutine: (title: string, subtitle: string, steps: RoutineStep[]) => Promise<Routine>;
+  createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
-  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => Promise<void>;
+  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string) => Promise<void>;
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
   importRoutines: (backup: RoutineBackup, includeProgress: boolean) => Promise<{
     added: number; skipped: number; renamed: number; progressAdded: number; progressKept: number;
@@ -147,11 +147,12 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createRoutine = useCallback(
-    async (title: string, subtitle: string, steps: RoutineStep[]) => {
+    async (title: string, subtitle: string, steps: RoutineStep[], category?: string) => {
       const routine: Routine = {
         id: makeId(),
         title,
         subtitle,
+        ...(category ? { category } : {}),
         icon: 'sparkles-outline',
         tone: 'sun',
         steps,
@@ -179,12 +180,12 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateRoutine = useCallback(
-    async (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => {
+    async (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string) => {
       if (!routines.some((routine) => routine.id === routineId)) {
         throw new Error('Routine not found');
       }
       const nextRoutines = routines.map((routine) =>
-        routine.id === routineId ? { ...routine, title, subtitle, steps } : routine,
+        routine.id === routineId ? { ...routine, title, subtitle, steps, category } : routine,
       );
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);

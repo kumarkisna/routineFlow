@@ -1,4 +1,5 @@
 import { getStepSeconds, type CompletionMap, type Routine, type RoutineStep, type RoutineTone } from '@/types/routines';
+import { MAX_CATEGORY_LENGTH, categoryKey } from '@/lib/routineCategories';
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
@@ -63,6 +64,10 @@ function parseRoutine(value: unknown, index: number): Routine {
   if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
     throw new Error(`${label} has an invalid visibility setting.`);
   }
+  if (value.category !== undefined &&
+      (typeof value.category !== 'string' || !value.category.trim() || value.category.length > MAX_CATEGORY_LENGTH)) {
+    throw new Error(`${label} has an invalid category.`);
+  }
   const steps = value.steps.map((step, stepIndex) => parseStep(step, index, stepIndex));
   if (new Set(steps.map((step) => step.id)).size !== steps.length) {
     throw new Error(`${label} contains duplicate step IDs.`);
@@ -71,6 +76,7 @@ function parseRoutine(value: unknown, index: number): Routine {
     id: value.id,
     title: value.title,
     subtitle: value.subtitle,
+    ...(value.category !== undefined ? { category: (value.category as string).trim() } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden } : {}),
     icon: value.icon,
     tone: value.tone as RoutineTone,
@@ -156,6 +162,7 @@ function routineSignature(routine: Routine): string {
   return JSON.stringify([
     routine.title,
     routine.subtitle,
+    categoryKey(routine.category),
     routine.icon,
     routine.tone,
     routine.createdAt,

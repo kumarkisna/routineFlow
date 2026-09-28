@@ -123,7 +123,7 @@ export default function RoutineDetailScreen() {
     const reordered = [...currentRoutine.steps];
     [reordered[index], reordered[destination]] = [reordered[destination], reordered[index]];
     try {
-      await updateRoutine(currentRoutine.id, currentRoutine.title, currentRoutine.subtitle, reordered);
+      await updateRoutine(currentRoutine.id, currentRoutine.title, currentRoutine.subtitle, reordered, currentRoutine.category);
       void Haptics.selectionAsync();
     } catch {
       setReorderError('Could not change the step order. Please try again.');
@@ -200,6 +200,9 @@ export default function RoutineDetailScreen() {
           </View>
           <Text style={[styles.heroTitle, { color: colors.heroForeground }]}>{currentRoutine.title}</Text>
           <Text style={[styles.heroSubtitle, { color: colors.heroForeground }]}>{currentRoutine.subtitle}</Text>
+          {currentRoutine.category ? (
+            <Text style={[styles.heroCategory, { color: colors.heroForeground }]}>{currentRoutine.category}</Text>
+          ) : null}
           {copyError ? <Text accessibilityRole="alert" style={[styles.copyError, { color: colors.heroForeground }]}>{copyError}</Text> : null}
           {confirmingDelete ? (
             <View style={[styles.deletePrompt, { backgroundColor: colors.card }]}>
@@ -415,6 +418,7 @@ const styles = StyleSheet.create({
   heroIcon: { width: 48, height: 48, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 17 },
   heroTitle: { fontFamily: 'Inter_700Bold', fontSize: 28, letterSpacing: -0.7 },
   heroSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 15, opacity: 0.72, marginTop: 7 },
+  heroCategory: { fontFamily: 'Inter_600SemiBold', fontSize: 12, opacity: 0.85, marginTop: 10 },
   copyError: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 10 },
   deletePrompt: { borderRadius: 16, padding: 16, marginTop: 18 },
   deleteTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 16 },

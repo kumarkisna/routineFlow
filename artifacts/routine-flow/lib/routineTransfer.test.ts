@@ -71,6 +71,20 @@ test('version 2 export and import keep only relevant completed history', () => {
   });
 });
 
+test('backups preserve categories and treat a category edit as a different routine', () => {
+  const categorized = { ...routine(), category: 'Health' };
+  assert.deepEqual(parseRoutinesFile(serializeRoutines([categorized])).routines, [categorized]);
+  assert.deepEqual(parseRoutinesFile(backup(1, [routine()])).routines, [routine()]);
+
+  const merged = mergeImportedRoutines([routine()], [categorized], () => 'imported-health');
+  assert.equal(merged.added, 1);
+  assert.equal(merged.renamed, 1);
+  assert.equal(merged.routines[0].category, undefined);
+  assert.equal(merged.routines[1].category, 'Health');
+  assert.throws(() => parseRoutinesFile(backup(2, [{ ...routine(), category: 42 }])), /invalid category/);
+  assert.throws(() => parseRoutinesFile(backup(2, [{ ...routine(), category: '' }])), /invalid category/);
+});
+
 test('rejects malformed backup structure and invalid or unrelated history', () => {
   const source = routine();
   const invalidFiles = [

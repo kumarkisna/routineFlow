@@ -16,6 +16,8 @@ export type Routine = {
   id: string;
   title: string;
   subtitle: string;
+  /** Optional so routines saved before categories remain valid. */
+  category?: string;
   /** Hidden routines remain saved but are omitted from the main list and progress. */
   hidden?: boolean;
   icon: string;
