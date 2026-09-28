@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import type { CompletionMap, Routine, RoutineStep } from '@/types/routines';
+import { makeRoutineCopy } from '@/lib/copyRoutine';
 import { mergeImportedRoutines } from '@/lib/routineTransfer';
 
 const ROUTINES_KEY = '@routine-flow/routines';
@@ -64,6 +65,7 @@ type RoutineContextValue = {
   toggleStep: (routineId: string, stepId: string) => Promise<void>;
   completeRoutine: (routineId: string) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[]) => Promise<Routine>;
+  copyRoutine: (routineId: string) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => Promise<void>;
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
   importRoutines: (routines: Routine[]) => Promise<{ added: number; skipped: number; renamed: number }>;
@@ -157,6 +159,19 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       setRoutines(nextRoutines);
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       return routine;
+    },
+    [routines],
+  );
+
+  const copyRoutine = useCallback(
+    async (routineId: string) => {
+      const source = routines.find((routine) => routine.id === routineId);
+      if (!source) throw new Error('Routine not found');
+      const copied = makeRoutineCopy(source, routines, makeId);
+      const nextRoutines = [...routines, copied];
+      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      setRoutines(nextRoutines);
+      return copied;
     },
     [routines],
   );
@@ -260,6 +275,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       toggleStep,
       completeRoutine,
       createRoutine,
+      copyRoutine,
       updateRoutine,
       moveRoutine,
       importRoutines,
@@ -276,6 +292,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       toggleStep,
       completeRoutine,
       createRoutine,
+      copyRoutine,
       updateRoutine,
       moveRoutine,
       importRoutines,

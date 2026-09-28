@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -19,8 +20,11 @@ export default function RoutineDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { routines, loading, progress, getCompletedCount, toggleStep, completeRoutine, updateRoutine, setStepHidden, deleteRoutine } = useRoutines();
+  const { routines, loading, progress, getCompletedCount, toggleStep, completeRoutine, updateRoutine, copyRoutine, setStepHidden, deleteRoutine } = useRoutines();
   const [reorderBusy, setReorderBusy] = React.useState(false);
+  const [copyBusy, setCopyBusy] = React.useState(false);
+  const [copyError, setCopyError] = React.useState('');
+  const copyLock = React.useRef(false);
   const [visibilityBusy, setVisibilityBusy] = React.useState(false);
   const [showHiddenSteps, setShowHiddenSteps] = React.useState(false);
   const [reorderError, setReorderError] = React.useState('');
@@ -83,6 +87,23 @@ export default function RoutineDetailScreen() {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }
 
+  async function handleCopy() {
+    if (copyLock.current || reorderLock.current) return;
+    copyLock.current = true;
+    setCopyBusy(true);
+    setCopyError('');
+    try {
+      const copied = await copyRoutine(currentRoutine.id);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.push({ pathname: '/routine/[id]', params: { id: copied.id } });
+    } catch {
+      setCopyError('Could not copy this routine. Please try again.');
+    } finally {
+      copyLock.current = false;
+      setCopyBusy(false);
+    }
+  }
+
   async function moveStep(stepId: string, direction: -1 | 1) {
     if (reorderLock.current) return;
     const visibleIndex = visibleSteps.findIndex((step) => step.id === stepId);
@@ -139,6 +160,17 @@ export default function RoutineDetailScreen() {
             </Pressable>
             <View style={styles.heroActions}>
               <Pressable
+                accessibilityLabel="Copy routine"
+                testID="copy-routine"
+                disabled={copyBusy || reorderBusy || visibilityBusy}
+                onPress={() => void handleCopy()}
+                style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+              >
+                {copyBusy
+                  ? <ActivityIndicator size="small" color={colors.heroForeground} />
+                  : <Ionicons name="copy-outline" size={21} color={colors.heroForeground} />}
+              </Pressable>
+              <Pressable
                 accessibilityLabel="Edit routine"
                 testID="edit-routine"
                 onPress={() => router.push({ pathname: '/new-routine', params: { editId: currentRoutine.id } })}
@@ -160,6 +192,7 @@ export default function RoutineDetailScreen() {
           </View>
           <Text style={[styles.heroTitle, { color: colors.heroForeground }]}>{currentRoutine.title}</Text>
           <Text style={[styles.heroSubtitle, { color: colors.heroForeground }]}>{currentRoutine.subtitle}</Text>
+          {copyError ? <Text accessibilityRole="alert" style={[styles.copyError, { color: colors.heroForeground }]}>{copyError}</Text> : null}
           <View style={styles.heroMeta}>
             <View style={styles.metaItem}>
               <Ionicons name="time-outline" size={16} color={colors.heroForeground} />
@@ -334,6 +367,7 @@ const styles = StyleSheet.create({
   heroIcon: { width: 48, height: 48, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 17 },
   heroTitle: { fontFamily: 'Inter_700Bold', fontSize: 28, letterSpacing: -0.7 },
   heroSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 15, opacity: 0.72, marginTop: 7 },
+  copyError: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 10 },
   heroMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 21 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   metaText: { fontFamily: 'Inter_500Medium', fontSize: 13, opacity: 0.8 },
