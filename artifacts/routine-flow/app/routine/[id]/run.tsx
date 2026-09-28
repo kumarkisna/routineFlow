@@ -16,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StepDetails } from '@/components/StepDetails';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { Notifications } from '@/lib/localNotifications';
@@ -483,7 +484,11 @@ export default function RoutineRunScreen() {
             {isFinished ? 'Routine complete' : activeStep.title}
           </Text>
           {!isFinished && activeStep.description ? (
-            <Text style={[styles.activeDescription, { color: colors.heroForeground }]}>{activeStep.description}</Text>
+            <StepDetails
+              details={activeStep.description}
+              style={[styles.activeDescription, { color: colors.heroForeground }]}
+              linkColor={colors.heroForeground}
+            />
           ) : null}
           <Text style={[styles.activeMeta, { color: colors.heroForeground }]}>
             {isFinished ? `You finished all ${currentRoutine.steps.length} steps` : `Step ${activeIndex + 1} of ${currentRoutine.steps.length} · ${formatDuration(getStepSeconds(activeStep))}`}
@@ -597,7 +602,12 @@ export default function RoutineRunScreen() {
                 <View style={styles.stepCopy}>
                   <Text style={[styles.stepTitle, { color: colors.foreground }]} numberOfLines={2}>{step.title}</Text>
                   {step.description ? (
-                    <Text style={[styles.stepDescription, { color: colors.mutedForeground }]} numberOfLines={2}>{step.description}</Text>
+                    <StepDetails
+                      details={step.description}
+                      style={[styles.stepDescription, { color: colors.mutedForeground }]}
+                      linkColor={colors.primary}
+                      numberOfLines={2}
+                    />
                   ) : null}
                   <Text style={[styles.stepDuration, { color: colors.mutedForeground }]}>{formatDuration(getStepSeconds(step))}</Text>
                 </View>

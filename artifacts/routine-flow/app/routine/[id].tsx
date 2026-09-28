@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StepDetails } from '@/components/StepDetails';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { formatDuration, getStepSeconds } from '@/types/routines';
@@ -325,7 +326,11 @@ export default function RoutineDetailScreen() {
                       {step.title}
                     </Text>
                     {step.description ? (
-                      <Text style={[styles.stepDescription, { color: colors.mutedForeground }]}>{step.description}</Text>
+                      <StepDetails
+                        details={step.description}
+                        style={[styles.stepDescription, { color: colors.mutedForeground }]}
+                        linkColor={colors.primary}
+                      />
                     ) : null}
                     <Text style={[styles.duration, { color: colors.mutedForeground }]}>
                       {step.hidden ? 'Hidden · skipped in timer' : formatDuration(getStepSeconds(step))}
