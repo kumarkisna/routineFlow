@@ -111,6 +111,14 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     void Haptics.selectionAsync();
   }
 
+  function toggleStepVisibility(stepId: string) {
+    setSteps((current) => current.map((step) =>
+      step.id === stepId ? { ...step, hidden: !step.hidden } : step,
+    ));
+    setError('');
+    void Haptics.selectionAsync();
+  }
+
   async function save() {
     if (saving) return;
     if (!title.trim()) {
@@ -294,12 +302,12 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
         </View>
 
         {steps.map((step, index) => (
-          <View key={step.id} style={[styles.stepRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.number, { backgroundColor: colors.sageSoft }]}>
-              <Text style={[styles.numberText, { color: colors.success }]}>{index + 1}</Text>
+          <View key={step.id} style={[styles.stepRow, { backgroundColor: step.hidden ? colors.secondary : colors.card, borderColor: colors.border }]}>
+            <View style={[styles.number, { backgroundColor: step.hidden ? colors.border : colors.sageSoft }]}>
+              <Text style={[styles.numberText, { color: step.hidden ? colors.mutedForeground : colors.success }]}>{index + 1}</Text>
             </View>
             <View style={styles.stepCopy}>
-              <Text style={[styles.stepTitle, { color: colors.foreground }]}>{step.title}</Text>
+              <Text style={[styles.stepTitle, { color: step.hidden ? colors.mutedForeground : colors.foreground }]}>{step.title}</Text>
               {step.hidden ? <Text style={[styles.stepDescription, { color: colors.mutedForeground }]}>Hidden · skipped in timer</Text> : null}
               {step.description ? (
                 <Text style={[styles.stepDescription, { color: colors.mutedForeground }]} numberOfLines={2}>{step.description}</Text>
@@ -307,6 +315,15 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
               <Text style={[styles.stepDuration, { color: colors.mutedForeground }]}>
                 {formatDuration(getStepSeconds(step))}
               </Text>
+              <Pressable
+                accessibilityLabel={`${step.hidden ? 'Show' : 'Hide'} step ${step.title}`}
+                testID={`edit-toggle-step-visibility-${step.id}`}
+                onPress={() => toggleStepVisibility(step.id)}
+                style={({ pressed }) => [styles.visibilityToggle, pressed && styles.pressed]}
+              >
+                <Ionicons name={step.hidden ? 'eye-outline' : 'eye-off-outline'} size={16} color={colors.primary} />
+                <Text style={[styles.visibilityText, { color: colors.primary }]}>{step.hidden ? 'Show step' : 'Hide step'}</Text>
+              </Pressable>
             </View>
             <View style={styles.stepActions}>
               <View>
@@ -401,6 +418,8 @@ const styles = StyleSheet.create({
   stepTitle: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
   stepDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginTop: 3 },
   stepDuration: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 3 },
+  visibilityToggle: { alignSelf: 'flex-start', minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
+  visibilityText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   stepActions: { flexDirection: 'row', marginLeft: 4 },
   stepActionButton: { width: 34, height: 38, alignItems: 'center', justifyContent: 'center' },
   cancelEdit: { alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 8 },
