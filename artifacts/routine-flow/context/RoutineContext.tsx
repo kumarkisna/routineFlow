@@ -5,11 +5,12 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import type { CompletionMap, Routine, RoutineStep } from '@/types/routines';
 import { makeRoutineCopy } from '@/lib/copyRoutine';
-import { mergeImportedProgress, mergeImportedRoutines, type RoutineBackup } from '@/lib/routineTransfer';
+import { mergeImportedProgress, mergeImportedRoutines, persistImportedBackup, type RoutineBackup } from '@/lib/routineTransfer';
 
 const ROUTINES_KEY = '@routine-flow/routines';
 const PROGRESS_KEY = '@routine-flow/progress';
@@ -95,6 +96,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   const [routines, setRoutines] = useState<Routine[]>(seedRoutines);
   const [progress, setProgress] = useState<CompletionMap>({});
   const [loading, setLoading] = useState(true);
+  const importNeedsRestart = useRef(false);
 
   useEffect(() => {
     async function hydrate() {
@@ -195,18 +197,18 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
 
   const importRoutines = useCallback(
     async (backup: RoutineBackup, includeProgress: boolean) => {
+      if (importNeedsRestart.current) {
+        throw new Error('Could not confirm the saved routines. Restart the app before trying this backup again to avoid duplicates.');
+      }
       const result = mergeImportedRoutines(routines, backup.routines, makeId);
       const merged = includeProgress && backup.progress
         ? mergeImportedProgress(progress, backup.progress, result.idMap)
         : { progress, added: 0, kept: 0 };
-      if (result.added > 0) {
-        await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(result.routines));
-        setRoutines(result.routines);
-      }
-      if (merged.added > 0) {
-        await AsyncStorage.setItem(PROGRESS_KEY, JSON.stringify(merged.progress));
-        setProgress(merged.progress);
-      }
+      await persistImportedBackup(
+        AsyncStorage, ROUTINES_KEY, PROGRESS_KEY, result.routines, merged.progress,
+        result.added, merged.added, setRoutines, setProgress,
+        () => { importNeedsRestart.current = true; },
+      );
       return { added: result.added, skipped: result.skipped, renamed: result.renamed,
         progressAdded: merged.added, progressKept: merged.kept };
     },

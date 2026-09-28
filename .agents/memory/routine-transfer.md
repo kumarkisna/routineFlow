@@ -14,3 +14,9 @@ Daily completion history follows the same rule: it is optional in backups, requi
 **Why:** Restoring an older device's progress should not undo deliberate changes on the current device or attach history to a customized routine with a reused ID.
 
 **How to apply:** Keep history import additive and routine-ID-aware in future backup format or merge changes.
+
+When a restore has committed routines but fails to confirm the history save, report that uncertainty and allow the same backup to be retried against the already-saved routines, rather than attempting a rollback that might fail too.
+
+**Why:** Local storage writes are separate operations. A failed history write may leave routines saved, and even a rejected write may have committed before reporting an error.
+
+**How to apply:** Preserve the saved routine state on partial restore failures and keep repeat imports idempotent so retrying can finish missing history without creating duplicate routines.

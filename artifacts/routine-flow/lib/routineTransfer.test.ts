@@ -7,6 +7,7 @@ import {
   mergeImportedProgress,
   mergeImportedRoutines,
   parseRoutinesFile,
+  persistImportedBackup,
   serializeRoutines,
 } from './routineTransfer';
 import type { CompletionMap, Routine } from '@/types/routines';
@@ -173,4 +174,104 @@ test('matching routines with different IDs reuse their local progress, including
     kept: 2,
   });
   assert.deepEqual(existing, { [day]: { 'local-id:water': false, 'local-id:stretch': true } });
+});
+
+test('failed history save reports saved routines and retry adds progress without another routine', async () => {
+  const local = { ...routine(), title: 'Customized morning' };
+  const imported = routine();
+  const backupProgress = { [day]: { 'morning:water': true } };
+  let currentRoutines = [local];
+  let currentProgress: CompletionMap = {};
+  const stored = new Map<string, string>();
+  let failProgress = true;
+  const storage = {
+    async setItem(key: string, value: string) {
+      if (key === 'progress' && failProgress) throw new Error('Disk full');
+      stored.set(key, value);
+    },
+    async getItem(key: string) { return stored.get(key) ?? null; },
+  };
+  let generated = 0;
+  async function restore() {
+    const result = mergeImportedRoutines(currentRoutines, [imported], () => `copy-${++generated}`);
+    const merged = mergeImportedProgress(currentProgress, backupProgress, result.idMap);
+    await persistImportedBackup(
+      storage, 'routines', 'progress', result.routines, merged.progress, result.added, merged.added,
+      (saved) => { currentRoutines = saved; },
+      (saved) => { currentProgress = saved; },
+      () => { throw new Error('Routine save is not uncertain'); },
+    );
+    return result;
+  }
+
+  await assert.rejects(restore(), /1 routine was saved, but daily progress could not be confirmed saved.*Try importing this backup again/);
+  assert.deepEqual(JSON.parse(stored.get('routines')!), [local, { ...imported, id: 'copy-1' }]);
+  assert.equal(stored.has('progress'), false);
+  assert.equal(currentRoutines.length, 2);
+  assert.deepEqual(currentProgress, {});
+
+  failProgress = false;
+  const retried = await restore();
+  assert.equal(retried.added, 0);
+  assert.equal(generated, 1);
+  assert.deepEqual(currentProgress, { [day]: { 'copy-1:water': true } });
+  assert.deepEqual(JSON.parse(stored.get('progress')!), currentProgress);
+  assert.equal(currentRoutines.length, 2);
+});
+
+test('a routines write that commits then rejects is reconciled before retry', async () => {
+  const local = { ...routine(), title: 'Customized morning' };
+  const imported = routine();
+  const stored = new Map<string, string>();
+  let currentRoutines = [local];
+  let currentProgress: CompletionMap = {};
+  let generated = 0;
+  let failAfterCommit = true;
+  const storage = {
+    async setItem(key: string, value: string) {
+      stored.set(key, value);
+      if (key === 'routines' && failAfterCommit) throw new Error('Write acknowledged late');
+    },
+    async getItem(key: string) { return stored.get(key) ?? null; },
+  };
+  async function restore() {
+    const result = mergeImportedRoutines(currentRoutines, [imported], () => `copy-${++generated}`);
+    const merged = mergeImportedProgress(currentProgress, {
+      [day]: { 'morning:water': true },
+    }, result.idMap);
+    await persistImportedBackup(
+      storage, 'routines', 'progress', result.routines, merged.progress,
+      result.added, merged.added,
+      (saved) => { currentRoutines = saved; },
+      (saved) => { currentProgress = saved; },
+      () => { throw new Error('The write was confirmed'); },
+    );
+    return result;
+  }
+
+  await assert.rejects(restore(), /1 routine was saved, but daily progress was not restored/);
+  assert.deepEqual(JSON.parse(stored.get('routines')!), [local, { ...imported, id: 'copy-1' }]);
+  assert.equal(stored.has('progress'), false);
+  failAfterCommit = false;
+  const retried = await restore();
+  assert.equal(retried.added, 0);
+  assert.equal(generated, 1);
+  assert.equal(currentRoutines.length, 2);
+  assert.deepEqual(currentProgress, { [day]: { 'copy-1:water': true } });
+  assert.deepEqual(JSON.parse(stored.get('progress')!), currentProgress);
+});
+
+test('unconfirmed routines write prevents an unsafe retry', async () => {
+  let blocked = false;
+  await assert.rejects(persistImportedBackup(
+    {
+      async setItem() { throw new Error('Write failed'); },
+      async getItem() { throw new Error('Read failed'); },
+    },
+    'routines', 'progress', [routine()], {}, 1, 0,
+    () => { throw new Error('Unexpected saved callback'); },
+    () => { throw new Error('Unexpected progress callback'); },
+    () => { blocked = true; },
+  ), /Restart the app before trying this backup again/);
+  assert.equal(blocked, true);
 });

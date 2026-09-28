@@ -241,3 +241,54 @@ export function mergeImportedProgress(
   }
   return { progress, added, kept };
 }
+
+// Keep the in-memory routine list aligned with the first successful write even if
+// the subsequent history write fails. A retry then matches the saved routines.
+export async function persistImportedBackup(
+  storage: {
+    setItem: (key: string, value: string) => Promise<unknown>;
+    getItem: (key: string) => Promise<string | null>;
+  },
+  routinesKey: string,
+  progressKey: string,
+  routines: Routine[],
+  progress: CompletionMap,
+  routinesAdded: number,
+  progressAdded: number,
+  onRoutinesSaved: (routines: Routine[]) => void,
+  onProgressSaved: (progress: CompletionMap) => void,
+  onUncertainRoutinesSave: () => void,
+): Promise<void> {
+  if (routinesAdded > 0) {
+    const serialized = JSON.stringify(routines);
+    try {
+      await storage.setItem(routinesKey, serialized);
+    } catch {
+      let saved: string | null;
+      try {
+        saved = await storage.getItem(routinesKey);
+      } catch {
+        onUncertainRoutinesSave();
+        throw new Error('Could not confirm whether routines were saved. Restart the app before trying this backup again to avoid duplicates.');
+      }
+      if (saved === serialized) {
+        onRoutinesSaved(routines);
+        throw new Error(`${routinesAdded} ${routinesAdded === 1 ? 'routine was' : 'routines were'} saved, but daily progress was not restored. Try importing this backup again; routines will not be duplicated.`);
+      }
+      onUncertainRoutinesSave();
+      throw new Error('Could not confirm which routines were saved. Restart the app before trying this backup again to avoid duplicates.');
+    }
+    onRoutinesSaved(routines);
+  }
+  if (progressAdded > 0) {
+    try {
+      await storage.setItem(progressKey, JSON.stringify(progress));
+      onProgressSaved(progress);
+    } catch {
+      const routineStatus = routinesAdded > 0
+        ? `${routinesAdded} ${routinesAdded === 1 ? 'routine was' : 'routines were'} saved`
+        : 'Your routines were already present';
+      throw new Error(`${routineStatus}, but daily progress could not be confirmed saved. Try importing this backup again to finish restoring progress; routines will not be duplicated.`);
+    }
+  }
+}
