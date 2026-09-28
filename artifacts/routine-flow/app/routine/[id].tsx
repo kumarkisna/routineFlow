@@ -164,6 +164,9 @@ export default function RoutineDetailScreen() {
                   <Text style={[styles.stepTitle, { color: isDone ? colors.success : colors.foreground }, isDone && styles.completedText]}>
                     {step.title}
                   </Text>
+                  {step.description ? (
+                    <Text style={[styles.stepDescription, { color: colors.mutedForeground }]}>{step.description}</Text>
+                  ) : null}
                   <Text style={[styles.duration, { color: colors.mutedForeground }]}>
                     {formatDuration(getStepSeconds(step))}
                   </Text>
@@ -234,6 +237,7 @@ const styles = StyleSheet.create({
   stepNumberText: { fontFamily: 'Inter_700Bold', fontSize: 14 },
   stepCopy: { flex: 1, paddingRight: 8 },
   stepTitle: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
+  stepDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 4 },
   completedText: { textDecorationLine: 'line-through' },
   duration: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 4 },
   completeButton: { minHeight: 54, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 22 },

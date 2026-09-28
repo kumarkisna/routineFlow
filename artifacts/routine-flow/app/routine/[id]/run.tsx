@@ -64,7 +64,7 @@ function describeDuration(totalSeconds: number) {
 
 function stepAnnouncement(routine: Routine, index: number) {
   const step = routine.steps[index];
-  return `Step ${index + 1}. ${step.title}. You have ${describeDuration(getStepSeconds(step))}.`;
+  return `Step ${index + 1}. ${step.title}. ${step.description ? `${step.description}. ` : ''}You have ${describeDuration(getStepSeconds(step))}.`;
 }
 
 export default function RoutineRunScreen() {
@@ -468,6 +468,9 @@ export default function RoutineRunScreen() {
           <Text style={[styles.activeTitle, { color: colors.heroForeground }]}>
             {isFinished ? 'Routine complete' : activeStep.title}
           </Text>
+          {!isFinished && activeStep.description ? (
+            <Text style={[styles.activeDescription, { color: colors.heroForeground }]}>{activeStep.description}</Text>
+          ) : null}
           <Text style={[styles.activeMeta, { color: colors.heroForeground }]}>
             {isFinished ? `You finished all ${currentRoutine.steps.length} steps` : `Step ${activeIndex + 1} of ${currentRoutine.steps.length} · ${formatDuration(getStepSeconds(activeStep))}`}
           </Text>
@@ -579,6 +582,9 @@ export default function RoutineRunScreen() {
                 </View>
                 <View style={styles.stepCopy}>
                   <Text style={[styles.stepTitle, { color: colors.foreground }]} numberOfLines={2}>{step.title}</Text>
+                  {step.description ? (
+                    <Text style={[styles.stepDescription, { color: colors.mutedForeground }]} numberOfLines={2}>{step.description}</Text>
+                  ) : null}
                   <Text style={[styles.stepDuration, { color: colors.mutedForeground }]}>{formatDuration(getStepSeconds(step))}</Text>
                 </View>
                 {active ? <Feather name="clock" size={18} color={colors.primary} /> : null}
@@ -604,6 +610,7 @@ const styles = StyleSheet.create({
   timerText: { fontFamily: 'Inter_700Bold', fontSize: 30, letterSpacing: 1 },
   timerCaption: { fontFamily: 'Inter_500Medium', fontSize: 12, opacity: 0.65, marginTop: 5, textTransform: 'uppercase', letterSpacing: 1 },
   activeTitle: { fontFamily: 'Inter_700Bold', fontSize: 20, textAlign: 'center', marginTop: 22 },
+  activeDescription: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20, textAlign: 'center', opacity: 0.82, marginTop: 9 },
   activeMeta: { fontFamily: 'Inter_400Regular', fontSize: 13, opacity: 0.68, textAlign: 'center', marginTop: 7 },
   body: { paddingHorizontal: 20, paddingTop: 24 },
   progressTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
@@ -629,6 +636,7 @@ const styles = StyleSheet.create({
   stepNumberText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
   stepCopy: { flex: 1, paddingRight: 8 },
   stepTitle: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
+  stepDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginTop: 3 },
   stepDuration: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 4 },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   missingTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 18 },

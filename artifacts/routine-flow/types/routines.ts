@@ -3,6 +3,8 @@ export type RoutineTone = 'coral' | 'sage' | 'lavender' | 'sun';
 export type RoutineStep = {
   id: string;
   title: string;
+  /** Optional so routines saved before step details still load unchanged. */
+  description?: string;
   durationSeconds: number;
   /** Kept for compatibility with routines saved before timers were added. */
   duration?: string;

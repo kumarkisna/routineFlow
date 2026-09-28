@@ -39,6 +39,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [title, setTitle] = useState(editingRoutine?.title ?? '');
   const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
   const [stepDraft, setStepDraft] = useState('');
+  const [stepDescriptionDraft, setStepDescriptionDraft] = useState('');
   const [hoursDraft, setHoursDraft] = useState('0');
   const [minutesDraft, setMinutesDraft] = useState('5');
   const [secondsDraft, setSecondsDraft] = useState('0');
@@ -52,6 +53,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   function clearStepDraft() {
     setEditingStepId(null);
     setStepDraft('');
+    setStepDescriptionDraft('');
     setHoursDraft('0');
     setMinutesDraft('5');
     setSecondsDraft('0');
@@ -61,6 +63,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     const duration = getStepSeconds(step);
     setEditingStepId(step.id);
     setStepDraft(step.title);
+    setStepDescriptionDraft(step.description ?? '');
     setHoursDraft(String(Math.floor(duration / 3600)));
     setMinutesDraft(String(Math.floor((duration % 3600) / 60)));
     setSecondsDraft(String(duration % 60));
@@ -69,6 +72,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
 
   function addStep() {
     const nextTitle = stepDraft.trim();
+    const nextDescription = stepDescriptionDraft.trim();
     if (!nextTitle) {
       setError('Give this step a name.');
       return;
@@ -83,16 +87,27 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     }
     if (editingStepId) {
       setSteps((current) => current.map((step) =>
-        step.id === editingStepId ? { id: step.id, title: nextTitle, durationSeconds } : step,
+        step.id === editingStepId ? { ...step, title: nextTitle, description: nextDescription, durationSeconds } : step,
       ));
     } else {
       setSteps((current) => [
         ...current,
-        { id: `${Date.now().toString()}-${Math.random().toString(36).slice(2, 7)}`, title: nextTitle, durationSeconds },
+        { id: `${Date.now().toString()}-${Math.random().toString(36).slice(2, 7)}`, title: nextTitle, description: nextDescription, durationSeconds },
       ]);
     }
     clearStepDraft();
     setError('');
+    void Haptics.selectionAsync();
+  }
+
+  function moveStep(index: number, direction: -1 | 1) {
+    const destination = index + direction;
+    if (destination < 0 || destination >= steps.length) return;
+    setSteps((current) => {
+      const reordered = [...current];
+      [reordered[index], reordered[destination]] = [reordered[destination], reordered[index]];
+      return reordered;
+    });
     void Haptics.selectionAsync();
   }
 
@@ -197,7 +212,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
         <View style={[styles.stepComposer, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.stepComposerTop}>
             <TextInput
-               accessibilityLabel={editingStepId ? 'Edit routine step' : 'New routine step'}
+              accessibilityLabel={editingStepId ? 'Edit routine step' : 'New routine step'}
               placeholder="Add a step"
               placeholderTextColor={colors.mutedForeground}
               value={stepDraft}
@@ -205,12 +220,11 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 setStepDraft(value);
                 setError('');
               }}
-              onSubmitEditing={addStep}
-              returnKeyType="done"
+              returnKeyType="next"
               style={[styles.stepInput, { color: colors.foreground }]}
             />
             <Pressable
-               accessibilityLabel={editingStepId ? 'Update step' : 'Add step'}
+              accessibilityLabel={editingStepId ? 'Update step' : 'Add step'}
               onPress={addStep}
               style={({ pressed }) => [
                 styles.addStepButton,
@@ -218,9 +232,22 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 pressed && styles.pressed,
               ]}
             >
-               <Ionicons name={editingStepId ? 'checkmark' : 'add'} size={22} color={stepDraft.trim() ? colors.primaryForeground : colors.mutedForeground} />
+              <Ionicons name={editingStepId ? 'checkmark' : 'add'} size={22} color={stepDraft.trim() ? colors.primaryForeground : colors.mutedForeground} />
             </Pressable>
           </View>
+          <Text style={[styles.stepDescriptionLabel, { color: colors.mutedForeground }]}>Step details (optional)</Text>
+          <TextInput
+            accessibilityLabel="Step details"
+            testID="step-description-input"
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+            placeholder="Add instructions or a helpful note"
+            placeholderTextColor={colors.mutedForeground}
+            value={stepDescriptionDraft}
+            onChangeText={setStepDescriptionDraft}
+            style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground }]}
+          />
           <View style={styles.durationComposer}>
             <Text style={[styles.durationLabel, { color: colors.mutedForeground }]}>Timer</Text>
             <View style={styles.timeInputs}>
@@ -273,28 +300,55 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             </View>
             <View style={styles.stepCopy}>
               <Text style={[styles.stepTitle, { color: colors.foreground }]}>{step.title}</Text>
+              {step.description ? (
+                <Text style={[styles.stepDescription, { color: colors.mutedForeground }]} numberOfLines={2}>{step.description}</Text>
+              ) : null}
               <Text style={[styles.stepDuration, { color: colors.mutedForeground }]}>
                 {formatDuration(getStepSeconds(step))}
               </Text>
             </View>
-            <Pressable
-              accessibilityLabel={`Edit ${step.title}`}
-              testID={`edit-step-${step.id}`}
-              onPress={() => editStep(step)}
-              style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
-            >
-              <Ionicons name="pencil-outline" size={19} color={colors.primary} />
-            </Pressable>
-            <Pressable
-              accessibilityLabel={`Remove ${step.title}`}
-              onPress={() => {
-                if (editingStepId === step.id) clearStepDraft();
-                setSteps((current) => current.filter((item) => item.id !== step.id));
-              }}
-              style={({ pressed }) => [styles.removeButton, pressed && styles.pressed]}
-            >
-              <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
-            </Pressable>
+            <View style={styles.stepActions}>
+              <View>
+                <Pressable
+                  accessibilityLabel={`Move ${step.title} up`}
+                  testID={`move-step-up-${step.id}`}
+                  disabled={index === 0}
+                  onPress={() => moveStep(index, -1)}
+                  style={({ pressed }) => [styles.stepActionButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="chevron-up" size={20} color={index === 0 ? colors.border : colors.primary} />
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={`Move ${step.title} down`}
+                  testID={`move-step-down-${step.id}`}
+                  disabled={index === steps.length - 1}
+                  onPress={() => moveStep(index, 1)}
+                  style={({ pressed }) => [styles.stepActionButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="chevron-down" size={20} color={index === steps.length - 1 ? colors.border : colors.primary} />
+                </Pressable>
+              </View>
+              <View>
+                <Pressable
+                  accessibilityLabel={`Edit ${step.title}`}
+                  testID={`edit-step-${step.id}`}
+                  onPress={() => editStep(step)}
+                  style={({ pressed }) => [styles.stepActionButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="pencil-outline" size={18} color={colors.primary} />
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={`Remove ${step.title}`}
+                  onPress={() => {
+                    if (editingStepId === step.id) clearStepDraft();
+                    setSteps((current) => current.filter((item) => item.id !== step.id));
+                  }}
+                  style={({ pressed }) => [styles.stepActionButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="close-circle-outline" size={19} color={colors.mutedForeground} />
+                </Pressable>
+              </View>
+            </View>
           </View>
         ))}
 
@@ -331,19 +385,23 @@ const styles = StyleSheet.create({
   stepComposerTop: { minHeight: 48, flexDirection: 'row', alignItems: 'center', paddingLeft: 8, paddingRight: 0 },
   stepInput: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 15 },
   addStepButton: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  stepDescriptionLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginLeft: 8, marginTop: 4, marginBottom: 7 },
+  stepDescriptionInput: { minHeight: 72, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 9, marginHorizontal: 6, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
   durationComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingBottom: 4, paddingTop: 5 },
   durationLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   timeInputs: { flexDirection: 'row', alignItems: 'center' },
   timeInput: { width: 35, height: 30, borderWidth: 1, borderRadius: 8, textAlign: 'center', fontFamily: 'Inter_600SemiBold', fontSize: 12, padding: 0 },
   timeColon: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginHorizontal: 3 },
   timeHint: { fontFamily: 'Inter_400Regular', fontSize: 9, marginLeft: 6 },
-  stepRow: { minHeight: 60, borderWidth: 1, borderRadius: 15, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  stepRow: { minHeight: 82, borderWidth: 1, borderRadius: 15, paddingLeft: 12, paddingRight: 6, flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   number: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   numberText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
   stepCopy: { flex: 1 },
   stepTitle: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
+  stepDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginTop: 3 },
   stepDuration: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 3 },
-  removeButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  stepActions: { flexDirection: 'row', marginLeft: 4 },
+  stepActionButton: { width: 34, height: 38, alignItems: 'center', justifyContent: 'center' },
   cancelEdit: { alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 8 },
   cancelEditText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
