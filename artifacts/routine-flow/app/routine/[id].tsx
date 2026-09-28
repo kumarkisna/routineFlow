@@ -19,11 +19,21 @@ export default function RoutineDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { routines, progress, getCompletedCount, toggleStep, completeRoutine, updateRoutine, deleteRoutine } = useRoutines();
+  const { routines, loading, progress, getCompletedCount, toggleStep, completeRoutine, updateRoutine, setStepHidden, deleteRoutine } = useRoutines();
   const [reorderBusy, setReorderBusy] = React.useState(false);
+  const [visibilityBusy, setVisibilityBusy] = React.useState(false);
+  const [showHiddenSteps, setShowHiddenSteps] = React.useState(false);
   const [reorderError, setReorderError] = React.useState('');
   const reorderLock = React.useRef(false);
   const routine = routines.find((item) => item.id === id);
+
+  if (loading) {
+    return (
+      <View style={[styles.missing, { backgroundColor: colors.background }]}>
+        <Text style={[styles.missingTitle, { color: colors.foreground }]}>Loading routine</Text>
+      </View>
+    );
+  }
 
   if (!routine) {
     return (
@@ -38,13 +48,16 @@ export default function RoutineDetailScreen() {
   }
   const currentRoutine = routine;
 
+  const visibleSteps = currentRoutine.steps.filter((step) => !step.hidden);
+  const hiddenCount = currentRoutine.steps.length - visibleSteps.length;
+  const displayedSteps = showHiddenSteps ? currentRoutine.steps : visibleSteps;
   const completed = getCompletedCount(currentRoutine);
-  const done = completed === currentRoutine.steps.length;
-  const percent = Math.round((completed / currentRoutine.steps.length) * 100);
+  const done = visibleSteps.length > 0 && completed === visibleSteps.length;
+  const percent = visibleSteps.length ? Math.round((completed / visibleSteps.length) * 100) : 0;
   const today = new Date();
   const day = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const todayProgress = progress[day] ?? {};
-  const totalSeconds = currentRoutine.steps.reduce((sum, step) => sum + getStepSeconds(step), 0);
+  const totalSeconds = visibleSteps.reduce((sum, step) => sum + getStepSeconds(step), 0);
 
   function confirmDelete() {
     Alert.alert('Delete this routine?', 'This removes the routine from your library.', [
@@ -72,9 +85,11 @@ export default function RoutineDetailScreen() {
 
   async function moveStep(stepId: string, direction: -1 | 1) {
     if (reorderLock.current) return;
+    const visibleIndex = visibleSteps.findIndex((step) => step.id === stepId);
+    const nextVisibleIndex = visibleIndex + direction;
+    if (visibleIndex < 0 || nextVisibleIndex < 0 || nextVisibleIndex >= visibleSteps.length) return;
     const index = currentRoutine.steps.findIndex((step) => step.id === stepId);
-    const destination = index + direction;
-    if (index < 0 || destination < 0 || destination >= currentRoutine.steps.length) return;
+    const destination = currentRoutine.steps.findIndex((step) => step.id === visibleSteps[nextVisibleIndex].id);
     reorderLock.current = true;
     setReorderBusy(true);
     setReorderError('');
@@ -88,6 +103,22 @@ export default function RoutineDetailScreen() {
     } finally {
       reorderLock.current = false;
       setReorderBusy(false);
+    }
+  }
+
+  async function changeStepVisibility(stepId: string, hidden: boolean) {
+    if (reorderLock.current) return;
+    reorderLock.current = true;
+    setVisibilityBusy(true);
+    setReorderError('');
+    try {
+      await setStepHidden(currentRoutine.id, stepId, hidden);
+      void Haptics.selectionAsync();
+    } catch {
+      setReorderError('Could not update step visibility. Please try again.');
+    } finally {
+      reorderLock.current = false;
+      setVisibilityBusy(false);
     }
   }
 
@@ -138,7 +169,7 @@ export default function RoutineDetailScreen() {
             </View>
             <View style={styles.metaDivider} />
             <Text style={[styles.metaText, { color: colors.heroForeground }]}>
-              {currentRoutine.steps.length} steps
+              {hiddenCount ? `${visibleSteps.length} of ${currentRoutine.steps.length} steps` : `${visibleSteps.length} steps`}
             </Text>
           </View>
         </View>
@@ -160,65 +191,99 @@ export default function RoutineDetailScreen() {
           <View style={styles.stepsHeading}>
             <Text style={[styles.sectionEyebrow, { color: colors.mutedForeground }]}>YOUR FLOW</Text>
             <Text style={[styles.stepCount, { color: colors.mutedForeground }]}>
-              {completed} of {currentRoutine.steps.length}
+              {completed} of {visibleSteps.length}
             </Text>
           </View>
-          <Text style={[styles.reorderHint, { color: colors.mutedForeground }]}>Use the arrows to change step order</Text>
+          <Text style={[styles.reorderHint, { color: colors.mutedForeground }]}>
+            Use the arrows to reorder. Hidden steps are skipped when running.
+          </Text>
+          {hiddenCount > 0 ? (
+            <Pressable
+              accessibilityLabel={showHiddenSteps ? 'Hide hidden steps' : `Show hidden steps (${hiddenCount})`}
+              testID="toggle-hidden-steps"
+              onPress={() => setShowHiddenSteps((current) => !current)}
+              style={({ pressed }) => [styles.showHiddenButton, pressed && styles.pressed]}
+            >
+              <Ionicons name={showHiddenSteps ? 'eye-off-outline' : 'eye-outline'} size={16} color={colors.primary} />
+              <Text style={[styles.showHiddenText, { color: colors.primary }]}>
+                {showHiddenSteps ? 'Hide hidden steps' : `Show hidden steps (${hiddenCount})`}
+              </Text>
+            </Pressable>
+          ) : null}
           {reorderError ? <Text style={[styles.reorderError, { color: colors.destructive }]}>{reorderError}</Text> : null}
 
-          {currentRoutine.steps.map((step, index) => {
+          {visibleSteps.length === 0 && !showHiddenSteps ? (
+            <Text style={[styles.noSteps, { color: colors.mutedForeground }]}>
+              All steps are hidden. Show hidden steps to bring one back.
+            </Text>
+          ) : null}
+
+          {displayedSteps.map((step) => {
+            const visibleIndex = visibleSteps.findIndex((item) => item.id === step.id);
             const isDone = Boolean(todayProgress[`${currentRoutine.id}:${step.id}`]);
             return (
               <View
                 key={step.id}
                 style={[
                   styles.stepCard,
-                  { backgroundColor: isDone ? colors.sageSoft : colors.card, borderColor: isDone ? colors.sage : colors.border },
+                  { backgroundColor: step.hidden ? colors.secondary : isDone ? colors.sageSoft : colors.card, borderColor: isDone && !step.hidden ? colors.sage : colors.border },
                 ]}
               >
                 <Pressable
-                  accessibilityLabel={`${isDone ? 'Uncomplete' : 'Complete'} ${step.title}`}
+                  accessibilityLabel={step.hidden ? `${step.title} is hidden` : `${isDone ? 'Uncomplete' : 'Complete'} ${step.title}`}
+                  disabled={Boolean(step.hidden)}
                   onPress={() => void handleStep(step.id)}
                   style={({ pressed }) => [styles.stepContent, pressed && styles.pressed]}
                 >
                   <View style={[styles.stepNumber, { backgroundColor: isDone ? colors.success : colors.secondary }]}>
-                    {isDone ? (
+                    {step.hidden ? (
+                      <Ionicons name="eye-off-outline" size={18} color={colors.mutedForeground} />
+                    ) : isDone ? (
                       <Ionicons name="checkmark" size={18} color={colors.primaryForeground} />
                     ) : (
-                      <Text style={[styles.stepNumberText, { color: colors.inkSoft }]}>{index + 1}</Text>
+                      <Text style={[styles.stepNumberText, { color: colors.inkSoft }]}>{visibleIndex + 1}</Text>
                     )}
                   </View>
                   <View style={styles.stepCopy}>
-                    <Text style={[styles.stepTitle, { color: isDone ? colors.success : colors.foreground }, isDone && styles.completedText]}>
+                    <Text style={[styles.stepTitle, { color: step.hidden ? colors.mutedForeground : isDone ? colors.success : colors.foreground }, isDone && !step.hidden && styles.completedText]}>
                       {step.title}
                     </Text>
                     {step.description ? (
                       <Text style={[styles.stepDescription, { color: colors.mutedForeground }]}>{step.description}</Text>
                     ) : null}
                     <Text style={[styles.duration, { color: colors.mutedForeground }]}>
-                      {formatDuration(getStepSeconds(step))}
+                      {step.hidden ? 'Hidden · skipped in timer' : formatDuration(getStepSeconds(step))}
                     </Text>
                   </View>
-                  <Ionicons name={isDone ? 'checkmark-circle' : 'ellipse-outline'} size={23} color={isDone ? colors.success : colors.border} />
+                  {!step.hidden ? <Ionicons name={isDone ? 'checkmark-circle' : 'ellipse-outline'} size={23} color={isDone ? colors.success : colors.border} /> : null}
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={`${step.hidden ? 'Show' : 'Hide'} step ${step.title}`}
+                  testID={`toggle-step-visibility-${step.id}`}
+                  disabled={reorderBusy || visibilityBusy}
+                  onPress={() => void changeStepVisibility(step.id, !step.hidden)}
+                  style={({ pressed }) => [styles.visibilityButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}
+                >
+                  <Ionicons name={step.hidden ? 'eye-outline' : 'eye-off-outline'} size={20} color={colors.primary} />
                 </Pressable>
                 <View style={[styles.reorderControls, { borderLeftColor: colors.border }]}>
                   <Pressable
                     accessibilityLabel={`Move ${step.title} up`}
                     testID={`detail-move-up-${step.id}`}
-                    disabled={reorderBusy || index === 0}
+                    disabled={reorderBusy || visibilityBusy || visibleIndex <= 0}
                     onPress={() => void moveStep(step.id, -1)}
                     style={({ pressed }) => [styles.reorderButton, pressed && styles.pressed]}
                   >
-                    <Ionicons name="chevron-up" size={21} color={index === 0 ? colors.border : colors.primary} />
+                    <Ionicons name="chevron-up" size={21} color={visibleIndex <= 0 ? colors.border : colors.primary} />
                   </Pressable>
                   <Pressable
                     accessibilityLabel={`Move ${step.title} down`}
                     testID={`detail-move-down-${step.id}`}
-                    disabled={reorderBusy || index === currentRoutine.steps.length - 1}
+                    disabled={reorderBusy || visibilityBusy || visibleIndex < 0 || visibleIndex === visibleSteps.length - 1}
                     onPress={() => void moveStep(step.id, 1)}
                     style={({ pressed }) => [styles.reorderButton, pressed && styles.pressed]}
                   >
-                    <Ionicons name="chevron-down" size={21} color={index === currentRoutine.steps.length - 1 ? colors.border : colors.primary} />
+                    <Ionicons name="chevron-down" size={21} color={visibleIndex < 0 || visibleIndex === visibleSteps.length - 1 ? colors.border : colors.primary} />
                   </Pressable>
                 </View>
               </View>
@@ -227,20 +292,21 @@ export default function RoutineDetailScreen() {
 
           <Pressable
             accessibilityLabel="Run routine timer"
+            disabled={visibleSteps.length === 0}
             onPress={() => router.push({ pathname: '/routine/[id]/run', params: { id: currentRoutine.id } })}
             style={({ pressed }) => [
               styles.runButton,
-              { backgroundColor: colors.primary },
+              { backgroundColor: visibleSteps.length ? colors.primary : colors.secondary },
               pressed && styles.pressed,
             ]}
           >
-            <Feather name="play" size={17} color={colors.primaryForeground} />
-            <Text style={[styles.completeButtonText, { color: colors.primaryForeground }]}>Run routine</Text>
+            <Feather name="play" size={17} color={visibleSteps.length ? colors.primaryForeground : colors.mutedForeground} />
+            <Text style={[styles.completeButtonText, { color: visibleSteps.length ? colors.primaryForeground : colors.mutedForeground }]}>Run routine</Text>
           </Pressable>
 
           <Pressable
             accessibilityLabel={done ? 'Routine complete' : 'Complete routine'}
-            disabled={done}
+            disabled={done || visibleSteps.length === 0}
             onPress={() => void handleComplete()}
             style={({ pressed }) => [
               styles.completeButton,
@@ -282,9 +348,13 @@ const styles = StyleSheet.create({
   stepsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 34, marginBottom: 5 },
   stepCount: { fontFamily: 'Inter_400Regular', fontSize: 13 },
   reorderHint: { fontFamily: 'Inter_400Regular', fontSize: 12, marginBottom: 12 },
+  showHiddenButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, marginTop: -6, marginBottom: 7 },
+  showHiddenText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  noSteps: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, marginBottom: 10 },
   reorderError: { fontFamily: 'Inter_500Medium', fontSize: 12, marginBottom: 10 },
   stepCard: { minHeight: 84, borderRadius: 17, borderWidth: 1, flexDirection: 'row', alignItems: 'center', overflow: 'hidden', marginBottom: 9 },
   stepContent: { flex: 1, minHeight: 84, flexDirection: 'row', alignItems: 'center', paddingLeft: 13, paddingRight: 10, paddingVertical: 8 },
+  visibilityButton: { width: 40, alignSelf: 'stretch', borderLeftWidth: 1, alignItems: 'center', justifyContent: 'center' },
   reorderControls: { borderLeftWidth: 1, width: 44, alignSelf: 'stretch', justifyContent: 'center' },
   reorderButton: { height: 42, alignItems: 'center', justifyContent: 'center' },
   stepNumber: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginRight: 12 },

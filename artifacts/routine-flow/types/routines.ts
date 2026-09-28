@@ -5,6 +5,8 @@ export type RoutineStep = {
   title: string;
   /** Optional so routines saved before step details still load unchanged. */
   description?: string;
+  /** Hidden steps are omitted from the timer and daily progress. */
+  hidden?: boolean;
   durationSeconds: number;
   /** Kept for compatibility with routines saved before timers were added. */
   duration?: string;
@@ -14,6 +16,8 @@ export type Routine = {
   id: string;
   title: string;
   subtitle: string;
+  /** Hidden routines remain saved but are omitted from the main list and progress. */
+  hidden?: boolean;
   icon: string;
   tone: RoutineTone;
   steps: RoutineStep[];

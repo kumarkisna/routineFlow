@@ -1,2 +1,3 @@
 - [Expo notification versions](expo-notifications.md) — notification packages must match the installed Expo SDK major version before native builds.
 - [Speech-gated routine timers](speech-gated-timers.md) — future step completion times cannot be pre-scheduled when each countdown waits for spoken instructions.
+- [Routine visibility behavior](routine-visibility.md) — hidden steps are inactive, not just concealed; keep run and progress logic aligned.

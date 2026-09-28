@@ -300,6 +300,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             </View>
             <View style={styles.stepCopy}>
               <Text style={[styles.stepTitle, { color: colors.foreground }]}>{step.title}</Text>
+              {step.hidden ? <Text style={[styles.stepDescription, { color: colors.mutedForeground }]}>Hidden · skipped in timer</Text> : null}
               {step.description ? (
                 <Text style={[styles.stepDescription, { color: colors.mutedForeground }]} numberOfLines={2}>{step.description}</Text>
               ) : null}

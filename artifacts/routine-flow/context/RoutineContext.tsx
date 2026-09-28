@@ -64,6 +64,8 @@ type RoutineContextValue = {
   completeRoutine: (routineId: string) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[]) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[]) => Promise<void>;
+  setRoutineHidden: (routineId: string, hidden: boolean) => Promise<void>;
+  setStepHidden: (routineId: string, stepId: string, hidden: boolean) => Promise<void>;
   deleteRoutine: (routineId: string) => Promise<void>;
   resetToday: () => Promise<void>;
   getCompletedCount: (routine: Routine) => number;
@@ -129,7 +131,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       if (!routine) return;
       const day = todayKey();
       const nextDay = { ...(progress[day] ?? {}) };
-      routine.steps.forEach((step) => {
+      routine.steps.filter((step) => !step.hidden).forEach((step) => {
         nextDay[`${routineId}:${step.id}`] = true;
       });
       await saveProgress({ ...progress, [day]: nextDay });
@@ -170,6 +172,33 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
     [routines],
   );
 
+  const setRoutineHidden = useCallback(
+    async (routineId: string, hidden: boolean) => {
+      if (!routines.some((routine) => routine.id === routineId)) throw new Error('Routine not found');
+      const nextRoutines = routines.map((routine) =>
+        routine.id === routineId ? { ...routine, hidden } : routine,
+      );
+      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      setRoutines(nextRoutines);
+    },
+    [routines],
+  );
+
+  const setStepHidden = useCallback(
+    async (routineId: string, stepId: string, hidden: boolean) => {
+      const routine = routines.find((item) => item.id === routineId);
+      if (!routine?.steps.some((step) => step.id === stepId)) throw new Error('Step not found');
+      const nextRoutines = routines.map((item) =>
+        item.id === routineId
+          ? { ...item, steps: item.steps.map((step) => step.id === stepId ? { ...step, hidden } : step) }
+          : item,
+      );
+      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      setRoutines(nextRoutines);
+    },
+    [routines],
+  );
+
   const deleteRoutine = useCallback(
     async (routineId: string) => {
       const nextRoutines = routines.filter((routine) => routine.id !== routineId);
@@ -188,7 +217,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   const getCompletedCount = useCallback(
     (routine: Routine) => {
       const day = progress[todayKey()] ?? {};
-      return routine.steps.filter((step) => day[`${routine.id}:${step.id}`]).length;
+      return routine.steps.filter((step) => !step.hidden && day[`${routine.id}:${step.id}`]).length;
     },
     [progress],
   );
@@ -202,6 +231,8 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       completeRoutine,
       createRoutine,
       updateRoutine,
+      setRoutineHidden,
+      setStepHidden,
       deleteRoutine,
       resetToday,
       getCompletedCount,
@@ -214,6 +245,8 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       completeRoutine,
       createRoutine,
       updateRoutine,
+      setRoutineHidden,
+      setStepHidden,
       deleteRoutine,
       resetToday,
       getCompletedCount,

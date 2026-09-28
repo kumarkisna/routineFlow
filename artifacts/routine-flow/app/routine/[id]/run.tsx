@@ -2,7 +2,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   AppState,
@@ -71,9 +71,14 @@ export default function RoutineRunScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { routines, completeRoutine } = useRoutines();
-  const routine = routines.find((item) => item.id === id);
-  const initialRemainingSeconds = routine ? getStepSeconds(routine.steps[0]) : 0;
+  const { routines, loading, completeRoutine } = useRoutines();
+  const routine = useMemo(() => {
+    const savedRoutine = routines.find((item) => item.id === id);
+    return savedRoutine
+      ? { ...savedRoutine, steps: savedRoutine.steps.filter((step) => !step.hidden) }
+      : undefined;
+  }, [routines, id]);
+  const initialRemainingSeconds = routine?.steps[0] ? getStepSeconds(routine.steps[0]) : 0;
   const [activeIndex, setActiveIndex] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(initialRemainingSeconds);
   const [isRunning, setIsRunning] = useState(false);
@@ -96,6 +101,13 @@ export default function RoutineRunScreen() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const scheduledStepNotificationIdsRef = useRef<string[]>([]);
   const scheduledRoutineNotificationIdsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (!loading && !isRunningRef.current && !isAnnouncingRef.current && !isFinishedRef.current && activeIndexRef.current === 0) {
+      remainingMillisecondsRef.current = initialRemainingSeconds * 1000;
+      setRemainingSeconds(initialRemainingSeconds);
+    }
+  }, [loading, initialRemainingSeconds]);
 
   useEffect(
     () => () => {
@@ -321,11 +333,13 @@ export default function RoutineRunScreen() {
     [cancelNotifications],
   );
 
-  if (!routine) {
+  if (loading || !routine || routine.steps.length === 0) {
     return (
       <View style={[styles.missing, { backgroundColor: colors.background }]}>
         <Ionicons name="file-tray-outline" size={40} color={colors.mutedForeground} />
-        <Text style={[styles.missingTitle, { color: colors.foreground }]}>Routine not found</Text>
+        <Text style={[styles.missingTitle, { color: colors.foreground }]}>
+          {loading ? 'Loading routine' : routine ? 'No visible steps to run' : 'Routine not found'}
+        </Text>
         <Pressable onPress={() => router.back()}>
           <Text style={[styles.backText, { color: colors.primary }]}>Go back</Text>
         </Pressable>
