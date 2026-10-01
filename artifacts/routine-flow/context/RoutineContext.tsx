@@ -11,6 +11,8 @@ import React, {
 import { isCompleted, type CompletionMap, type Routine, type RoutineStep } from '@/types/routines';
 import { makeRoutineCopy } from '@/lib/copyRoutine';
 import { recordCompletion } from '@/lib/progressHistory';
+import { renameRoutineCategory } from '@/lib/routineCategories';
+import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { mergeImportedProgress, mergeImportedRoutines, persistImportedBackup, type RoutineBackup } from '@/lib/routineTransfer';
 
 const ROUTINES_KEY = '@routine-flow/routines';
@@ -69,6 +71,7 @@ type RoutineContextValue = {
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string) => Promise<void>;
+  renameCategory: (source: string, target: string) => Promise<void>;
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
   importRoutines: (backup: RoutineBackup, includeProgress: boolean) => Promise<{
     added: number; skipped: number; renamed: number; progressAdded: number; progressKept: number;
@@ -98,6 +101,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   const [progress, setProgress] = useState<CompletionMap>({});
   const [loading, setLoading] = useState(true);
   const importNeedsRestart = useRef(false);
+  const runRoutineWrite = useRef(createRoutineWriteGuard()).current;
 
   useEffect(() => {
     async function hydrate() {
@@ -157,7 +161,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createRoutine = useCallback(
-    async (title: string, subtitle: string, steps: RoutineStep[], category?: string) => {
+    (title: string, subtitle: string, steps: RoutineStep[], category?: string) => runRoutineWrite(async () => {
       const routine: Routine = {
         id: makeId(),
         title,
@@ -172,12 +176,12 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       setRoutines(nextRoutines);
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       return routine;
-    },
-    [routines],
+    }),
+    [routines, runRoutineWrite],
   );
 
   const copyRoutine = useCallback(
-    async (routineId: string) => {
+    (routineId: string) => runRoutineWrite(async () => {
       const source = routines.find((routine) => routine.id === routineId);
       if (!source) throw new Error('Routine not found');
       const copied = makeRoutineCopy(source, routines, makeId);
@@ -185,12 +189,12 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
       return copied;
-    },
-    [routines],
+    }),
+    [routines, runRoutineWrite],
   );
 
   const updateRoutine = useCallback(
-    async (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string) => {
+    (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string) => runRoutineWrite(async () => {
       if (!routines.some((routine) => routine.id === routineId)) {
         throw new Error('Routine not found');
       }
@@ -199,12 +203,21 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       );
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
-    },
-    [routines],
+    }),
+    [routines, runRoutineWrite],
+  );
+
+  const renameCategory = useCallback(
+    (source: string, target: string) => runRoutineWrite(async () => {
+      const nextRoutines = renameRoutineCategory(routines, source, target);
+      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      setRoutines(nextRoutines);
+    }),
+    [routines, runRoutineWrite],
   );
 
   const importRoutines = useCallback(
-    async (backup: RoutineBackup, includeProgress: boolean) => {
+    (backup: RoutineBackup, includeProgress: boolean) => runRoutineWrite(async () => {
       if (importNeedsRestart.current) {
         throw new Error('Could not confirm the saved routines. Restart the app before trying this backup again to avoid duplicates.');
       }
@@ -219,12 +232,12 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       );
       return { added: result.added, skipped: result.skipped, renamed: result.renamed,
         progressAdded: merged.added, progressKept: merged.kept };
-    },
-    [routines, progress],
+    }),
+    [routines, progress, runRoutineWrite],
   );
 
   const moveRoutine = useCallback(
-    async (routineId: string, adjacentId: string) => {
+    (routineId: string, adjacentId: string) => runRoutineWrite(async () => {
       const fromIndex = routines.findIndex((routine) => routine.id === routineId);
       const toIndex = routines.findIndex((routine) => routine.id === adjacentId);
       if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
@@ -234,24 +247,24 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       [nextRoutines[fromIndex], nextRoutines[toIndex]] = [nextRoutines[toIndex], nextRoutines[fromIndex]];
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
-    },
-    [routines],
+    }),
+    [routines, runRoutineWrite],
   );
 
   const setRoutineHidden = useCallback(
-    async (routineId: string, hidden: boolean) => {
+    (routineId: string, hidden: boolean) => runRoutineWrite(async () => {
       if (!routines.some((routine) => routine.id === routineId)) throw new Error('Routine not found');
       const nextRoutines = routines.map((routine) =>
         routine.id === routineId ? { ...routine, hidden } : routine,
       );
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
-    },
-    [routines],
+    }),
+    [routines, runRoutineWrite],
   );
 
   const setStepHidden = useCallback(
-    async (routineId: string, stepId: string, hidden: boolean) => {
+    (routineId: string, stepId: string, hidden: boolean) => runRoutineWrite(async () => {
       const routine = routines.find((item) => item.id === routineId);
       if (!routine?.steps.some((step) => step.id === stepId)) throw new Error('Step not found');
       const nextRoutines = routines.map((item) =>
@@ -261,18 +274,18 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       );
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
-    },
-    [routines],
+    }),
+    [routines, runRoutineWrite],
   );
 
   const deleteRoutine = useCallback(
-    async (routineId: string) => {
+    (routineId: string) => runRoutineWrite(async () => {
       if (!routines.some((routine) => routine.id === routineId)) throw new Error('Routine not found');
       const nextRoutines = routines.filter((routine) => routine.id !== routineId);
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
-    },
-    [routines],
+    }),
+    [routines, runRoutineWrite],
   );
 
   const resetToday = useCallback(async () => {
@@ -299,6 +312,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       createRoutine,
       copyRoutine,
       updateRoutine,
+      renameCategory,
       moveRoutine,
       importRoutines,
       setRoutineHidden,
@@ -316,6 +330,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       createRoutine,
       copyRoutine,
       updateRoutine,
+      renameCategory,
       moveRoutine,
       importRoutines,
       setRoutineHidden,

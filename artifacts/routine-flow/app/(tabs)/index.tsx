@@ -13,12 +13,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
-import { categoryKey, listRoutineCategories } from '@/lib/routineCategories';
+import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
 import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializeRoutines, type RoutineBackup } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
 
@@ -29,9 +30,13 @@ function formatDate() {
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday } = useRoutines();
+  const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday, renameCategory } = useRoutines();
   const [showHidden, setShowHidden] = React.useState(false);
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = React.useState<string | null>(null);
+  const [renameError, setRenameError] = React.useState('');
+  const [renameBusy, setRenameBusy] = React.useState(false);
+  const renameLock = React.useRef(false);
   const [reordering, setReordering] = React.useState(false);
   const [orderBusy, setOrderBusy] = React.useState(false);
   const [orderError, setOrderError] = React.useState('');
@@ -48,6 +53,7 @@ export default function HomeScreen() {
   const categories = listRoutineCategories(routines);
   const activeCategory = categoryFilter !== null && categoryFilter !== '' &&
     !categories.some((name) => categoryKey(name) === categoryFilter) ? null : categoryFilter;
+  const selectedCategory = categories.find((name) => categoryKey(name) === activeCategory);
   const displayedRoutines = (showHidden ? routines : visibleRoutines).filter((routine) =>
     activeCategory === null || categoryKey(routine.category) === activeCategory);
   const hiddenCount = loading ? 0 : routines.length - visibleRoutines.length;
@@ -62,8 +68,35 @@ export default function HomeScreen() {
     router.push({ pathname: '/routine/[id]', params: { id: routine.id } });
   }
 
+  async function saveCategoryRename() {
+    if (!selectedCategory || renameDraft === null || renameLock.current) return;
+    if (transferLock.current || visibilityLock.current || orderLock.current || pendingBackup || loading) {
+      setRenameError('Wait for the current routine change to finish.');
+      return;
+    }
+    renameLock.current = true;
+    setRenameBusy(true);
+    setRenameError('');
+    try {
+      const label = renameDraft.trim().replace(/\s+/g, ' ');
+      if (!label) throw new Error('Enter a category name.');
+      if (label.length > MAX_CATEGORY_LENGTH) throw new Error(`Use ${MAX_CATEGORY_LENGTH} characters or fewer.`);
+      const existing = categories.find((name) =>
+        categoryKey(name) === categoryKey(label) && categoryKey(name) !== categoryKey(selectedCategory));
+      await renameCategory(selectedCategory, existing ?? label);
+      setCategoryFilter(categoryKey(existing ?? label));
+      setRenameDraft(null);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : 'Could not rename the category. Please try again.');
+    } finally {
+      renameLock.current = false;
+      setRenameBusy(false);
+    }
+  }
+
   async function changeVisibility(routine: Routine) {
-    if (visibilityLock.current || transferLock.current || orderLock.current) return;
+    if (visibilityLock.current || transferLock.current || orderLock.current || renameLock.current) return;
     visibilityLock.current = true;
     setVisibilityBusyId(routine.id);
     setVisibilityError('');
@@ -79,7 +112,7 @@ export default function HomeScreen() {
   }
 
   async function changeOrder(index: number, direction: -1 | 1) {
-    if (orderLock.current || visibilityLock.current || transferLock.current || pendingBackup) return;
+    if (orderLock.current || visibilityLock.current || transferLock.current || renameLock.current || pendingBackup) return;
     const routine = displayedRoutines[index];
     const adjacent = displayedRoutines[index + direction];
     if (!routine || !adjacent) return;
@@ -98,7 +131,7 @@ export default function HomeScreen() {
   }
 
   async function exportRoutinesFile() {
-    if (transferLock.current || visibilityLock.current || orderLock.current || loading) return;
+    if (transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading) return;
     transferLock.current = true;
     setTransferBusy('export');
     setTransferStatus(null);
@@ -135,7 +168,7 @@ export default function HomeScreen() {
   }
 
   async function importRoutinesFile() {
-    if (transferLock.current || visibilityLock.current || orderLock.current || loading || pendingBackup) return;
+    if (transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading || pendingBackup) return;
     transferLock.current = true;
     setTransferBusy('import');
     setTransferStatus(null);
@@ -177,7 +210,7 @@ export default function HomeScreen() {
   }
 
   async function confirmImport(restoreHistory: boolean) {
-    if (!pendingBackup || transferLock.current || orderLock.current) return;
+    if (!pendingBackup || transferLock.current || orderLock.current || renameLock.current) return;
     transferLock.current = true;
     setTransferBusy('import');
     setTransferStatus(null);
@@ -244,7 +277,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={reordering ? 'Done reordering routines' : 'Reorder routines'}
                     testID="toggle-reorder-routines"
-                    disabled={orderBusy || transferBusy !== null || visibilityBusyId !== null || pendingBackup !== null}
+                    disabled={orderBusy || transferBusy !== null || visibilityBusyId !== null || renameBusy || pendingBackup !== null}
                     onPress={() => {
                       setReordering((current) => !current);
                       setOrderError('');
@@ -257,7 +290,7 @@ export default function HomeScreen() {
                 ) : null}
                 <Pressable
                   accessibilityLabel="Create new routine"
-                  disabled={orderBusy}
+                  disabled={orderBusy || renameBusy}
                   onPress={() => router.push('/new-routine')}
                   style={({ pressed }) => [
                     styles.addButton,
@@ -289,9 +322,12 @@ export default function HomeScreen() {
                       accessibilityLabel={`Filter routines: ${option.label}`}
                       accessibilityState={{ selected }}
                       testID={`category-filter-${option.key ?? 'all'}`}
+                      disabled={renameBusy}
                       onPress={() => {
                         setReordering(false);
                         setCategoryFilter(option.key);
+                        setRenameDraft(null);
+                        setRenameError('');
                       }}
                       style={({ pressed }) => [
                         styles.categoryFilter,
@@ -307,11 +343,67 @@ export default function HomeScreen() {
                 })}
               </ScrollView>
             ) : null}
+            {selectedCategory ? (
+              <View style={styles.renameSection}>
+                {renameDraft === null ? (
+                  <Pressable
+                    accessibilityLabel={`Rename category ${selectedCategory}`}
+                    testID="rename-category"
+                    disabled={loading || renameBusy || transferBusy !== null || orderBusy || visibilityBusyId !== null || pendingBackup !== null}
+                    onPress={() => { setRenameDraft(selectedCategory); setRenameError(''); }}
+                    style={({ pressed }) => [styles.renameTrigger, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="pencil-outline" size={15} color={colors.primary} />
+                    <Text style={[styles.renameTriggerText, { color: colors.primary }]}>Rename category</Text>
+                  </Pressable>
+                ) : (
+                  <View style={[styles.renamePanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.renameTitle, { color: colors.foreground }]}>Rename “{selectedCategory}”</Text>
+                    <Text style={[styles.renameHint, { color: colors.mutedForeground }]}>
+                      Updates every routine in this category, including hidden routines.
+                    </Text>
+                    <TextInput
+                      accessibilityLabel="New category name"
+                      testID="rename-category-input"
+                      autoFocus
+                      maxLength={MAX_CATEGORY_LENGTH}
+                      value={renameDraft}
+                      editable={!renameBusy}
+                      onChangeText={(text) => { setRenameDraft(text); setRenameError(''); }}
+                      onSubmitEditing={() => void saveCategoryRename()}
+                      returnKeyType="done"
+                      style={[styles.renameInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
+                    />
+                    {renameError ? <Text accessibilityRole="alert" style={[styles.renameError, { color: colors.destructive }]}>{renameError}</Text> : null}
+                    <View style={styles.renameActions}>
+                      <Pressable
+                        accessibilityLabel="Cancel category rename"
+                        testID="cancel-category-rename"
+                        disabled={renameBusy || transferBusy !== null || orderBusy || visibilityBusyId !== null || pendingBackup !== null}
+                        onPress={() => { setRenameDraft(null); setRenameError(''); }}
+                        style={({ pressed }) => [styles.renameAction, pressed && styles.pressed]}
+                      >
+                        <Text style={[styles.renameActionText, { color: colors.mutedForeground }]}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityLabel="Save category rename"
+                        testID="save-category-rename"
+                        disabled={renameBusy}
+                        onPress={() => void saveCategoryRename()}
+                        style={({ pressed }) => [styles.renameAction, { backgroundColor: colors.primary, borderRadius: 12 }, pressed && styles.pressed]}
+                      >
+                        <Text style={[styles.renameActionText, { color: colors.primaryForeground }]}>{renameBusy ? 'Saving…' : 'Save name'}</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : null}
             {hiddenCount > 0 ? (
               <Pressable
                 accessibilityLabel={showHidden ? 'Hide hidden routines' : `Show hidden routines (${hiddenCount})`}
                 testID="toggle-hidden-routines"
-                disabled={orderBusy}
+                 disabled={orderBusy || renameBusy}
                 onPress={() => setShowHidden((current) => !current)}
                 style={({ pressed }) => [styles.showHiddenButton, pressed && styles.pressed]}
               >
@@ -339,7 +431,7 @@ export default function HomeScreen() {
             <View style={[styles.routineCard, { backgroundColor: item.hidden ? colors.secondary : colors.card, borderColor: colors.border }]}>
               <Pressable
                 accessibilityLabel={`Open ${item.title}`}
-                disabled={reordering}
+                 disabled={reordering || renameBusy}
                 onPress={() => openRoutine(item)}
                 style={({ pressed }) => [styles.routineCardContent, pressed && styles.pressed]}
               >
@@ -373,7 +465,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={`Move ${item.title} up`}
                     testID={`move-routine-up-${item.id}`}
-                    disabled={index === 0 || orderBusy}
+                     disabled={index === 0 || orderBusy || renameBusy}
                     onPress={() => void changeOrder(index, -1)}
                     style={({ pressed }) => [styles.orderButton, pressed && styles.pressed]}
                   >
@@ -382,7 +474,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={`Move ${item.title} down`}
                     testID={`move-routine-down-${item.id}`}
-                    disabled={index === displayedRoutines.length - 1 || orderBusy}
+                     disabled={index === displayedRoutines.length - 1 || orderBusy || renameBusy}
                     onPress={() => void changeOrder(index, 1)}
                     style={({ pressed }) => [styles.orderButton, pressed && styles.pressed]}
                   >
@@ -393,7 +485,7 @@ export default function HomeScreen() {
                 <Pressable
                   accessibilityLabel={`${item.hidden ? 'Show' : 'Hide'} ${item.title}`}
                   testID={`toggle-routine-visibility-${item.id}`}
-                  disabled={visibilityBusyId !== null || transferBusy !== null || pendingBackup !== null}
+                   disabled={visibilityBusyId !== null || transferBusy !== null || renameBusy || pendingBackup !== null}
                   onPress={() => void changeVisibility(item)}
                   style={({ pressed }) => [styles.visibilityButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -428,7 +520,7 @@ export default function HomeScreen() {
                 accessibilityState={{ checked: includeHistory }}
                 accessibilityLabel="Include daily progress in export"
                 testID="include-daily-progress"
-                disabled={transferBusy !== null || pendingBackup !== null}
+                 disabled={transferBusy !== null || renameBusy || pendingBackup !== null}
                 onPress={() => setIncludeHistory((current) => !current)}
                 style={styles.historyOption}
               >
@@ -439,7 +531,7 @@ export default function HomeScreen() {
                 <Pressable
                   accessibilityLabel="Export routines"
                   testID="export-routines"
-                  disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || pendingBackup !== null}
+                   disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
                   onPress={() => void exportRoutinesFile()}
                   style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -451,7 +543,7 @@ export default function HomeScreen() {
                 <Pressable
                   accessibilityLabel="Import routines"
                   testID="import-routines"
-                  disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || pendingBackup !== null}
+                   disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
                   onPress={() => void importRoutinesFile()}
                   style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -543,6 +635,17 @@ const styles = StyleSheet.create({
   categoryFilters: { paddingHorizontal: 20, gap: 8, alignItems: 'center' },
   categoryFilter: { minHeight: 36, borderRadius: 18, borderWidth: 1, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
   categoryFilterText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  renameSection: { marginBottom: 12 },
+  renameTrigger: { alignSelf: 'flex-start', minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  renameTriggerText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  renamePanel: { borderWidth: 1, borderRadius: 16, padding: 15 },
+  renameTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
+  renameHint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  renameInput: { marginTop: 12, borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 12, fontFamily: 'Inter_500Medium', fontSize: 14 },
+  renameError: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8 },
+  renameActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
+  renameAction: { minHeight: 42, minWidth: 80, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center' },
+  renameActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   sectionActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   reorderToggle: { minHeight: 43, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 5 },
   reorderToggleText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
