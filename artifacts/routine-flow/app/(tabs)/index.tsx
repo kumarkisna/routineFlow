@@ -30,10 +30,11 @@ function formatDate() {
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday, renameCategory } = useRoutines();
+  const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday, renameCategory, removeCategory } = useRoutines();
   const [showHidden, setShowHidden] = React.useState(false);
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
   const [renameDraft, setRenameDraft] = React.useState<string | null>(null);
+  const [pendingCategoryRemoval, setPendingCategoryRemoval] = React.useState<string | null>(null);
   const [renameError, setRenameError] = React.useState('');
   const [renameBusy, setRenameBusy] = React.useState(false);
   const renameLock = React.useRef(false);
@@ -89,6 +90,28 @@ export default function HomeScreen() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
       setRenameError(error instanceof Error ? error.message : 'Could not rename the category. Please try again.');
+    } finally {
+      renameLock.current = false;
+      setRenameBusy(false);
+    }
+  }
+
+  async function confirmCategoryRemoval() {
+    if (!pendingCategoryRemoval || renameLock.current) return;
+    if (transferLock.current || visibilityLock.current || orderLock.current || pendingBackup || loading) {
+      setRenameError('Wait for the current routine change to finish.');
+      return;
+    }
+    renameLock.current = true;
+    setRenameBusy(true);
+    setRenameError('');
+    try {
+      await removeCategory(pendingCategoryRemoval);
+      setCategoryFilter(null);
+      setPendingCategoryRemoval(null);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : 'Could not remove the category. Please try again.');
     } finally {
       renameLock.current = false;
       setRenameBusy(false);
@@ -327,6 +350,7 @@ export default function HomeScreen() {
                         setReordering(false);
                         setCategoryFilter(option.key);
                         setRenameDraft(null);
+                        setPendingCategoryRemoval(null);
                         setRenameError('');
                       }}
                       style={({ pressed }) => [
@@ -345,7 +369,36 @@ export default function HomeScreen() {
             ) : null}
             {selectedCategory ? (
               <View style={styles.renameSection}>
-                {renameDraft === null ? (
+                {pendingCategoryRemoval !== null ? (
+                  <View style={[styles.renamePanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.renameTitle, { color: colors.foreground }]}>Remove “{pendingCategoryRemoval}”?</Text>
+                    <Text style={[styles.renameHint, { color: colors.mutedForeground }]}>
+                      Clears this label from all {routines.filter((routine) => categoryKey(routine.category) === categoryKey(pendingCategoryRemoval)).length} matching routines, including hidden routines. Your routines, steps, and progress will stay unchanged.
+                    </Text>
+                    {renameError ? <Text accessibilityRole="alert" style={[styles.renameError, { color: colors.destructive }]}>{renameError}</Text> : null}
+                    <View style={styles.renameActions}>
+                      <Pressable
+                        accessibilityLabel="Cancel category removal"
+                        testID="cancel-category-removal"
+                        disabled={renameBusy}
+                        onPress={() => { setPendingCategoryRemoval(null); setRenameError(''); }}
+                        style={({ pressed }) => [styles.renameAction, pressed && styles.pressed]}
+                      >
+                        <Text style={[styles.renameActionText, { color: colors.mutedForeground }]}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityLabel="Confirm category removal"
+                        testID="confirm-category-removal"
+                        disabled={renameBusy}
+                        onPress={() => void confirmCategoryRemoval()}
+                        style={({ pressed }) => [styles.renameAction, { backgroundColor: colors.destructive, borderRadius: 12 }, pressed && styles.pressed]}
+                      >
+                        <Text style={[styles.renameActionText, { color: colors.primaryForeground }]}>{renameBusy ? 'Removing…' : 'Remove label'}</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : renameDraft === null ? (
+                  <View style={styles.categoryManagementActions}>
                   <Pressable
                     accessibilityLabel={`Rename category ${selectedCategory}`}
                     testID="rename-category"
@@ -356,6 +409,17 @@ export default function HomeScreen() {
                     <Ionicons name="pencil-outline" size={15} color={colors.primary} />
                     <Text style={[styles.renameTriggerText, { color: colors.primary }]}>Rename category</Text>
                   </Pressable>
+                  <Pressable
+                    accessibilityLabel={`Remove category ${selectedCategory}`}
+                    testID="remove-category"
+                    disabled={loading || renameBusy || transferBusy !== null || orderBusy || visibilityBusyId !== null || pendingBackup !== null}
+                    onPress={() => { setPendingCategoryRemoval(selectedCategory); setRenameError(''); }}
+                    style={({ pressed }) => [styles.renameTrigger, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="close-circle-outline" size={15} color={colors.destructive} />
+                    <Text style={[styles.renameTriggerText, { color: colors.destructive }]}>Remove category</Text>
+                  </Pressable>
+                  </View>
                 ) : (
                   <View style={[styles.renamePanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Text style={[styles.renameTitle, { color: colors.foreground }]}>Rename “{selectedCategory}”</Text>
@@ -636,6 +700,7 @@ const styles = StyleSheet.create({
   categoryFilter: { minHeight: 36, borderRadius: 18, borderWidth: 1, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
   categoryFilterText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   renameSection: { marginBottom: 12 },
+  categoryManagementActions: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 18 },
   renameTrigger: { alignSelf: 'flex-start', minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 6 },
   renameTriggerText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   renamePanel: { borderWidth: 1, borderRadius: 16, padding: 15 },

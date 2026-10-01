@@ -11,7 +11,7 @@ import React, {
 import { isCompleted, type CompletionMap, type Routine, type RoutineStep } from '@/types/routines';
 import { makeRoutineCopy } from '@/lib/copyRoutine';
 import { recordCompletion } from '@/lib/progressHistory';
-import { renameRoutineCategory } from '@/lib/routineCategories';
+import { removeRoutineCategory, renameRoutineCategory } from '@/lib/routineCategories';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { mergeImportedProgress, mergeImportedRoutines, persistImportedBackup, type RoutineBackup } from '@/lib/routineTransfer';
 
@@ -72,6 +72,7 @@ type RoutineContextValue = {
   copyRoutine: (routineId: string) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string) => Promise<void>;
   renameCategory: (source: string, target: string) => Promise<void>;
+  removeCategory: (source: string) => Promise<void>;
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
   importRoutines: (backup: RoutineBackup, includeProgress: boolean) => Promise<{
     added: number; skipped: number; renamed: number; progressAdded: number; progressKept: number;
@@ -216,6 +217,15 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
     [routines, runRoutineWrite],
   );
 
+  const removeCategory = useCallback(
+    (source: string) => runRoutineWrite(async () => {
+      const nextRoutines = removeRoutineCategory(routines, source);
+      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      setRoutines(nextRoutines);
+    }),
+    [routines, runRoutineWrite],
+  );
+
   const importRoutines = useCallback(
     (backup: RoutineBackup, includeProgress: boolean) => runRoutineWrite(async () => {
       if (importNeedsRestart.current) {
@@ -313,6 +323,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       copyRoutine,
       updateRoutine,
       renameCategory,
+      removeCategory,
       moveRoutine,
       importRoutines,
       setRoutineHidden,
@@ -331,6 +342,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       copyRoutine,
       updateRoutine,
       renameCategory,
+      removeCategory,
       moveRoutine,
       importRoutines,
       setRoutineHidden,

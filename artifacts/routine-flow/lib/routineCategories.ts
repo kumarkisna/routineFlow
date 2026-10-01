@@ -22,6 +22,18 @@ export function normalizeCategory(value: string, existing: string[]): string | u
   return existing.find((name) => categoryKey(name) === categoryKey(label)) ?? label;
 }
 
+export function removeRoutineCategory(routines: Routine[], source: string): Routine[] {
+  const sourceKey = categoryKey(source);
+  if (!sourceKey || !routines.some((routine) => categoryKey(routine.category) === sourceKey)) {
+    throw new Error('Category not found.');
+  }
+  return routines.map((routine) => {
+    if (categoryKey(routine.category) !== sourceKey) return routine;
+    const { category: _category, ...uncategorized } = routine;
+    return uncategorized;
+  });
+}
+
 export function renameRoutineCategory(routines: Routine[], source: string, target: string): Routine[] {
   const sourceKey = categoryKey(source);
   if (!sourceKey || !routines.some((routine) => categoryKey(routine.category) === sourceKey)) {

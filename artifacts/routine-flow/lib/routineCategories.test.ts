@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { categoryKey, listRoutineCategories, normalizeCategory, renameRoutineCategory } from './routineCategories';
+import { categoryKey, listRoutineCategories, normalizeCategory, removeRoutineCategory, renameRoutineCategory } from './routineCategories';
 import type { Routine } from '@/types/routines';
 
 test('shows custom categories once and keeps existing casing when selecting one', () => {
@@ -45,4 +45,31 @@ test('refuses missing source, empty destination and overlong names', () => {
   assert.throws(() => renameRoutineCategory(routines, 'Missing', 'New'), /not found/);
   assert.throws(() => renameRoutineCategory(routines, 'Health', '  '), /Enter a category name/);
   assert.throws(() => renameRoutineCategory(routines, 'Health', 'x'.repeat(41)), /40 characters/);
+});
+
+test('removes a label from every match including hidden routines without mutating routine data', () => {
+  const routines = [
+    { id: 'a', category: 'Home Care', steps: [{ id: 'step', hidden: true, durationSeconds: 30 }] },
+    { id: 'b', category: ' home   care ', hidden: true, steps: [] },
+    { id: 'c', category: 'Work', steps: [] },
+    { id: 'd', steps: [] },
+  ] as Routine[];
+  const before = structuredClone(routines);
+  const removed = removeRoutineCategory(routines, ' HOME CARE ');
+  assert.deepEqual(removed, before.map(({ category, ...rest }) =>
+    categoryKey(category) === 'home care' ? rest : { ...rest, ...(category ? { category } : {}) }));
+  assert.deepEqual(routines, before);
+  assert.equal(removed[0].steps, routines[0].steps);
+  assert.equal(removed[1].hidden, true);
+  assert.equal(removed[2], routines[2]);
+  assert.equal(removed[3], routines[3]);
+  assert.deepEqual(listRoutineCategories(removed), ['Work']);
+  assert.deepEqual(listRoutineCategories(removeRoutineCategory(removed, 'work')), []);
+});
+
+test('removal rejects missing or blank categories rather than touching uncategorized routines', () => {
+  const routines = [{ category: 'Health' }, {}] as Routine[];
+  for (const source of ['Missing', '', '  ']) {
+    assert.throws(() => removeRoutineCategory(routines, source), /Category not found/);
+  }
 });
