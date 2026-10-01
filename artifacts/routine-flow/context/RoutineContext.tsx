@@ -221,7 +221,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       if (importNeedsRestart.current) {
         throw new Error('Could not confirm the saved routines. Restart the app before trying this backup again to avoid duplicates.');
       }
-      const result = mergeImportedRoutines(routines, backup.routines, makeId);
+      const result = mergeImportedRoutines(routines, backup.routines, makeId, progress);
       const merged = includeProgress && backup.progress
         ? mergeImportedProgress(progress, backup.progress, result.idMap)
         : { progress, added: 0, kept: 0 };

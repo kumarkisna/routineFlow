@@ -21,8 +21,8 @@ When a restore has committed routines but fails to confirm the history save, rep
 
 **How to apply:** Preserve the saved routine state on partial restore failures and keep repeat imports idempotent so retrying can finish missing history without creating duplicate routines.
 
-Backups may retain completions for removed steps of a routine that remains in the backup, but should not attach history to a routine absent from it without an explicit identity strategy.
+History for routines absent from a backup must restore as detached history, even when the destination has no live routine with the old ID. Use a stable history-only identity across retries and re-export; never recreate a runnable routine just to carry its history.
 
-**Why:** A surviving routine provides a safe identity for remapping past step keys on import. A deleted routine does not; matching its old ID to an unrelated local routine would misattribute history.
+**Why:** A surviving routine provides a safe identity for remapping past step keys on import. A deleted routine does not; starter IDs can be reused by unrelated routines on another installation. Keeping history separate also prevents future routine imports from taking it over.
 
-**How to apply:** When expanding history portability to deleted routines, define collision-safe remapping and validate it separately from historical steps of existing routines.
+**How to apply:** Keep deleted history outside the live routine identity space, preserve legacy boolean entries as well as labels, and reserve already-recorded routine identities when importing new routines.

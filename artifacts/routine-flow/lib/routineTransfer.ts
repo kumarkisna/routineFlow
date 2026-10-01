@@ -1,9 +1,10 @@
 import { getStepSeconds, isCompleted, type CompletionMap, type Routine, type RoutineStep, type RoutineTone } from '@/types/routines';
 import { MAX_CATEGORY_LENGTH, categoryKey } from '@/lib/routineCategories';
+import { detachedHistoryId, progressRoutineIds, splitProgressKey } from '@/lib/historyIdentity';
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
-const FILE_VERSION = 4;
+const FILE_VERSION = 5;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
 
 export type RoutineBackup = { routines: Routine[]; progress?: CompletionMap };
@@ -108,10 +109,10 @@ function parseProgress(value: unknown, routines: Routine[], version: number): Co
     if (!isDay(day) || !isRecord(entries)) throw new Error('The backup has an invalid progress date.');
     result[day] = {};
     for (const [key, completed] of Object.entries(entries)) {
-      const separator = key.indexOf(':');
-      // V4 can restore removed steps, but never attach history to an unknown routine.
-      const historicalStep = version >= 4 && separator > 0 &&
-        routineIds.has(key.slice(0, separator)) && isId(key.slice(separator + 1));
+      const parsed = splitProgressKey(key);
+      // V4 restores removed steps; V5 also retains history of deleted routines.
+      const historicalStep = parsed && version >= 4 &&
+        (version >= 5 || routineIds.has(parsed.routineId));
       if (!(allowed.has(key) || historicalStep) || !isValidCompletion(completed) || ++count > 100_000) {
         throw new Error('The backup has invalid step progress.');
       }
@@ -124,15 +125,12 @@ function parseProgress(value: unknown, routines: Routine[], version: number): Co
 }
 
 export function serializeRoutines(routines: Routine[], progress?: CompletionMap): string {
-  const routineIds = new Set(routines.map((routine) => routine.id));
   const history: CompletionMap = {};
   if (progress) {
     for (const [day, entries] of Object.entries(progress)) {
       if (!isDay(day) || !isRecord(entries)) continue;
       const completed = Object.fromEntries(Object.entries(entries).filter(([key, value]) => {
-        const separator = key.indexOf(':');
-        return separator > 0 && routineIds.has(key.slice(0, separator)) &&
-          isId(key.slice(separator + 1)) && isValidCompletion(value) && isCompleted(value);
+        return splitProgressKey(key) && isValidCompletion(value) && isCompleted(value);
       }));
       if (Object.keys(completed).length) history[day] = completed;
     }
@@ -156,7 +154,7 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
   } catch {
     throw new Error('This is not a valid JSON file.');
   }
-  if (!isRecord(value) || value.format !== FILE_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== FILE_VERSION) ||
+  if (!isRecord(value) || value.format !== FILE_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== FILE_VERSION) ||
       !Array.isArray(value.routines) || value.routines.length > 1000) {
     throw new Error('Choose a routines JSON file exported from Routine Flow.');
   }
@@ -196,8 +194,10 @@ export function mergeImportedRoutines(
   existing: Routine[],
   imported: Routine[],
   createId: () => string,
+  existingProgress: CompletionMap = {},
 ): { routines: Routine[]; added: number; skipped: number; renamed: number; idMap: Record<string, string> } {
-  const ids = new Set(existing.map((routine) => routine.id));
+  // A new routine must not take over history belonging to a deleted one.
+  const ids = new Set([...existing.map((routine) => routine.id), ...progressRoutineIds(existingProgress)]);
   const signatures = new Map(existing.map((routine) => [routineSignature(routine), routine.id]));
   const routines = [...existing];
   const idMap: Record<string, string> = Object.create(null);
@@ -240,11 +240,12 @@ export function mergeImportedProgress(
   for (const [day, entries] of Object.entries(imported)) {
     const nextDay = { ...(progress[day] ?? {}) };
     for (const [key, completed] of Object.entries(entries)) {
-      if (!completed) continue;
-      const separator = key.indexOf(':');
-      const targetId = idMap[key.slice(0, separator)];
-      if (!targetId) continue;
-      const targetKey = `${targetId}:${key.slice(separator + 1)}`;
+      if (!isCompleted(completed)) continue;
+      const parsed = splitProgressKey(key);
+      if (!parsed) continue;
+      const targetId = Object.prototype.hasOwnProperty.call(idMap, parsed.routineId)
+        ? idMap[parsed.routineId] : detachedHistoryId(parsed.routineId);
+      const targetKey = `${targetId}:${parsed.stepId}`;
       if (Object.prototype.hasOwnProperty.call(nextDay, targetKey)) {
         kept++;
       } else {

@@ -1,4 +1,5 @@
 import { isCompleted, type CompletionMap, type CompletionValue, type Routine } from '@/types/routines';
+import { historySourceId, splitProgressKey } from '@/lib/historyIdentity';
 
 export type HistoryRoutine = {
   id: string;
@@ -52,16 +53,15 @@ export function getHistoryForDay(
 
   for (const [key, completed] of Object.entries(progress[day] ?? {})) {
     if (!isCompleted(completed)) continue;
-    const separator = key.indexOf(':');
-    if (separator <= 0 || separator === key.length - 1) continue;
-    const routineId = key.slice(0, separator);
-    const stepId = key.slice(separator + 1);
+    const parsed = splitProgressKey(key);
+    if (!parsed) continue;
+    const { routineId, stepId } = parsed;
     const routine = byId.get(routineId);
     let group = groups.get(routineId);
     if (!group) {
       group = {
         id: routineId,
-        title: typeof completed === 'object' ? completed.routineTitle : routine?.title ?? `Removed routine (${routineId})`,
+        title: typeof completed === 'object' ? completed.routineTitle : routine?.title ?? `Removed routine (${historySourceId(routineId)})`,
         hidden: routine?.hidden ?? false,
         removed: !routine,
         steps: [],

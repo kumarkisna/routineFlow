@@ -55,7 +55,7 @@ test('reads version 1 backups with legacy step durations but no history', () => 
   );
 });
 
-test('version 4 export and import keep completed labels and legacy booleans', () => {
+test('version 5 export and import keep completed labels and legacy booleans', () => {
   const source = routine();
   const raw = serializeRoutines([source], {
     [day]: { 'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
@@ -63,10 +63,11 @@ test('version 4 export and import keep completed labels and legacy booleans', ()
     'not-a-date': { 'morning:water': true },
   });
   const json = JSON.parse(raw);
-  assert.equal(json.version, 4);
+  assert.equal(json.version, 5);
   assert.deepEqual(json.progress, { [day]: {
     'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
     'morning:stretch': true,
+    'other:water': true,
   } });
   assert.deepEqual(parseRoutinesFile(raw), {
     routines: [source],
@@ -96,6 +97,7 @@ test('completed removed steps survive export, import, routine ID remapping, and 
     'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
     'morning:stretch': oldCompletion,
     'morning:legacy': true,
+    'deleted:old-step': { routineTitle: 'Deleted', stepTitle: 'Old step' },
   } });
 
   const local = { ...routine(), title: 'Edited locally' };
@@ -110,7 +112,7 @@ test('completed removed steps survive export, import, routine ID remapping, and 
     ['Removed step (legacy)', true],
   ]);
   assert.deepEqual(mergeImportedProgress(restored.progress, imported.progress!, mergedRoutines.idMap), {
-    progress: restored.progress, added: 0, kept: 3,
+    progress: restored.progress, added: 0, kept: 4,
   });
 });
 
@@ -125,6 +127,114 @@ test('version 3 and earlier reject removed step progress, but still import valid
       [day]: { 'morning:water': true },
     })).progress, { [day]: { 'morning:water': true } });
   }
+});
+
+test('deleted routines restore as separate History groups despite live ID and step collisions', () => {
+  const labeled = { routineTitle: 'Deleted morning', stepTitle: 'Old water' };
+  const imported = parseRoutinesFile(serializeRoutines([], {
+    [day]: { 'morning:water': labeled, 'morning:legacy': true, 'morning:incomplete': false },
+    [secondDay]: { 'legacy routine:old': true },
+  }));
+  const local = { ...routine(), title: 'Unrelated morning', hidden: true };
+  const existing = { [day]: { 'morning:water': false } };
+  const routines = mergeImportedRoutines([local], imported.routines, () => {
+    throw new Error('History-only import must not create routines');
+  }, existing);
+  const restored = mergeImportedProgress(existing, imported.progress!, routines.idMap);
+  assert.equal(routines.added, 0);
+  assert.deepEqual(routines.routines, [local]);
+  assert.equal(restored.added, 3);
+  assert.equal(restored.progress[day]['morning:water'], false);
+  assert.deepEqual(restored.progress[day]['history:morning:water'], labeled);
+  assert.equal(restored.progress[day]['history:morning:legacy'], true);
+  assert.deepEqual(getHistoryForDay(restored.progress, routines.routines, day), [{
+    id: 'history:morning', title: 'Deleted morning', hidden: false, removed: true,
+    steps: [
+      { id: 'water', title: 'Old water', hidden: false, removed: true },
+      { id: 'legacy', title: 'Removed step (legacy)', hidden: false, removed: true },
+    ],
+  }]);
+  assert.equal(getHistoryForDay(restored.progress, routines.routines, secondDay)[0].title,
+    'Removed routine (legacy routine)');
+
+  assert.deepEqual(mergeImportedProgress(restored.progress, imported.progress!, routines.idMap), {
+    progress: restored.progress, added: 0, kept: 3,
+  });
+  // Re-exporting and importing elsewhere must not nest or lose archive IDs.
+  const again = parseRoutinesFile(serializeRoutines([], restored.progress));
+  const elsewhere = mergeImportedProgress({}, again.progress!, {});
+  assert.deepEqual(elsewhere.progress[day]['history:morning:water'], labeled);
+  assert.equal(elsewhere.progress[secondDay]['history:legacy%20routine:old'], true);
+  assert.equal(getHistoryForDay(elsewhere.progress, [], day)[0].removed, true);
+});
+
+test('detached IDs cannot collide with real routine IDs that resemble the history namespace', () => {
+  const progress = parseRoutinesFile(serializeRoutines([], {
+    [day]: { 'history:water': true, 'history%3Amorning:water': true, 'morning:water': true },
+  })).progress!;
+  const locals = [routine('history'), routine('history%3Amorning'), routine('morning')];
+  const restored = mergeImportedProgress({}, progress, {});
+  assert.equal(restored.added, 3);
+  assert.deepEqual(getHistoryForDay(restored.progress, locals, day).map((group) => group.removed),
+    [true, true, true]);
+  assert.equal(restored.progress[day]['history:history:water'], true);
+  assert.equal(restored.progress[day]['history:history%253Amorning:water'], true);
+  assert.equal(restored.progress[day]['history:morning:water'], true);
+  assert.throws(() => parseRoutinesFile(backup(5, [routine('history:morning')])), /required routine details/);
+});
+
+test('restoring a routine cannot take over existing history from a deleted routine', () => {
+  const existing = { [day]: { 'morning:water': true } };
+  const imported = routine();
+  const result = mergeImportedRoutines([], [imported], () => 'copy-1', existing);
+  assert.equal(result.idMap.morning, 'copy-1');
+  const merged = mergeImportedProgress(existing, { [secondDay]: { 'morning:water': true } }, result.idMap);
+  assert.equal(getHistoryForDay(merged.progress, result.routines, day)[0].removed, true);
+  assert.equal(merged.progress[secondDay]['copy-1:water'], true);
+  const again = mergeImportedRoutines(result.routines, [imported], () => {
+    throw new Error('Retry should reuse the restored routine');
+  }, merged.progress);
+  assert.equal(again.idMap.morning, 'copy-1');
+});
+
+test('deleted history merges missing dates and steps without replacing local values', () => {
+  const existing = { [day]: { 'history:morning:water': false, 'history:morning:stretch': true } };
+  const incoming = {
+    [day]: { 'morning:water': true, 'morning:stretch': true, 'morning:legacy': true },
+    [secondDay]: { 'morning:water': true },
+  };
+  const result = mergeImportedProgress(existing, incoming, {});
+  assert.equal(result.added, 2);
+  assert.equal(result.kept, 2);
+  assert.equal(result.progress[day]['history:morning:water'], false);
+  assert.equal(result.progress[secondDay]['history:morning:water'], true);
+  assert.deepEqual(existing[day], { 'history:morning:water': false, 'history:morning:stretch': true });
+  assert.equal(mergeImportedProgress(result.progress, incoming, {}).added, 0);
+});
+
+test('version 5 validates deleted and archived history while older backups reject it', () => {
+  for (const version of [2, 3, 4]) {
+    assert.throws(() => parseRoutinesFile(backup(version, [], {
+      [day]: { 'deleted:old': true },
+    })), /invalid step progress/);
+    assert.throws(() => parseRoutinesFile(backup(version, [], {
+      [day]: { 'history:deleted:old': true },
+    })), /invalid step progress/);
+  }
+  for (const key of ['deleted:', ':step', 'deleted:old:step', 'history:bad%:step',
+    'history:%3A:step', 'history::step', 'history:%20:step', 'history:deleted:old:step']) {
+    assert.throws(() => parseRoutinesFile(backup(5, [], { [day]: { [key]: true } })),
+      /invalid step progress/, key);
+  }
+  for (const completion of ['true', null, [], { routineTitle: '', stepTitle: 'Old' },
+    { routineTitle: 'Deleted', stepTitle: 'Old', extra: true }]) {
+    assert.throws(() => parseRoutinesFile(backup(5, [], { [day]: { 'deleted:old': completion } })),
+      /invalid step progress/);
+  }
+  assert.throws(() => parseRoutinesFile(backup(5, [], { '2026-02-30': { 'deleted:old': true } })),
+    /invalid progress date/);
+  assert.deepEqual(parseRoutinesFile(backup(5, [], { [day]: { 'deleted:old': false } })).progress,
+    { [day]: {} });
 });
 
 test('backups preserve categories and treat a category edit as a different routine', () => {
@@ -145,7 +255,7 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
   const source = routine();
   const invalidFiles = [
     '{',
-    backup(5, [source]),
+    backup(6, [source]),
     backup(2, [source], []),
     backup(2, [source], { '2026-02-30': { 'morning:water': true } }),
     backup(2, [source], { [day]: [] }),
