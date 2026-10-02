@@ -158,7 +158,15 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
           ) : null}
         </View>
       ) : null}
-      <KeyboardAwareScrollViewCompat keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingBottom: (isWeb ? 34 : insets.bottom) + 40 }]} showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollViewCompat
+        testID="schedule-editor-scroll"
+        style={styles.scroll}
+        mode={Platform.OS === 'android' ? 'layout' : undefined}
+        bottomOffset={24}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.content, { paddingBottom: (isWeb ? 34 : insets.bottom) + 40 }]}
+        showsVerticalScrollIndicator>
         {copyId && initial.copiedAt ? (
           <View style={[styles.copyNotice, { backgroundColor: colors.coralSoft }]}>
             <Text style={[styles.entryTitle, { color: colors.foreground, marginBottom: 6 }]}>
@@ -281,6 +289,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  scroll: { flex: 1, minHeight: 0 },
   copyNotice: { padding: 12, borderRadius: 14, marginBottom: 16 },
   missing: { alignItems: 'center', justifyContent: 'center', gap: 12 },
   top: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 14 },
