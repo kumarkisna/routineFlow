@@ -8,3 +8,6 @@
 - [Workspace package installs](workspace-package-installs.md) — pnpm package additions can rewrite workspace YAML comments; preserve the original policy text.
 - [Browser persistence fixtures](browser-persistence-fixtures.md) — initialization scripts run again after reload; seed storage only when empty when testing persistence.
 - [Routine write overlap](routine-write-overlap.md) — reject overlapping routine saves until mutations use fresh state, or one successful edit may silently erase another.
+- [Playlist playback](playlist-playback.md) — saved-playlist edits affect future runs; active runs preserve their launch order while skipping inactive routines.
+- [Routine scheduling](routine-scheduling.md) — manual-start reminders use fixed instants; date-only playlist versions stay isolated from originals and other appointments.
+- [Expo appearance API](expo-appearance.md) — newer React Native uses an explicit unspecified scheme to restore system appearance; do not cast older null-based examples.

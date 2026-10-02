@@ -1,3 +1,7 @@
+import { PlaylistProvider } from '@/context/PlaylistContext';
+import { ScheduleProvider } from '@/context/ScheduleContext';
+import { AppearanceProvider } from '@/context/AppearanceContext';
+import { ScheduleNotificationLink } from '@/components/ScheduleNotificationLink';
 import React, { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -21,7 +25,10 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient();
 
 function RootLayoutNav() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return <>
+    <Stack screenOptions={{ headerShown: false }} />
+    <ScheduleNotificationLink />
+  </>;
 }
 
 export default function RootLayout() {
@@ -42,17 +49,23 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <AppearanceProvider>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView>
             <KeyboardProvider>
               <RoutineProvider>
-                <RootLayoutNav />
+                <PlaylistProvider>
+                  <ScheduleProvider>
+                    <RootLayoutNav />
+                  </ScheduleProvider>
+                </PlaylistProvider>
               </RoutineProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
+      </AppearanceProvider>
     </SafeAreaProvider>
   );
 }

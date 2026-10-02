@@ -20,21 +20,13 @@ import { StepDetails } from '@/components/StepDetails';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { Notifications } from '@/lib/localNotifications';
+import { nextPlaylistCursor, parsePlaylistQueue } from '@/lib/playlists';
 import {
   formatDuration,
   getStepSeconds,
   type Routine,
   type RoutineNotificationSettings,
 } from '@/types/routines';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-  }),
-});
 
 const DEFAULT_NOTIFICATION_SETTINGS: RoutineNotificationSettings = {
   stepCompletion: false,
@@ -69,9 +61,21 @@ function stepAnnouncement(routine: Routine, index: number) {
 }
 
 export default function RoutineRunScreen() {
+  const { id, cursor = '0', queue } = useLocalSearchParams<{ id: string; cursor?: string; queue?: string }>();
+  // A new routine (including a repeated routine) needs fresh timer/speech state.
+  return <RoutinePlayer key={`${id}:${cursor}:${queue ?? ''}`} />;
+}
+
+function RoutinePlayer() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, queue, cursor = '0', playlistTitle, autoStart, voice, stepReminder, routineReminder } =
+    useLocalSearchParams<{ id: string; queue?: string; cursor?: string; playlistTitle?: string;
+      autoStart?: string; voice?: string; stepReminder?: string; routineReminder?: string }>();
+  const playlistQueue = useMemo(() => parsePlaylistQueue(queue), [queue]);
+  const queueCursor = Number(cursor);
+  const inPlaylist = !!playlistQueue && Number.isInteger(queueCursor)
+    && queueCursor >= 0 && playlistQueue[queueCursor] === id;
   const { routines, loading, completeRoutine } = useRoutines();
   const routine = useMemo(() => {
     const savedRoutine = routines.find((item) => item.id === id);
@@ -85,10 +89,18 @@ export default function RoutineRunScreen() {
   const [isRunning, setIsRunning] = useState(false);
   const [isAnnouncing, setIsAnnouncing] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voiceEnabled, setVoiceEnabled] = useState(voice !== '0');
   const [voiceError, setVoiceError] = useState('');
+  const [completionError, setCompletionError] = useState('');
+  const [savingCompletion, setSavingCompletion] = useState(false);
+  const autoStartedRef = useRef(false);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const [notificationSettings, setNotificationSettings] = useState<RoutineNotificationSettings>(
-    DEFAULT_NOTIFICATION_SETTINGS,
+    { ...DEFAULT_NOTIFICATION_SETTINGS, stepCompletion: stepReminder === '1', routineCompletion: routineReminder === '1' },
   );
   const activeIndexRef = useRef(0);
   const remainingMillisecondsRef = useRef(initialRemainingSeconds * 1000);
@@ -280,10 +292,33 @@ export default function RoutineRunScreen() {
     setRemainingSeconds(0);
     setIsRunning(false);
     setIsFinished(true);
+    setSavingCompletion(true);
+    setCompletionError('');
     void cancelNotifications();
-    void completeRoutine(routine.id);
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [cancelNotifications, completeRoutine, routine, stopAnnouncement]);
+    void completeRoutine(routine.id).then(() => {
+      if (!mountedRef.current) return;
+      setSavingCompletion(false);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (inPlaylist && playlistQueue) {
+        const next = nextPlaylistCursor(playlistQueue, queueCursor, routines);
+        if (next !== -1) {
+          router.replace({
+            pathname: '/routine/[id]/run',
+            params: { id: playlistQueue[next], queue: JSON.stringify(playlistQueue),
+              cursor: String(next), playlistTitle: playlistTitle ?? 'Playlist', autoStart: '1',
+              voice: voiceEnabled ? '1' : '0',
+              stepReminder: notificationSettingsRef.current.stepCompletion ? '1' : '0',
+              routineReminder: notificationSettingsRef.current.routineCompletion ? '1' : '0' },
+          });
+        }
+      }
+    }).catch(() => {
+      if (!mountedRef.current) return;
+      setSavingCompletion(false);
+      setCompletionError('Your completion could not be saved. Retry to continue.');
+    });
+  }, [cancelNotifications, completeRoutine, routine, stopAnnouncement, inPlaylist,
+    playlistQueue, queueCursor, routines, playlistTitle, voiceEnabled]);
 
   const reconcileTimer = useCallback(
     (now: number) => {
@@ -334,6 +369,12 @@ export default function RoutineRunScreen() {
     [cancelNotifications],
   );
 
+  useEffect(() => {
+    if (autoStart !== '1' || loading || !routine?.steps.length || autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    prepareStep(0, true);
+  }, [autoStart, loading, routine, prepareStep]);
+
   if (loading || !routine || routine.steps.length === 0) {
     return (
       <View style={[styles.missing, { backgroundColor: colors.background }]}>
@@ -382,6 +423,20 @@ export default function RoutineRunScreen() {
   }
 
   function restart() {
+    if (inPlaylist && playlistQueue) {
+      const first = nextPlaylistCursor(playlistQueue, -1, routines);
+      if (first !== -1 && first !== queueCursor) {
+        router.replace({
+          pathname: '/routine/[id]/run',
+          params: { id: playlistQueue[first], queue: JSON.stringify(playlistQueue),
+            cursor: String(first), playlistTitle: playlistTitle ?? 'Playlist', autoStart: '1',
+            voice: voiceEnabled ? '1' : '0',
+            stepReminder: notificationSettingsRef.current.stepCompletion ? '1' : '0',
+            routineReminder: notificationSettingsRef.current.routineCompletion ? '1' : '0' },
+        });
+        return;
+      }
+    }
     const firstStepSeconds = getStepSeconds(currentRoutine.steps[0]);
     isFinishedRef.current = false;
     setIsFinished(false);
@@ -437,11 +492,12 @@ export default function RoutineRunScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 30 }}
+        contentContainerStyle={{ paddingBottom: (Platform.OS === 'web' ? 34 : insets.bottom) + 30 }}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <View style={[styles.header, { paddingTop: (Platform.OS === 'web' ? 67 : insets.top) + 8 }]}>
           <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Close timer"
             onPress={() => router.back()}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
@@ -449,10 +505,13 @@ export default function RoutineRunScreen() {
             <Ionicons name="close" size={24} color={colors.foreground} />
           </Pressable>
           <View style={styles.headerCenter}>
-            <Text style={[styles.headerLabel, { color: colors.mutedForeground }]}>RUNNING ROUTINE</Text>
+            <Text style={[styles.headerLabel, { color: colors.mutedForeground }]}>
+              {inPlaylist ? `PLAYLIST · ${queueCursor + 1} OF ${playlistQueue!.length}` : 'RUNNING ROUTINE'}
+            </Text>
             <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>{currentRoutine.title}</Text>
           </View>
           <Pressable
+            accessibilityRole="button"
             accessibilityLabel={voiceEnabled ? 'Mute step voice' : 'Turn on step voice'}
             testID="toggle-step-voice"
             onPress={() => {
@@ -470,6 +529,10 @@ export default function RoutineRunScreen() {
             <Ionicons name={voiceEnabled ? 'volume-high' : 'volume-mute'} size={22} color={colors.foreground} />
           </Pressable>
         </View>
+        {inPlaylist ? (
+          <Text style={{ color: colors.mutedForeground, textAlign: 'center', marginBottom: 16,
+            fontFamily: 'Inter_500Medium', paddingHorizontal: 20 }} numberOfLines={2}>{playlistTitle}</Text>
+        ) : null}
 
         <View style={[styles.timerCard, { backgroundColor: colors.hero }]}>
           <View style={[styles.timerRing, { borderColor: colors.sage }]}>
@@ -481,7 +544,8 @@ export default function RoutineRunScreen() {
             </Text>
           </View>
           <Text style={[styles.activeTitle, { color: colors.heroForeground }]}>
-            {isFinished ? 'Routine complete' : activeStep.title}
+            {isFinished ? savingCompletion ? 'Saving completion…' : completionError ? 'Save needs attention'
+              : inPlaylist ? 'Playlist complete' : 'Routine complete' : activeStep.title}
           </Text>
           {!isFinished && activeStep.description ? (
             <StepDetails
@@ -496,6 +560,16 @@ export default function RoutineRunScreen() {
         </View>
 
         <View style={styles.body}>
+          {completionError ? (
+            <View>
+              <Text style={{ color: colors.destructive }}>{completionError}</Text>
+              <Pressable accessibilityRole="button" testID="retry-playlist-completion"
+                accessibilityLabel="Retry completion save"
+                onPress={() => { isFinishedRef.current = false; finishRoutine(); }}>
+                <Text style={{ color: colors.primary, paddingVertical: 12 }}>Retry save</Text>
+              </Pressable>
+            </View>
+          ) : null}
           <View style={[styles.progressTrack, { backgroundColor: colors.secondary }]}>
             <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${Math.max(progress, isRunning ? 0.02 : 0) * 100}%` }]} />
           </View>
@@ -503,7 +577,9 @@ export default function RoutineRunScreen() {
           <View style={styles.controlRow}>
             {isFinished ? (
               <Pressable
-                accessibilityLabel="Run routine again"
+                accessibilityRole="button"
+                accessibilityLabel={inPlaylist ? 'Run playlist again' : 'Run routine again'}
+                disabled={savingCompletion || !!completionError}
                 onPress={restart}
                 style={({ pressed }) => [styles.secondaryControl, { borderColor: colors.border }, pressed && styles.pressed]}
               >
@@ -511,6 +587,7 @@ export default function RoutineRunScreen() {
               </Pressable>
             ) : (
               <Pressable
+                accessibilityRole="button"
                 accessibilityLabel="Skip current step"
                 onPress={skipStep}
                 style={({ pressed }) => [styles.secondaryControl, { borderColor: colors.border }, pressed && styles.pressed]}
@@ -519,6 +596,7 @@ export default function RoutineRunScreen() {
               </Pressable>
             )}
             <Pressable
+              accessibilityRole="button"
               accessibilityLabel={isFinished ? 'Routine complete' : isRunning || isAnnouncing ? 'Pause timer' : 'Start timer'}
               testID="start-pause-timer"
               disabled={isFinished}

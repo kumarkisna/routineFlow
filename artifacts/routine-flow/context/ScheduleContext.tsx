@@ -1,0 +1,159 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
+import { useRoutines } from '@/context/RoutineContext';
+import { usePlaylists } from '@/context/PlaylistContext';
+import { playablePlaylistIds } from '@/lib/playlists';
+import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
+import { Notifications } from '@/lib/localNotifications';
+import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, parseSchedules, persistScheduleChange,
+  scheduledPlaylistSource, type RoutineSchedule, type ScheduleTargetType } from '@/lib/schedules';
+
+const KEY = '@routine-flow/schedules';
+type Draft = { targetType: ScheduleTargetType; targetId: string; scheduledAt: string; reminder: boolean };
+type ScheduleContextValue = {
+  schedules: RoutineSchedule[];
+  loading: boolean;
+  error: string;
+  reload: () => Promise<void>;
+  saveSchedule: (draft: Draft, id?: string) => Promise<void>;
+  copySchedule: (sourceId: string, draft: Draft) => Promise<void>;
+  deleteSchedule: (id: string) => Promise<void>;
+  savePlaylistForSchedule: (id: string, title: string, routineIds: string[]) => Promise<void>;
+  resetScheduledPlaylist: (id: string) => Promise<void>;
+};
+const ScheduleContext = createContext<ScheduleContextValue | null>(null);
+
+const reminderService = {
+  create: async (schedule: RoutineSchedule): Promise<string> => {
+    if (Platform.OS === 'web') throw new Error('Phone reminders are unavailable in the web preview. Turn off the reminder to save.');
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('routine-schedules', {
+        name: 'Scheduled routines', importance: Notifications.AndroidImportance.HIGH,
+      });
+    }
+    let permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
+    if (!permission.granted) throw new Error('Enable notifications in your phone settings, or turn off the reminder to save.');
+    if (Date.parse(schedule.scheduledAt) <= Date.now()) {
+      throw new Error('That time has passed. Choose a new future date and time.');
+    }
+    return Notifications.scheduleNotificationAsync({
+      ...(schedule.notificationId ? { identifier: schedule.notificationId } : {}),
+      content: {
+        title: schedule.targetType === 'playlist' ? 'Time for your playlist' : 'Time for your routine',
+        body: `${schedule.targetTitle} is scheduled now. Tap to open your schedule.`,
+        sound: 'default', data: { scheduleId: schedule.id },
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(schedule.scheduledAt), ...(Platform.OS === 'android' ? { channelId: 'routine-schedules' } : {}) },
+    });
+  },
+  cancel: async (id: string) => {
+    if (Platform.OS !== 'web') await Notifications.cancelScheduledNotificationAsync(id);
+  },
+};
+
+export function ScheduleProvider({ children }: { children: React.ReactNode }) {
+  const { routines, loading: routinesLoading } = useRoutines();
+  const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
+  const [schedules, setSchedules] = useState<RoutineSchedule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const current = useRef<RoutineSchedule[]>([]);
+  const unsafe = useRef(false);
+  const runWrite = useRef(createRoutineWriteGuard()).current;
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const stored = await AsyncStorage.getItem(KEY);
+      const next = stored ? parseSchedules(stored) : [];
+      current.current = next;
+      setSchedules(next);
+    } catch {
+      setError('Your schedules could not load. Retry before making changes.');
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void reload(); }, [reload]);
+
+  const commit = useCallback(async (draft: RoutineSchedule | null, id: string) => {
+    if (loading || error || unsafe.current) throw new Error('Schedules are not ready to change. Restart the app if a previous save could not be confirmed.');
+    try {
+      const next = await persistScheduleChange(AsyncStorage, KEY, current.current, draft, id, reminderService);
+      current.current = next;
+      setSchedules(next);
+    } catch (e) {
+      if (e instanceof Error && e.message.includes('Restart the app')) unsafe.current = true;
+      throw e;
+    }
+  }, [loading, error]);
+  const writeSchedule = useCallback((draft: Draft, id?: string, copyFromId?: string) => runWrite(async () => {
+    if (routinesLoading || playlistsLoading) throw new Error('Wait for your routines and playlists to load.');
+    if (!Number.isFinite(Date.parse(draft.scheduledAt)) || Date.parse(draft.scheduledAt) <= Date.now()) {
+      throw new Error('Choose a date and time in the future.');
+    }
+    if (Platform.OS === 'ios' && draft.reminder && current.current.filter(item =>
+      item.id !== id && item.reminder && Date.parse(item.scheduledAt) > Date.now()).length >= 60) {
+      throw new Error('Your phone can keep only a limited number of reminders. Remove an upcoming reminder or save this schedule without one.');
+    }
+    const routine = routines.find(item => item.id === draft.targetId);
+    const playlist = playlists.find(item => item.id === draft.targetId);
+    const old = id ? current.current.find(item => item.id === id) : undefined;
+    if (id && !old) throw new Error('Schedule not found.');
+    const copySource = copyFromId ? current.current.find(item => item.id === copyFromId) : undefined;
+    if (copyFromId && !copySource) throw new Error('The schedule you wanted to copy no longer exists.');
+    if (copySource && (copySource.targetType !== draft.targetType || copySource.targetId !== draft.targetId)) {
+      throw new Error('A copied schedule must keep its routine or playlist. Create a new schedule to choose a different one.');
+    }
+    const newId = id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const schedule = copySource
+      ? copyScheduleForDate(copySource, draft.scheduledAt, newId, draft.reminder)
+      : keepScheduledPlaylistOverride(old, {
+      ...draft, id: newId,
+      targetTitle: draft.targetType === 'routine' ? routine?.title ?? '' : playlist?.title ?? '',
+    });
+    if (!schedule.playlistOverride) {
+      schedule.targetTitle = draft.targetType === 'routine' ? routine?.title ?? '' : playlist?.title ?? '';
+    }
+    const source = scheduledPlaylistSource(schedule, playlists);
+    if (draft.targetType === 'routine' ? !routine || !playablePlaylistIds([routine.id], routines).length
+      : (!schedule.playlistOverride && playlistsError) || !source || !playablePlaylistIds(source.routineIds, routines).length) {
+      throw new Error('Choose an available routine or playlist with visible steps.');
+    }
+    await commit(schedule, schedule.id);
+  }), [commit, routines, playlists, routinesLoading, playlistsLoading, playlistsError, runWrite]);
+  const saveSchedule = useCallback((draft: Draft, id?: string) => writeSchedule(draft, id), [writeSchedule]);
+  const copySchedule = useCallback((sourceId: string, draft: Draft) => writeSchedule(draft, undefined, sourceId), [writeSchedule]);
+  const deleteSchedule = useCallback((id: string) => runWrite(() => commit(null, id)), [commit, runWrite]);
+  const savePlaylistForSchedule = useCallback((id: string, title: string, routineIds: string[]) => runWrite(async () => {
+    if (routinesLoading) throw new Error('Wait for your routines to load.');
+    const old = current.current.find(item => item.id === id);
+    if (!old) throw new Error('Schedule not found.');
+    const next = editScheduledPlaylist(old, title, routineIds);
+    if (!playablePlaylistIds(next.playlistOverride!.routineIds, routines).length) {
+      throw new Error('Add at least one available routine with visible steps.');
+    }
+    await commit(next, id);
+  }), [routinesLoading, routines, commit, runWrite]);
+  const resetScheduledPlaylist = useCallback((id: string) => runWrite(async () => {
+    if (playlistsLoading || routinesLoading || playlistsError) throw new Error('Wait for your saved playlists and routines to load.');
+    const old = current.current.find(item => item.id === id);
+    if (!old || old.targetType !== 'playlist') throw new Error('Scheduled playlist not found.');
+    const source = playlists.find(item => item.id === old.targetId);
+    if (!source || !playablePlaylistIds(source.routineIds, routines).length) {
+      throw new Error('The original playlist is unavailable. Your date-only version has been kept.');
+    }
+    await commit({ ...old, targetTitle: source.title, playlistOverride: undefined, notificationId: undefined }, id);
+  }), [playlistsLoading, routinesLoading, playlistsError, playlists, routines, commit, runWrite]);
+  return <ScheduleContext.Provider value={{ schedules, loading, error, reload, saveSchedule, copySchedule, deleteSchedule,
+    savePlaylistForSchedule, resetScheduledPlaylist }}>
+    {children}
+  </ScheduleContext.Provider>;
+}
+
+export function useSchedules() {
+  const context = useContext(ScheduleContext);
+  if (!context) throw new Error('useSchedules must be used within ScheduleProvider');
+  return context;
+}

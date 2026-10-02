@@ -389,6 +389,19 @@ export default function RoutineDetailScreen() {
           </Pressable>
 
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Schedule routine"
+            accessibilityState={{ disabled: !!currentRoutine.hidden || visibleSteps.length === 0 }}
+            testID="schedule-routine"
+            disabled={!!currentRoutine.hidden || visibleSteps.length === 0}
+            onPress={() => router.push({ pathname: '/schedule-editor', params: { targetType: 'routine', targetId: currentRoutine.id } })}
+            style={({ pressed }) => [styles.completeButton, { backgroundColor: colors.secondary }, pressed && styles.pressed]}
+          >
+            <Feather name="calendar" size={17} color={visibleSteps.length ? colors.inkSoft : colors.mutedForeground} />
+            <Text style={[styles.completeButtonText, { color: visibleSteps.length ? colors.inkSoft : colors.mutedForeground }]}>Schedule for later</Text>
+          </Pressable>
+
+          <Pressable
             accessibilityLabel={done ? 'Routine complete' : 'Complete routine'}
             disabled={done || visibleSteps.length === 0}
             onPress={() => void handleComplete()}
