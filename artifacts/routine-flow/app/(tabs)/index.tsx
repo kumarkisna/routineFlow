@@ -266,20 +266,8 @@ export default function HomeScreen() {
                 <Text style={[styles.date, { color: colors.mutedForeground }]}>{todayLabel}</Text>
                 <Text style={[styles.greeting, { color: colors.foreground }]}>{greeting}, friend</Text>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Appearance themes"
-                  testID="open-appearance"
-                  onPress={() => router.push('/themes')}
-                  style={({ pressed }) => [{ minHeight: 42, paddingHorizontal: 12, borderRadius: 21, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }, pressed && styles.pressed]}
-                >
-                  <Ionicons name="color-palette-outline" size={20} color={colors.primary} />
-                  <Text style={{ fontFamily: 'Inter_600SemiBold', fontSize: 13, color: colors.primary }}>Themes</Text>
-                </Pressable>
-                <View style={[styles.avatar, { backgroundColor: colors.coralSoft }]}>
-                  <Text style={[styles.avatarText, { color: colors.primary }]}>RF</Text>
-                </View>
+              <View style={[styles.avatar, { backgroundColor: colors.coralSoft }]}>
+                <Text style={[styles.avatarText, { color: colors.primary }]}>RF</Text>
               </View>
             </View>
 
