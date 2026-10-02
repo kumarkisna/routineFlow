@@ -271,7 +271,7 @@ export default function HomeScreen() {
                   accessibilityRole="button"
                   accessibilityLabel="Appearance themes"
                   testID="open-appearance"
-                  onPress={() => router.push('/appearance')}
+                  onPress={() => router.push('/themes')}
                   style={({ pressed }) => [{ minHeight: 42, paddingHorizontal: 12, borderRadius: 21, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }, pressed && styles.pressed]}
                 >
                   <Ionicons name="color-palette-outline" size={20} color={colors.primary} />

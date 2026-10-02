@@ -56,7 +56,7 @@ const ThemeCard = React.memo(function ThemeCard({ item, selected, disabled, onPr
   );
 });
 
-export default function AppearanceScreen() {
+export default function AppearanceScreen({ asTab = false }: { asTab?: boolean } = {}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { theme, loading, saving, error, selectTheme } = useAppearance();
@@ -103,18 +103,18 @@ export default function AppearanceScreen() {
         keyboardShouldPersistTaps="handled"
         initialNumToRender={8}
         windowSize={7}
-        contentContainerStyle={{ paddingTop: (Platform.OS === 'web' ? 67 : insets.top) + 8, paddingBottom: (Platform.OS === 'web' ? 34 : insets.bottom) + 30, paddingHorizontal: 20, gap: 12 }}
+        contentContainerStyle={{ paddingTop: (Platform.OS === 'web' ? 67 : insets.top) + 8, paddingBottom: (Platform.OS === 'web' ? 34 : insets.bottom) + (asTab ? 100 : 30), paddingHorizontal: 20, gap: 12 }}
         renderItem={({ item }) => (
           <ThemeCard item={item} selected={item.id === theme.id} disabled={busy} onPress={choose} />
         )}
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
             <View style={styles.top}>
-              <Pressable accessibilityRole="button" accessibilityLabel="Close appearance" testID="close-appearance"
+              {!asTab ? <Pressable accessibilityRole="button" accessibilityLabel="Close appearance" testID="close-appearance"
                 onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} style={styles.iconBtn}>
                 <Ionicons name="close" size={24} color={colors.foreground} />
-              </Pressable>
-              <Text style={[styles.title, { color: colors.foreground }]}>Appearance</Text>
+              </Pressable> : null}
+              <Text style={[styles.title, { color: colors.foreground }]}>{asTab ? 'Themes' : 'Appearance'}</Text>
               <Pressable accessibilityRole="button" accessibilityLabel="Reset to Routine Flow default theme" testID="reset-theme"
                 disabled={busy} onPress={() => void choose(DEFAULT_THEME_ID)}
                 style={[styles.reset, { borderColor: colors.border, opacity: busy ? 0.5 : 1 }]}>
