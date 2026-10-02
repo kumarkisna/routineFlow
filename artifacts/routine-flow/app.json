@@ -7,11 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "routine-flow",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/images/icon.png",
-      "backgroundColor": "#f7f4ef",
-      "resizeMode": "contain"
-    },
     "ios": {
       "supportsTablet": false
     },
@@ -21,7 +16,15 @@
     },
     "plugins": [
       "expo-router",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/icon.png",
+          "backgroundColor": "#f7f4ef",
+          "resizeMode": "contain"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

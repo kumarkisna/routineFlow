@@ -11,3 +11,5 @@
 - [Playlist playback](playlist-playback.md) — saved-playlist edits affect future runs; active runs preserve their launch order while skipping inactive routines.
 - [Routine scheduling](routine-scheduling.md) — manual-start reminders use fixed instants; date-only playlist versions stay isolated from originals and other appointments.
 - [Expo appearance API](expo-appearance.md) — newer React Native uses an explicit unspecified scheme to restore system appearance; do not cast older null-based examples.
+- [Expo SDK 57 checks](expo-sdk-57.md) — legacy splash configuration is invalid, and early Hermes V1 builds have a documented memory regression.
+- [Expo preview warmup](expo-web-preview.md) — early cold-start screenshots can be blank; wait for visible UI before diagnosing broken layout.
