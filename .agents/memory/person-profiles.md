@@ -14,3 +14,9 @@ Copies append independent items and include referenced dependencies. They retain
 **Why:** Copying must not alter the source or duplicate its phone alerts. Existing reminders belong to their original person even while another person is active.
 
 **How to apply:** Copied schedules start with phone reminders disabled and explain how to enable them. Switching profiles alone must not cancel existing phone reminders. Reminder taps must open the owning person; older unowned reminders belong to Me.
+
+When local routine data cannot validate at startup, offer a targeted, explicit repair and preserve the raw routine payload before changing it. Do not clear the profile or app storage to recover one malformed step.
+
+**Why:** The user asked to recover the app without losing other saved routines or profile data and said not to recommend clearing app storage as the fix.
+
+**How to apply:** Change only the malformed routine fields, keep a recovery copy first, and leave playlists, schedules, progress, themes, and profile records untouched.

@@ -8,6 +8,7 @@ import {
   mergeImportedRoutines,
   parseRoutinesFile,
   persistImportedBackup,
+  repairStoredRoutineDurations,
   serializeRoutines,
 } from './routineTransfer';
 import type { CompletionMap, Routine } from '@/types/routines';
@@ -276,6 +277,40 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
   for (const file of invalidFiles) {
     assert.throws(() => parseRoutinesFile(file), Error, file.slice(0, 100));
   }
+});
+
+test('repairs unusable stored step times while preserving valid routines and legacy minutes', () => {
+  const missingDuration = {
+    ...routine('missing-duration'),
+    steps: [{ id: 'untimed', title: 'Untimed step', description: 'Keep these details.' }],
+  };
+  const legacyDuration = {
+    ...routine('legacy-duration'),
+    steps: [{ id: 'legacy', title: 'Legacy step', duration: '5' }],
+  };
+  const original = JSON.stringify([routine(), missingDuration, legacyDuration]);
+
+  const result = repairStoredRoutineDurations(original);
+  const saved = JSON.parse(result.serialized);
+  assert.equal(result.repairedSteps, 2);
+  assert.deepEqual(saved[0], routine());
+  assert.equal(saved[1].steps[0].durationSeconds, 60);
+  assert.equal(saved[1].steps[0].description, 'Keep these details.');
+  assert.equal(saved[2].steps[0].durationSeconds, 300);
+  assert.deepEqual(parseRoutinesFile(backup(5, saved)).routines[1], {
+    ...missingDuration,
+    steps: [{ id: 'untimed', title: 'Untimed step', description: 'Keep these details.', durationSeconds: 60 }],
+  });
+  assert.equal(JSON.stringify([routine(), missingDuration, legacyDuration]), original);
+});
+
+test('does not repair malformed routine structure as a duration problem', () => {
+  const invalid = JSON.stringify([{
+    ...routine('invalid-step'),
+    steps: [{ id: '', title: 'Bad step', durationSeconds: null }],
+  }]);
+  assert.throws(() => repairStoredRoutineDurations(invalid), /needs a valid ID and name/);
+  assert.equal(JSON.parse(invalid)[0].steps[0].id, '');
 });
 
 test('restoring labeled completions remaps routine IDs but keeps original labels', () => {

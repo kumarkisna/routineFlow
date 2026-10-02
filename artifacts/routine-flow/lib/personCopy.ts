@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { parsePlaylists } from './playlists';
-import { PERSON_DATA_KEYS, personStorageKey } from './personStorage';
-import { parseRoutinesFile } from './routineTransfer';
+import { PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from './personStorage';
+import { parseRoutinesFile, repairStoredRoutineDurations } from './routineTransfer';
 import { parseSchedules } from './schedules';
 import type { PersonCopySelection, PersonCopySummary, PersonSnapshot } from '@/types/people';
 import type { Routine } from '@/types/routines';
@@ -171,4 +171,42 @@ export async function readPersonSnapshot(personId: string): Promise<PersonSnapsh
     playlists: playlistValue === null ? [] : parsePlaylists(playlistValue),
     schedules: scheduleValue === null ? [] : parseSchedules(scheduleValue),
   };
+}
+
+export async function repairPersonRoutineDurations(personId: string): Promise<number> {
+  await waitForPersonWrites(personId);
+  const routinesKey = personStorageKey(personId, PERSON_DATA_KEYS.routines);
+  const original = await AsyncStorage.getItem(routinesKey);
+  if (original === null) throw new Error('Saved routines are no longer available. Nothing was changed.');
+
+  const repair = repairStoredRoutineDurations(original);
+  const recoveryBase = `${routinesKey}:recovery:${Date.now()}`;
+  let recoveryKey = recoveryBase;
+  let suffix = 1;
+  while (await AsyncStorage.getItem(recoveryKey) !== null) {
+    recoveryKey = `${recoveryBase}-${suffix++}`;
+  }
+
+  const saveAndConfirm = async (key: string, value: string, message: string) => {
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch {
+      // Some storage drivers can reject after committing; verify before reporting failure.
+    }
+    if (await AsyncStorage.getItem(key) !== value) throw new Error(message);
+  };
+
+  await saveAndConfirm(
+    recoveryKey,
+    original,
+    'The original routine data could not be preserved, so no repair was made. Please try again.',
+  );
+  await saveAndConfirm(
+    routinesKey,
+    repair.serialized,
+    'The repair could not be confirmed. The original routine data is preserved in a recovery copy.',
+  );
+
+  await readPersonSnapshot(personId);
+  return repair.repairedSteps;
 }

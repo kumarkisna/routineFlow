@@ -3,7 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme } from '@/lib/appThemes';
-import { buildPersonCopy, readPersonSnapshot } from '@/lib/personCopy';
+import { buildPersonCopy, readPersonSnapshot, repairPersonRoutineDurations } from '@/lib/personCopy';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonSnapshot } from '@/types/people';
 
@@ -70,27 +70,57 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const current = useRef(registry);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [repairPersonId, setRepairPersonId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const operationBusy = useRef(false);
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState('');
 
-  const hydrate = useCallback(async () => {
+  const hydrate = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError('');
+    setRepairPersonId(null);
+    let activePersonId: string | null = null;
     try {
       const raw = await AsyncStorage.getItem(PEOPLE_KEY);
       const next = raw ? parseRegistry(raw) : initialRegistry;
+      activePersonId = next.activePersonId;
       if (!raw) await saveRegistry(next);
       await readPersonSnapshot(next.activePersonId);
       await validatePersonSettings(next.activePersonId);
       current.current = next;
       setRegistry(next);
+      return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Your saved people could not load.');
-    } finally { setLoading(false); }
+      const message = e instanceof Error ? e.message : 'Your saved people could not load.';
+      setError(message);
+      if (activePersonId && /needs a valid duration|invalid legacy duration/.test(message)) {
+        setRepairPersonId(activePersonId);
+      }
+      return false;
+    } finally {
+      setLoading(false);
+    }
   }, []);
   useEffect(() => { void hydrate(); }, [hydrate]);
+
+  const repairDurations = useCallback(async () => {
+    const personId = repairPersonId;
+    if (!personId || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const repairedSteps = await repairPersonRoutineDurations(personId);
+      if (await hydrate()) {
+        const noun = repairedSteps === 1 ? 'step duration' : 'step durations';
+        setNotice(`Repaired ${repairedSteps} ${noun}. Valid times were kept, and the original routines are preserved in a recovery copy.`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Saved routines could not be repaired.');
+    } finally {
+      setLoading(false);
+    }
+  }, [hydrate, loading, repairPersonId]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(''), 12000);
@@ -180,6 +210,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   }), [runOperation]);
 
   const activePerson = registry.people.find(person => person.id === registry.activePersonId)!;
+  const canRepairDurations = repairPersonId !== null && /needs a valid duration|invalid legacy duration/.test(error);
   const value = useMemo(() => ({
     people: registry.people, activePerson, revision, busy, notice,
     addPerson, switchPerson, loadPerson, copyFromPerson,
@@ -189,6 +220,22 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     return <View style={styles.loading} testID="people-startup">
       {loading ? <ActivityIndicator color={colors.primary} /> : null}
       <Text style={{ color: colors.foreground }}>{error || 'Loading your people…'}</Text>
+      {canRepairDurations ? <>
+        <Text style={{ color: colors.foreground, textAlign: 'center' }}>
+          Steps without a usable time will be set to 1 minute. Valid times are kept, and a backup of the original routines is saved before changes.
+        </Text>
+        <Pressable
+          testID="repair-routine-durations"
+          accessibilityRole="button"
+          accessibilityLabel="Repair invalid routine durations using a one-minute default"
+          accessibilityState={{ disabled: loading }}
+          disabled={loading}
+          onPress={() => void repairDurations()}
+          style={styles.repairButton}
+        >
+          <Text style={styles.repairText}>Repair saved durations</Text>
+        </Pressable>
+      </> : null}
       {error ? <Pressable accessibilityRole="button" onPress={() => void hydrate()}><Text style={{ color: colors.primary }}>Retry loading</Text></Pressable> : null}
     </View>;
   }
@@ -216,6 +263,8 @@ export function usePersonStorage() {
 
 const styles = StyleSheet.create({
   loading: { flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 24 },
+  repairButton: { minHeight: 46, paddingHorizontal: 20, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary },
+  repairText: { color: colors.primaryForeground, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   scrim: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, padding: 24 },
   operation: { backgroundColor: colors.card, borderRadius: 16, padding: 24, gap: 16, alignItems: 'center' },
 });

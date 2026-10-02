@@ -171,6 +171,58 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
   };
 }
 
+export function repairStoredRoutineDurations(contents: string): { serialized: string; repairedSteps: number } {
+  if (contents.length > MAX_ROUTINE_FILE_BYTES) {
+    throw new Error('Saved routines are too large to repair automatically. No changes were made.');
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(contents);
+  } catch {
+    throw new Error('Saved routines are not valid JSON. No changes were made.');
+  }
+  if (!Array.isArray(value) || value.length > 1000) {
+    throw new Error('Saved routines are not in a supported list format. No changes were made.');
+  }
+
+  let repairedSteps = 0;
+  const routines = value.map((routine) => {
+    if (!isRecord(routine) || !Array.isArray(routine.steps)) return routine;
+    const steps = routine.steps.map((step) => {
+      if (!isRecord(step)) return step;
+
+      const seconds = step.durationSeconds;
+      const hasSeconds = typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0;
+      const legacyIsString = step.duration === undefined || typeof step.duration === 'string';
+      const legacyMinutes = typeof step.duration === 'string' ? Number.parseInt(step.duration, 10) : NaN;
+      const hasLegacyMinutes = Number.isFinite(legacyMinutes) && legacyMinutes > 0;
+
+      if (legacyIsString && hasSeconds) return step;
+
+      repairedSteps += 1;
+      if (legacyIsString && hasLegacyMinutes) {
+        return { ...step, durationSeconds: legacyMinutes * 60 };
+      }
+
+      const repaired: Record<string, unknown> = {
+        ...step,
+        durationSeconds: hasSeconds ? seconds : 60,
+      };
+      if (!legacyIsString || !hasLegacyMinutes) delete repaired.duration;
+      return repaired;
+    });
+    return { ...routine, steps };
+  });
+
+  if (repairedSteps === 0) {
+    throw new Error('No invalid routine durations were found. No changes were made.');
+  }
+
+  parseRoutinesFile(JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, routines }));
+  return { serialized: JSON.stringify(routines), repairedSteps };
+}
+
 function routineSignature(routine: Routine): string {
   return JSON.stringify([
     routine.title,
