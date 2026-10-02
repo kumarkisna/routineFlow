@@ -66,7 +66,7 @@ function FontLoadingNotice({ failed }: { failed: boolean }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   return (
-    <View pointerEvents="none" style={[styles.fontNotice, { bottom: insets.bottom + 90, backgroundColor: colors.card }]}>
+    <View style={[styles.fontNotice, { bottom: insets.bottom + 90, backgroundColor: colors.card, pointerEvents: 'none' }]}>
       <Text testID="app-font-notice" accessibilityRole="alert" style={{ color: colors.foreground, fontSize: 12 }}>
         {failed ? 'Custom fonts could not load. Using device fonts.' : 'Custom fonts are still loading. Using device fonts for now.'}
       </Text>
@@ -79,7 +79,7 @@ function PersonNotice() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   if (!notice) return null;
-  return <View pointerEvents="none" style={[styles.fontNotice, { bottom: insets.bottom + 150, backgroundColor: colors.card }]}>
+  return <View style={[styles.fontNotice, { bottom: insets.bottom + 150, backgroundColor: colors.card, pointerEvents: 'none' }]}>
     <Text testID="person-notice" accessibilityRole="alert" style={{ color: colors.foreground, fontSize: 13 }}>{notice}</Text>
   </View>;
 }

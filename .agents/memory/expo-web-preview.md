@@ -17,6 +17,6 @@ Web verification does not warm the separate Android bundle after dependency chan
 
 Cold Metro startup itself can exceed a short workflow readiness allowance, before any port opens. An auxiliary React Native DevTools installation error does not necessarily stop Metro.
 
-**Why:** Standard launch attempts timed out, but a longer readiness allowance let the same configuration start and serve the application. Metro continued despite the debugger shell’s missing shared-library error.
+**Why:** The debugger shell reported Linux shared libraries one at a time; Expo still served the web app while its optional DevTools installation failed. After the required runtime libraries were available and the Expo artifact restarted, that startup error cleared.
 
-**How to apply:** Distinguish slow startup progress from an application exception before reinstalling packages or changing root rendering. Never treat successful Metro startup or a browser check as proof that Android’s black screen is fixed.
+**How to apply:** Distinguish slow startup progress from an application exception before changing root rendering. For a DevTools loader error, use the exact missing `.so` name to select Nix runtime packages, then restart the managed Expo artifact and verify its port. Never treat successful Metro startup or a browser check as proof that Android’s black screen is fixed.
