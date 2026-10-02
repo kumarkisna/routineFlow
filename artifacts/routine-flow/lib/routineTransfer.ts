@@ -1,13 +1,20 @@
 import { getStepSeconds, isCompleted, type CompletionMap, type Routine, type RoutineStep, type RoutineTone } from '@/types/routines';
 import { MAX_CATEGORY_LENGTH, categoryKey } from '@/lib/routineCategories';
 import { detachedHistoryId, progressRoutineIds, splitProgressKey } from '@/lib/historyIdentity';
+import { parsePlaylists, type RoutinePlaylist } from './playlists';
+import { parseSchedules, type RoutineSchedule } from './schedules';
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
 const FILE_VERSION = 5;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
 
-export type RoutineBackup = { routines: Routine[]; progress?: CompletionMap };
+export type PersonBackupData = {
+  playlists: RoutinePlaylist[];
+  schedules: RoutineSchedule[];
+  selectedThemeId: string;
+};
+export type RoutineBackup = { routines: Routine[]; progress?: CompletionMap; personData?: PersonBackupData };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -124,7 +131,7 @@ function parseProgress(value: unknown, routines: Routine[], version: number): Co
   return result;
 }
 
-export function serializeRoutines(routines: Routine[], progress?: CompletionMap): string {
+function createRoutineBackup(routines: Routine[], progress?: CompletionMap) {
   const history: CompletionMap = {};
   if (progress) {
     for (const [day, entries] of Object.entries(progress)) {
@@ -135,12 +142,38 @@ export function serializeRoutines(routines: Routine[], progress?: CompletionMap)
       if (Object.keys(completed).length) history[day] = completed;
     }
   }
-  return JSON.stringify({
+  return {
     format: FILE_FORMAT,
     version: FILE_VERSION,
     exportedAt: new Date().toISOString(),
     routines,
     ...(progress ? { progress: history } : {}),
+  };
+}
+
+export function serializeRoutines(routines: Routine[], progress?: CompletionMap): string {
+  return JSON.stringify(createRoutineBackup(routines, progress), null, 2);
+}
+
+function parsePersonBackupData(value: unknown): PersonBackupData {
+  if (!isRecord(value) || !Array.isArray(value.playlists) || !Array.isArray(value.schedules) || !isText(value.selectedThemeId)) {
+    throw new Error('The full person backup has invalid playlists, schedules, or selected theme data.');
+  }
+  return {
+    playlists: parsePlaylists(JSON.stringify(value.playlists)),
+    schedules: parseSchedules(JSON.stringify(value.schedules)),
+    selectedThemeId: value.selectedThemeId,
+  };
+}
+
+export function serializePersonBackup(
+  routines: Routine[],
+  personData: PersonBackupData,
+  progress?: CompletionMap,
+): string {
+  return JSON.stringify({
+    ...createRoutineBackup(routines, progress),
+    personData: parsePersonBackupData(personData),
   }, null, 2);
 }
 
@@ -162,12 +195,14 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
   if (new Set(routines.map((routine) => routine.id)).size !== routines.length) {
     throw new Error('The file contains duplicate routine IDs.');
   }
+  const personData = value.personData === undefined ? undefined : parsePersonBackupData(value.personData);
   if (value.version === 1 && value.progress !== undefined) {
     throw new Error('This older backup cannot contain daily progress.');
   }
   return {
     routines,
     ...(value.progress !== undefined ? { progress: parseProgress(value.progress, routines, value.version as number) } : {}),
+    ...(personData ? { personData } : {}),
   };
 }
 

@@ -21,7 +21,8 @@ import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
-import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializeRoutines, type RoutineBackup } from '@/lib/routineTransfer';
+import { readPersonExportSnapshot } from '@/lib/personCopy';
+import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializePersonBackup, type RoutineBackup } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
 
 function formatDate() {
@@ -155,16 +156,25 @@ export default function HomeScreen() {
     }
   }
 
-  async function exportRoutinesFile() {
+  async function exportPersonFile() {
     if (transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading) return;
     transferLock.current = true;
     setTransferBusy('export');
     setTransferStatus(null);
     try {
-      const filename = `routine-flow-routines-${new Date().toISOString().slice(0, 10)}.json`;
-      const contents = serializeRoutines(routines, includeHistory ? dailyProgress : undefined);
+      const filename = `routine-flow-person-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      const personData = await readPersonExportSnapshot(activePerson.id);
+      const contents = serializePersonBackup(
+        personData.routines,
+        {
+          playlists: personData.playlists,
+          schedules: personData.schedules,
+          selectedThemeId: personData.selectedThemeId,
+        },
+        includeHistory ? personData.progress : undefined,
+      );
       if (new Blob([contents]).size > MAX_ROUTINE_FILE_BYTES) {
-        throw new Error('This backup is too large to import (5 MB maximum). Export without daily progress.');
+        throw new Error('This person backup exceeds 5 MB. Try omitting daily progress or reducing the saved data.');
       }
       if (Platform.OS === 'web') {
         const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
@@ -181,9 +191,12 @@ export default function HomeScreen() {
         }
         const uri = `${FileSystem.cacheDirectory}${filename}`;
         await FileSystem.writeAsStringAsync(uri, contents, { encoding: FileSystem.EncodingType.UTF8 });
-        await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export routines' });
+        await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export person backup' });
       }
-      setTransferStatus({ message: `${routines.length} routines${includeHistory ? ' with daily progress' : ''} ready to save or share.`, error: false });
+      setTransferStatus({
+        message: `Person backup ready: ${personData.routines.length} routines, ${personData.playlists.length} playlists, ${personData.schedules.length} schedules, and the selected theme${includeHistory ? ' with daily progress' : ''}.`,
+        error: false,
+      });
     } catch (error) {
       setTransferStatus({ message: error instanceof Error ? error.message : 'Could not export routines.', error: true });
     } finally {
@@ -229,6 +242,7 @@ export default function HomeScreen() {
       result.skipped ? `${result.skipped} already present` : null,
       result.renamed ? `${result.renamed} kept as a separate copy` : null,
       restoreHistory ? `${result.progressAdded} completed steps added${result.progressKept ? ` (${result.progressKept} local entries kept)` : ''}` : null,
+      backup.personData ? 'Playlists, schedules, and selected theme are not restored by Import JSON.' : null,
     ].filter(Boolean).join(' · ');
     setTransferStatus({ message: details, error: false });
     if (result.added || result.progressAdded) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -587,9 +601,9 @@ export default function HomeScreen() {
         ListFooterComponent={
           <View style={styles.footer}>
             <View style={[styles.transferCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.transferTitle, { color: colors.foreground }]}>Move your routines</Text>
+              <Text style={[styles.transferTitle, { color: colors.foreground }]}>Back up {activePerson.name}</Text>
               <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
-                Export or import routines and steps as JSON. Choose whether to include daily progress.
+                Export this person’s routines, playlists, schedules, and selected theme as one JSON file. Daily progress is optional. Import JSON only restores routines and optional progress; it does not restore playlists, schedules, or theme.
               </Text>
               <Pressable
                 accessibilityRole="checkbox"
@@ -605,15 +619,15 @@ export default function HomeScreen() {
               </Pressable>
               <View style={styles.transferActions}>
                 <Pressable
-                  accessibilityLabel="Export routines"
-                  testID="export-routines"
+                  accessibilityLabel={`Export all data for ${activePerson.name}`}
+                  testID="export-person-data"
                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
-                  onPress={() => void exportRoutinesFile()}
+                  onPress={() => void exportPersonFile()}
                   style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                 >
                   <Ionicons name="download-outline" size={18} color={colors.primary} />
                   <Text style={[styles.transferButtonText, { color: colors.primary }]}>
-                    {transferBusy === 'export' ? 'Exporting…' : 'Export JSON'}
+                    {transferBusy === 'export' ? 'Exporting…' : 'Export person backup'}
                   </Text>
                 </Pressable>
                 <Pressable
@@ -635,6 +649,11 @@ export default function HomeScreen() {
                   <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
                     Restore completed steps too? Existing progress stays unchanged; only missing completions are added.
                   </Text>
+                  {pendingBackup.personData ? (
+                    <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                      This file also has playlists, schedules, and a selected theme; this import will not restore those sections.
+                    </Text>
+                  ) : null}
                   <View style={styles.transferActions}>
                     <Pressable
                       testID="import-with-progress"

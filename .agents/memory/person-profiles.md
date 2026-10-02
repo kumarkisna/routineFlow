@@ -15,6 +15,12 @@ Copies append independent items and include referenced dependencies. They retain
 
 **How to apply:** Copied schedules start with phone reminders disabled and explain how to enable them. Switching profiles alone must not cancel existing phone reminders. Reminder taps must open the owning person; older unowned reminders belong to Me.
 
+Full-person exports must include that person's routines, playlists, schedules, and selected theme.
+
+**Why:** The user explicitly requested those four sections in each person's export.
+
+**How to apply:** Keep future person-backup exports scoped to the active profile and include all four sections.
+
 When local routine data cannot validate at startup, offer a targeted, explicit repair and preserve the raw routine payload before changing it. Do not clear the profile or app storage to recover one malformed step.
 
 **Why:** The user asked to recover the app without losing other saved routines or profile data and said not to recommend clearing app storage as the fix.

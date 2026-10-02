@@ -9,6 +9,7 @@ import {
   parseRoutinesFile,
   persistImportedBackup,
   repairStoredRoutineDurations,
+  serializePersonBackup,
   serializeRoutines,
 } from './routineTransfer';
 import type { CompletionMap, Routine } from '@/types/routines';
@@ -77,6 +78,29 @@ test('version 5 export and import keep completed labels and legacy booleans', ()
   assert.deepEqual(parseRoutinesFile(backup(2, [source], { [day]: { 'morning:water': false } })).progress, {
     [day]: {},
   });
+});
+
+test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
+  const personData = {
+    playlists: [{ id: 'focus', title: 'Focus', routineIds: ['morning'] }],
+    schedules: [{
+      id: 'morning-appointment',
+      targetType: 'routine' as const,
+      targetId: 'morning',
+      targetTitle: 'Morning',
+      scheduledAt: new Date(Date.now() + 86_400_000).toISOString(),
+      reminder: false,
+    }],
+    selectedThemeId: 'routine-flow',
+  };
+  const progress = { [day]: { 'morning:water': true } };
+
+  const exported = serializePersonBackup([routine()], personData, progress);
+  const imported = parseRoutinesFile(exported);
+
+  assert.deepEqual(imported.routines, [routine()]);
+  assert.deepEqual(imported.personData, personData);
+  assert.deepEqual(imported.progress, progress);
 });
 
 test('completed removed steps survive export, import, routine ID remapping, and repeat import', () => {
