@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
@@ -29,6 +30,7 @@ function formatDate() {
 
 export default function HomeScreen() {
   const colors = useColors();
+  const { activePerson } = usePeople();
   const insets = useSafeAreaInsets();
   const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday, renameCategory, removeCategory } = useRoutines();
   const [showHidden, setShowHidden] = React.useState(false);
@@ -266,9 +268,19 @@ export default function HomeScreen() {
                 <Text style={[styles.date, { color: colors.mutedForeground }]}>{todayLabel}</Text>
                 <Text style={[styles.greeting, { color: colors.foreground }]}>{greeting}, friend</Text>
               </View>
-              <View style={[styles.avatar, { backgroundColor: colors.coralSoft }]}>
-                <Text style={[styles.avatarText, { color: colors.primary }]}>RF</Text>
-              </View>
+              <Pressable
+                testID="people-open"
+                accessibilityRole="button"
+                accessibilityLabel={`Active person: ${activePerson.name}. Open people`}
+                onPress={() => router.push('/people')}
+                style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: 150, minHeight: 44, paddingLeft: 6, paddingRight: 12, borderRadius: 22, backgroundColor: colors.coralSoft }, pressed && styles.pressed]}
+              >
+                <View style={[styles.avatar, { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.card }]}>
+                  <Text style={[styles.avatarText, { color: colors.primary }]}>{activePerson.name.trim().charAt(0).toUpperCase() || 'M'}</Text>
+                </View>
+                <Text numberOfLines={1} style={[styles.avatarText, { color: colors.primary, fontSize: 13, flexShrink: 1 }]}>{activePerson.name}</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+              </Pressable>
             </View>
 
             <View style={[styles.todayCard, { backgroundColor: colors.hero }]}>

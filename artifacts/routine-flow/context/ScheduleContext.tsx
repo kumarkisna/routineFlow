@@ -1,10 +1,11 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { usePeople, usePersonStorage } from '@/context/PeopleContext';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { useRoutines } from '@/context/RoutineContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { playablePlaylistIds } from '@/lib/playlists';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
+import { createPersonStorage } from '@/lib/personStorage';
 import { Notifications } from '@/lib/localNotifications';
 import { alertDate, futureScheduleAlerts, scheduleAlertContent, scheduleAlertOffsets, validateAlertOffsets } from '@/lib/scheduleAlerts';
 import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, parseSchedules, persistScheduleChange,
@@ -25,34 +26,40 @@ type ScheduleContextValue = {
 };
 const ScheduleContext = createContext<ScheduleContextValue | null>(null);
 
-const reminderService = {
-  create: async (schedule: RoutineSchedule, offsetMinutes = 0): Promise<string> => {
-    if (Platform.OS === 'web') throw new Error('Phone reminders are unavailable in the web preview. Turn off the reminder to save.');
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('routine-schedules', {
-        name: 'Scheduled routines', importance: Notifications.AndroidImportance.HIGH,
+function createReminderService(personId: string) {
+  return {
+    create: async (schedule: RoutineSchedule, offsetMinutes = 0): Promise<string> => {
+      if (Platform.OS === 'web') throw new Error('Phone reminders are unavailable in the web preview. Turn off the reminder to save.');
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('routine-schedules', {
+          name: 'Scheduled routines', importance: Notifications.AndroidImportance.HIGH,
+        });
+      }
+      let permission = await Notifications.getPermissionsAsync();
+      if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
+      if (!permission.granted) throw new Error('Enable notifications in your phone settings, or turn off the reminder to save.');
+      const notificationAt = alertDate(schedule, offsetMinutes);
+      if (!Number.isFinite(notificationAt.getTime()) || notificationAt.getTime() <= Date.now()) {
+        throw new Error('An alert time has passed. Choose a later date or a shorter lead time.');
+      }
+      const alertContent = scheduleAlertContent(schedule, offsetMinutes);
+      return Notifications.scheduleNotificationAsync({
+        ...(schedule.notificationId ? { identifier: schedule.notificationId } : {}),
+        content: { ...alertContent, data: { ...alertContent.data, personId } },
+        trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: notificationAt, ...(Platform.OS === 'android' ? { channelId: 'routine-schedules' } : {}) },
       });
-    }
-    let permission = await Notifications.getPermissionsAsync();
-    if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
-    if (!permission.granted) throw new Error('Enable notifications in your phone settings, or turn off the reminder to save.');
-    const notificationAt = alertDate(schedule, offsetMinutes);
-    if (!Number.isFinite(notificationAt.getTime()) || notificationAt.getTime() <= Date.now()) {
-      throw new Error('An alert time has passed. Choose a later date or a shorter lead time.');
-    }
-    return Notifications.scheduleNotificationAsync({
-      ...(schedule.notificationId ? { identifier: schedule.notificationId } : {}),
-      content: scheduleAlertContent(schedule, offsetMinutes),
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: notificationAt, ...(Platform.OS === 'android' ? { channelId: 'routine-schedules' } : {}) },
-    });
-  },
-  cancel: async (id: string) => {
-    if (Platform.OS !== 'web') await Notifications.cancelScheduledNotificationAsync(id);
-  },
-};
+    },
+    cancel: async (id: string) => {
+      if (Platform.OS !== 'web') await Notifications.cancelScheduledNotificationAsync(id);
+    },
+  };
+}
 
 export function ScheduleProvider({ children }: { children: React.ReactNode }) {
+  const { activePerson, people } = usePeople();
+  const AsyncStorage = usePersonStorage();
+  const reminderService = useMemo(() => createReminderService(activePerson.id), [activePerson.id]);
   const { routines, loading: routinesLoading } = useRoutines();
   const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
   const [schedules, setSchedules] = useState<RoutineSchedule[]>([]);
@@ -72,14 +79,19 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setError('Your schedules could not load. Retry before making changes.');
     } finally { setLoading(false); }
-  }, []);
+  }, [AsyncStorage]);
   useEffect(() => { void reload(); }, [reload]);
 
   const commit = useCallback(async (draft: RoutineSchedule | null, id: string) => {
     if (loading || error || unsafe.current) throw new Error('Schedules are not ready to change. Restart the app if a previous save could not be confirmed.');
     if (Platform.OS === 'ios' && draft?.reminder) {
+      const otherSchedules = await Promise.all(people.filter(person => person.id !== activePerson.id).map(async person => {
+        const saved = await createPersonStorage(person.id).getItem(KEY);
+        return saved ? parseSchedules(saved) : [];
+      }));
       const pending = current.current.filter(item => item.id !== id)
-        .reduce((total, item) => total + futureScheduleAlerts(item).length, 0) + futureScheduleAlerts(draft).length;
+        .reduce((total, item) => total + futureScheduleAlerts(item).length, 0) + futureScheduleAlerts(draft).length
+        + otherSchedules.flat().reduce((total, item) => total + futureScheduleAlerts(item).length, 0);
       if (pending > 60) throw new Error('Your phone has reached its pending reminder limit. Remove some upcoming alerts or turn off phone reminders for another schedule.');
     }
     try {
@@ -90,7 +102,7 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
       if (e instanceof Error && e.message.includes('Restart the app')) unsafe.current = true;
       throw e;
     }
-  }, [loading, error]);
+  }, [loading, error, AsyncStorage, reminderService, people, activePerson.id]);
   const writeSchedule = useCallback((draft: Draft, id?: string, copyFromId?: string) => runWrite(async () => {
     if (routinesLoading || playlistsLoading) throw new Error('Wait for your routines and playlists to load.');
     if (!Number.isFinite(Date.parse(draft.scheduledAt)) || Date.parse(draft.scheduledAt) <= Date.now()) {

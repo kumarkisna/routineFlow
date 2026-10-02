@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePersonStorage } from '@/context/PeopleContext';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Appearance, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -17,6 +17,7 @@ type AppearanceContextValue = {
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
 
 export function AppearanceProvider({ children }: { children: React.ReactNode }) {
+  const AsyncStorage = usePersonStorage();
   const [theme, setTheme] = useState<AppTheme>(APP_THEMES[0]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,7 +33,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       if (active) setError('Your saved appearance could not load. Choose a theme to save a new preference.');
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [AsyncStorage]);
   useEffect(() => {
     if (Platform.OS === 'web') return;
     Appearance.setColorScheme(theme.scheme);
@@ -56,7 +57,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       setError(message);
       throw new Error(message);
     } finally { setSaving(false); }
-  }), [loading, runWrite]);
+  }), [loading, runWrite, AsyncStorage]);
   return <AppearanceContext.Provider value={{ theme, loading, saving, error, selectTheme }}>
     <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
     {children}

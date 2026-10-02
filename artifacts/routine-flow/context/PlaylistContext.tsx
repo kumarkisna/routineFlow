@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePersonStorage } from '@/context/PeopleContext';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { parsePlaylists, validatePlaylist, type RoutinePlaylist } from '@/lib/playlists';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
@@ -15,6 +15,7 @@ type PlaylistContextValue = {
 const PlaylistContext = createContext<PlaylistContextValue | null>(null);
 
 export function PlaylistProvider({ children }: { children: React.ReactNode }) {
+  const AsyncStorage = usePersonStorage();
   const [playlists, setPlaylists] = useState<RoutinePlaylist[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -33,7 +34,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [AsyncStorage]);
   useEffect(() => { void reload(); }, [reload]);
   const savePlaylist = useCallback((title: string, routineIds: string[], id?: string) =>
     runWrite(async () => {
@@ -50,14 +51,14 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
       current.current = next;
       setPlaylists(next);
       return playlist;
-    }), [error, loading, runWrite]);
+    }), [error, loading, runWrite, AsyncStorage]);
   const deletePlaylist = useCallback((id: string) => runWrite(async () => {
     if (loading || error) throw new Error('Wait for playlists to load successfully before deleting.');
     const next = current.current.filter(item => item.id !== id);
     await AsyncStorage.setItem(KEY, JSON.stringify(next));
     current.current = next;
     setPlaylists(next);
-  }), [error, loading, runWrite]);
+  }), [error, loading, runWrite, AsyncStorage]);
   return <PlaylistContext.Provider value={{ playlists, loading, error, reload, savePlaylist, deletePlaylist }}>
     {children}
   </PlaylistContext.Provider>;

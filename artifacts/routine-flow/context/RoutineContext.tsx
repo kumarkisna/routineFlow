@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { usePeople, usePersonStorage } from '@/context/PeopleContext';
 import React, {
   createContext,
   useCallback,
@@ -98,7 +98,9 @@ function makeId() {
 }
 
 export function RoutineProvider({ children }: { children: React.ReactNode }) {
-  const [routines, setRoutines] = useState<Routine[]>(seedRoutines);
+  const AsyncStorage = usePersonStorage();
+  const { activePerson } = usePeople();
+  const [routines, setRoutines] = useState<Routine[]>(activePerson.id === 'me' ? seedRoutines : []);
   const [progress, setProgress] = useState<CompletionMap>({});
   const [loading, setLoading] = useState(true);
   const importNeedsRestart = useRef(false);
@@ -112,13 +114,14 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
           AsyncStorage.getItem(PROGRESS_KEY),
         ]);
         if (storedRoutines) setRoutines(JSON.parse(storedRoutines) as Routine[]);
+        else if (activePerson.id === 'me') await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(seedRoutines));
         if (storedProgress) setProgress(JSON.parse(storedProgress) as CompletionMap);
       } finally {
         setLoading(false);
       }
     }
     void hydrate();
-  }, []);
+  }, [AsyncStorage, activePerson.id]);
 
   const saveProgress = useCallback(async (nextProgress: CompletionMap) => {
     setProgress(nextProgress);
