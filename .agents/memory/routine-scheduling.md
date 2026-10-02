@@ -20,3 +20,9 @@ Copying a schedule to another date creates a separate appointment, rather than m
 **Why:** The user asked to reuse a previous date's schedule for a new date. This must remain distinct from rescheduling, which moves an existing appointment.
 
 **How to apply:** Keep the previous entry and its reminder untouched, require a future destination, and ensure editing or deleting the new copy cannot change the previous date's playlist version.
+
+Advance alerts apply to scheduled routines and playlists. The user clarified that the maximum of 12 notifications is **per scheduled appointment**, not across the app. New appointments start with three configurable slots; users can add more up to 12.
+
+**Why:** The user requested configurable advance notifications and answered the limit question with "for a scheduled playlist or routine."
+
+**How to apply:** Keep the per-appointment product limit separate from operating-system pending-notification limits. Preserve legacy single start-time reminders rather than silently adding extra notifications to already-saved appointments.

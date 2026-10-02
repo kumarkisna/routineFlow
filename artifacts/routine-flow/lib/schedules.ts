@@ -1,4 +1,6 @@
 import { validatePlaylist, type RoutinePlaylist } from './playlists';
+import { alertDate, futureScheduleAlerts, MAX_SCHEDULE_ALERTS, scheduleNotificationRecords, validateAlertOffsets,
+  type ScheduledAlertNotification } from './scheduleAlerts';
 
 export type ScheduleTargetType = 'routine' | 'playlist';
 export type ScheduledPlaylistOverride = { title: string; routineIds: string[] };
@@ -10,6 +12,8 @@ export type RoutineSchedule = {
   scheduledAt: string;
   reminder: boolean;
   notificationId?: string;
+  alertOffsetsMinutes?: number[];
+  notifications?: ScheduledAlertNotification[];
   playlistOverride?: ScheduledPlaylistOverride;
 };
 
@@ -26,7 +30,7 @@ export function editScheduledPlaylist(schedule: RoutineSchedule, title: string, 
   if (schedule.targetType !== 'playlist') throw new Error('Only a scheduled playlist can have a date-only playlist edit.');
   validatePlaylist(title, routineIds);
   return {
-    ...schedule, targetTitle: title.trim(), notificationId: undefined,
+    ...schedule, targetTitle: title.trim(), notificationId: undefined, notifications: undefined,
     playlistOverride: { title: title.trim(), routineIds: [...routineIds] },
   };
 }
@@ -51,6 +55,7 @@ export function copyScheduleForDate(
   return keepScheduledPlaylistOverride(source, {
     id, targetType: source.targetType, targetId: source.targetId, targetTitle: source.targetTitle,
     scheduledAt, reminder,
+    ...(source.alertOffsetsMinutes ? { alertOffsetsMinutes: [...source.alertOffsetsMinutes] } : {}),
   });
 }
 
@@ -76,12 +81,29 @@ export function scheduleDate(date: string, time: string, now = Date.now()): stri
 
 export function parseSchedules(value: string): RoutineSchedule[] {
   const parsed: unknown = JSON.parse(value);
-  if (!Array.isArray(parsed) || parsed.some(item =>
+  if (!Array.isArray(parsed)) throw new Error('Saved schedules could not be read.');
+  for (const item of parsed) {
+    if (item?.alertOffsetsMinutes !== undefined) {
+      try { validateAlertOffsets(item.alertOffsetsMinutes); }
+      catch { throw new Error('Saved schedules could not be read.'); }
+    }
+  }
+  if (parsed.some(item =>
     !item || typeof item.id !== 'string' || !['routine', 'playlist'].includes(item.targetType)
     || typeof item.targetId !== 'string' || typeof item.targetTitle !== 'string'
     || typeof item.scheduledAt !== 'string' || !Number.isFinite(Date.parse(item.scheduledAt))
     || typeof item.reminder !== 'boolean'
     || (item.notificationId !== undefined && typeof item.notificationId !== 'string')
+    || (item.notifications !== undefined && (
+      !Array.isArray(item.notifications) || item.notifications.length > MAX_SCHEDULE_ALERTS
+      || item.notifications.some((n: ScheduledAlertNotification) => !n || typeof n.id !== 'string' || !n.id
+        || !Number.isSafeInteger(n.offsetMinutes) || n.offsetMinutes < 0
+        || !Number.isSafeInteger(n.offsetMinutes * 60000))
+      || new Set(item.notifications.map((n: ScheduledAlertNotification) => n.id)).size !== item.notifications.length
+      || new Set(item.notifications.map((n: ScheduledAlertNotification) => n.offsetMinutes)).size !== item.notifications.length
+      || item.notifications.some((n: ScheduledAlertNotification) => !(item.alertOffsetsMinutes ?? [0]).includes(n.offsetMinutes))
+      || (item.notificationId !== undefined && !item.notifications.some((n: ScheduledAlertNotification) => n.id === item.notificationId))
+    ))
     || (item.playlistOverride !== undefined && (
       item.targetType !== 'playlist' || !item.playlistOverride || typeof item.playlistOverride.title !== 'string'
       || !item.playlistOverride.title.trim() || item.playlistOverride.title.trim().length > 100
@@ -95,7 +117,7 @@ export function parseSchedules(value: string): RoutineSchedule[] {
 
 type ScheduleStorage = { getItem: (key: string) => Promise<string | null>; setItem: (key: string, value: string) => Promise<void> };
 type ReminderService = {
-  create: (schedule: RoutineSchedule) => Promise<string>;
+  create: (schedule: RoutineSchedule, offsetMinutes?: number) => Promise<string>;
   cancel: (notificationId: string) => Promise<void>;
 };
 
@@ -105,16 +127,25 @@ export async function persistScheduleChange(
   id: string, reminders: ReminderService,
 ): Promise<RoutineSchedule[]> {
   const old = previous.find(item => item.id === id);
-  let notificationId: string | undefined;
-  let cancelledOld = false;
+  if (draft?.alertOffsetsMinutes !== undefined) validateAlertOffsets(draft.alertOffsetsMinutes);
+  const plannedOffsets = draft ? futureScheduleAlerts(draft) : [];
+  const created: ScheduledAlertNotification[] = [];
+  const cancelledOld: ScheduledAlertNotification[] = [];
   let uncertainWrite = false;
   try {
-    if (draft?.reminder && Date.parse(draft.scheduledAt) > Date.now()) notificationId = await reminders.create(draft);
-    if (old?.notificationId) {
-      await reminders.cancel(old.notificationId);
-      cancelledOld = true;
+    // Cancel the old set first: staging 12 new alerts before cancelling 12 old
+    // ones can exceed iOS's pending-notification limit and evict other schedules.
+    if (old) for (const notification of scheduleNotificationRecords(old)) {
+      await reminders.cancel(notification.id);
+      cancelledOld.push(notification);
     }
-    const entry = draft ? { ...draft, notificationId } : null;
+    if (draft) for (const offsetMinutes of plannedOffsets) {
+      const notificationId = await reminders.create({ ...draft, notificationId: undefined, notifications: undefined }, offsetMinutes);
+      created.push({ id: notificationId, offsetMinutes });
+    }
+    const entry = draft ? { ...draft, notificationId: created[0]?.id,
+      ...((draft.alertOffsetsMinutes !== undefined || draft.notifications !== undefined)
+        ? { notifications: created } : {}) } : null;
     const next = entry ? old ? previous.map(item => item.id === id ? entry : item)
       : [...previous, entry] : previous.filter(item => item.id !== id);
     const serialized = JSON.stringify(next);
@@ -134,10 +165,18 @@ export async function persistScheduleChange(
       throw new Error('Could not confirm the saved schedule. Restart the app before making more schedule changes.');
     }
     try {
-      if (notificationId) await reminders.cancel(notificationId);
-      if (cancelledOld && old?.reminder && Date.parse(old.scheduledAt) > Date.now()) {
-        await reminders.create(old);
+      let recoveryFailed = false;
+      for (const notification of created) {
+        try { await reminders.cancel(notification.id); } catch { recoveryFailed = true; }
       }
+      if (old?.reminder) for (const notification of cancelledOld) {
+        if (alertDate(old, notification.offsetMinutes).getTime() <= Date.now()) continue;
+        try {
+          const restored = await reminders.create({ ...old, notificationId: notification.id }, notification.offsetMinutes);
+          if (restored !== notification.id) recoveryFailed = true;
+        } catch { recoveryFailed = true; }
+      }
+      if (recoveryFailed) throw new Error('Reminder recovery failed.');
     } catch {
       throw new Error('Schedule change failed and the reminder could not be restored. Restart the app and check phone notification settings.');
     }

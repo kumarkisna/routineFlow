@@ -10,10 +10,17 @@ import { useRoutines } from '@/context/RoutineContext';
 import { useSchedules } from '@/context/ScheduleContext';
 import { useColors } from '@/hooks/useColors';
 import { playablePlaylistIds } from '@/lib/playlists';
+import { ScheduleAlertsEditor, offsetsToRows, rowsToOffsets } from '@/components/ScheduleAlertsEditor';
+import { DEFAULT_ALERT_MINUTES } from '@/lib/scheduleAlerts';
 import { localDateString, scheduleDate, type ScheduleTargetType } from '@/lib/schedules';
 
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const pad = (n: number) => String(n).padStart(2, '0');
+
+function leaveEditor() {
+  if (router.canGoBack()) router.back();
+  else router.replace('/schedule');
+}
 
 export default function ScheduleEditor() {
   const { id, copyId, targetType, targetId } = useLocalSearchParams<{ id?: string; copyId?: string; targetType?: string; targetId?: string }>();
@@ -31,7 +38,7 @@ export default function ScheduleEditor() {
           {busy ? 'Loading…' : error || 'Schedule not found'}
         </Text>
         {!busy && error ? <Pressable accessibilityRole="button" accessibilityLabel="Retry loading schedules" testID="retry-schedules" onPress={() => void reload()}><Text style={{ color: colors.primary, fontFamily: 'Inter_600SemiBold' }}>Retry</Text></Pressable> : null}
-        {!busy ? <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()}><Text style={{ color: colors.primary, fontFamily: 'Inter_600SemiBold' }}>Go back</Text></Pressable> : null}
+        {!busy ? <Pressable accessibilityRole="button" accessibilityLabel="Go back" onPress={leaveEditor}><Text style={{ color: colors.primary, fontFamily: 'Inter_600SemiBold' }}>Go back</Text></Pressable> : null}
       </View>
     );
   }
@@ -39,10 +46,12 @@ export default function ScheduleEditor() {
   return <Editor key={copyId ? `copy-${copyId}` : id ?? 'new'} editId={copyId ? undefined : existing?.id} copyId={copyId}
     initial={existing ? { type: existing.targetType, id: existing.targetId, at: copyId ? null : new Date(existing.scheduledAt),
       reminder: existing.reminder, override: existing.playlistOverride, copiedAt: copyId ? existing.scheduledAt : undefined,
-      title: existing.targetTitle } : { type: pre?.type ?? 'routine', id: pre?.id ?? '', at: null, reminder: false, override: undefined }} />;
+      title: existing.targetTitle,
+      alerts: existing.alertOffsetsMinutes ?? (existing.reminder ? [0] : DEFAULT_ALERT_MINUTES) }
+      : { type: pre?.type ?? 'routine', id: pre?.id ?? '', at: null, reminder: false, override: undefined, alerts: DEFAULT_ALERT_MINUTES }} />;
 }
 
-function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string; initial: { type: ScheduleTargetType; id: string; at: Date | null; reminder: boolean; override?: { title: string; routineIds: string[] }; copiedAt?: string; title?: string } }) {
+function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string; initial: { type: ScheduleTargetType; id: string; at: Date | null; reminder: boolean; override?: { title: string; routineIds: string[] }; copiedAt?: string; title?: string; alerts: number[] } }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { saveSchedule, copySchedule } = useSchedules();
@@ -65,6 +74,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
   const [time, setTime] = React.useState(`${pad(initialClock.getHours())}:${pad(initialClock.getMinutes())}`);
   const [month, setMonth] = React.useState({ y: start.getFullYear(), m: start.getMonth() });
   const [reminder, setReminder] = React.useState(isWeb ? false : initial.reminder);
+  const [alertRows, setAlertRows] = React.useState(() => offsetsToRows(initial.alerts));
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const lock = React.useRef(false);
@@ -77,6 +87,9 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
   const opts = type === 'routine' ? routineOpts : playlistOpts;
   const needsSettings = !isWeb && /settings/i.test(error);
 
+  const previewAt = React.useMemo(() => {
+    try { return new Date(scheduleDate(date.trim(), time.trim())); } catch { return null; }
+  }, [date, time]);
   const today = localDateString(new Date());
   const first = new Date(month.y, month.m, 1);
   const daysIn = new Date(month.y, month.m + 1, 0).getDate();
@@ -93,16 +106,25 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
     let iso: string;
     try { iso = scheduleDate(date.trim(), time.trim()); }
     catch (e) { return setError(e instanceof Error ? e.message : 'Choose a valid date and time.'); }
+    let offsets: number[];
+    try { offsets = rowsToOffsets(alertRows); }
+    catch (e) { return setError(e instanceof Error ? e.message : 'Check the alert lead times.'); }
+    if (!isWeb && reminder) {
+      const at = Date.parse(iso);
+      if (at > Date.now() && offsets.some((m) => at - m * 60000 <= Date.now())) {
+        return setError('One or more alert times have already passed. Change the lead times or choose a later date.');
+      }
+    }
     lock.current = true;
     setBusy(true);
     setError('');
     Keyboard.dismiss();
     try {
-      const draft = { targetType: type, targetId, scheduledAt: iso, reminder: isWeb ? false : reminder };
+      const draft = { targetType: type, targetId, scheduledAt: iso, reminder: isWeb ? false : reminder, alertOffsetsMinutes: offsets };
       if (copyId) await copySchedule(copyId, draft);
       else await saveSchedule(draft, editId);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.back();
+      leaveEditor();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the schedule. Please try again.');
     } finally {
@@ -115,7 +137,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.top, { paddingTop: (isWeb ? 67 : insets.top) + 8 }]}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Close" testID="close-schedule-editor" disabled={busy} onPress={() => router.back()} style={styles.iconBtn}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close" testID="close-schedule-editor" disabled={busy} onPress={leaveEditor} style={styles.iconBtn}>
           <Ionicons name="close" size={24} color={colors.foreground} />
         </Pressable>
         <Text style={[styles.topTitle, { color: colors.foreground }]}>{copyId ? 'Copy schedule' : editId ? 'Reschedule' : 'New schedule'}</Text>
@@ -124,6 +146,18 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
           <Text style={[styles.saveText, { color: busy ? colors.mutedForeground : colors.primaryForeground }]}>{busy ? 'Saving…' : copyId ? 'Save copy' : editId ? 'Save changes' : 'Save'}</Text>
         </Pressable>
       </View>
+      {error ? (
+        <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
+          <Text accessibilityRole="alert" testID="schedule-error" style={[styles.error, { color: colors.destructive }]}>{error}</Text>
+          {needsSettings ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Open phone settings" testID="schedule-open-settings"
+              onPress={() => { Linking.openSettings().catch(() => setError('Open your phone settings and enable notifications for this app.')); }}
+              style={[styles.settingsBtn, { borderColor: colors.primary }]}>
+              <Text style={[styles.segText, { color: colors.primary }]}>Open Settings</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       <KeyboardAwareScrollViewCompat keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingBottom: (isWeb ? 34 : insets.bottom) + 40 }]} showsVerticalScrollIndicator={false}>
         {copyId && initial.copiedAt ? (
           <View style={[styles.copyNotice, { backgroundColor: colors.coralSoft }]}>
@@ -235,18 +269,11 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
           <Switch accessibilityLabel="Phone reminder" testID="schedule-reminder" value={reminder} disabled={busy || isWeb}
             onValueChange={(v) => { setReminder(v); setError(''); }} trackColor={{ true: colors.primary, false: colors.border }} />
         </View>
-        <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+        <ScheduleAlertsEditor rows={alertRows} onChange={(r) => { setAlertRows(r); setError(''); }} disabled={busy} scheduledAt={previewAt} isWeb={isWeb} reminderOn={reminder} />
+        <Text style={[styles.hint, { color: colors.mutedForeground, marginTop: 10 }]}>
           Date and time use your device’s current time zone.
         </Text>
 
-        {error ? <Text accessibilityRole="alert" testID="schedule-error" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
-        {needsSettings ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Open phone settings" testID="schedule-open-settings"
-            onPress={() => { Linking.openSettings().catch(() => setError('Open your phone settings and enable notifications for this app.')); }}
-            style={[styles.settingsBtn, { borderColor: colors.primary }]}>
-            <Text style={[styles.segText, { color: colors.primary }]}>Open Settings</Text>
-          </Pressable>
-        ) : null}
       </KeyboardAwareScrollViewCompat>
     </View>
   );

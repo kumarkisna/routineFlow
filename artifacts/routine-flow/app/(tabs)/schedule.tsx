@@ -9,6 +9,7 @@ import { useSchedules } from '@/context/ScheduleContext';
 import { useColors } from '@/hooks/useColors';
 import { playablePlaylistIds } from '@/lib/playlists';
 import { scheduledPlaylistSource, type RoutineSchedule } from '@/lib/schedules';
+import { formatAlertOffset, scheduleAlertOffsets } from '@/lib/scheduleAlerts';
 
 type Row = { kind: 'head'; key: string; label: string } | { kind: 'item'; key: string; item: RoutineSchedule };
 
@@ -141,6 +142,11 @@ export default function ScheduleScreen() {
                 <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={2}>{src.title ?? s.targetTitle}</Text>
               </View>
               <Text style={[styles.meta, { color: colors.inkSoft }]}>{fmt(s.scheduledAt)}</Text>
+              {s.reminder || s.alertOffsetsMinutes ? (
+                <Text style={[styles.meta, { color: colors.mutedForeground }]} testID={`schedule-alerts-${s.id}`}>
+                  {s.reminder ? 'Phone alerts' : 'Phone alerts off'} · {scheduleAlertOffsets(s).map(formatAlertOffset).join(', ')}
+                </Text>
+              ) : null}
               <View style={styles.badges}>
                 <View style={[styles.badge, { backgroundColor: colors.secondary }]}>
                   <Text style={[styles.badgeText, { color: colors.inkSoft }]}>{s.targetType === 'playlist' ? 'Playlist' : 'Routine'}</Text>
@@ -154,7 +160,9 @@ export default function ScheduleScreen() {
                 {s.reminder ? (
                   <View style={[styles.badge, { backgroundColor: colors.sageSoft }]}>
                     <Ionicons name="notifications-outline" size={12} color={colors.success} />
-                    <Text style={[styles.badgeText, { color: colors.success }]}>Reminder</Text>
+                    <Text style={[styles.badgeText, { color: colors.success }]}>
+                      {scheduleAlertOffsets(s).length} {scheduleAlertOffsets(s).length === 1 ? 'alert' : 'alerts'}
+                    </Text>
                   </View>
                 ) : null}
               </View>
@@ -162,7 +170,7 @@ export default function ScheduleScreen() {
                 : !runnable ? <Text style={[styles.meta, { color: colors.mutedForeground }]}>Hidden or has no visible steps, so it cannot start.</Text> : null}
               {confirming ? (
                 <View style={[styles.confirm, { backgroundColor: colors.coralSoft }]}>
-                  <Text style={[styles.meta, { color: colors.foreground, marginTop: 0 }]}>Remove this schedule{s.reminder ? ' and its reminder' : ''}? Your {s.targetType === 'playlist' ? 'playlist and routines' : 'routine'} stay untouched.</Text>
+                  <Text style={[styles.meta, { color: colors.foreground, marginTop: 0 }]}>Remove this schedule{s.reminder ? ' and all its alerts' : ''}? Your {s.targetType === 'playlist' ? 'playlist and routines' : 'routine'} stay untouched.</Text>
                   <View style={styles.row}>
                     <Pressable accessibilityRole="button" accessibilityLabel="Cancel removing schedule" testID={`cancel-delete-schedule-${s.id}`} disabled={busy} onPress={() => setPending(null)} style={styles.small}>
                       <Text style={[styles.btnText, { color: colors.mutedForeground }]}>Cancel</Text>

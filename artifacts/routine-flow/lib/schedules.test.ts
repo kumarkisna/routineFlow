@@ -167,7 +167,7 @@ test('saving a date-only version changes just that appointment and survives relo
   assert.deepEqual(next[1], sibling);
   assert.equal(next[0].scheduledAt, scheduled.scheduledAt);
   assert.deepEqual(parseSchedules(JSON.stringify(f.stored()))[0].playlistOverride, { title: 'Date-only', routineIds: ['b', 'a', 'b'] });
-  assert.deepEqual(f.events, ['create:new-reminder', 'cancel:old-reminder']);
+  assert.deepEqual(f.events, ['cancel:old-reminder', 'create:new-reminder']);
 });
 test('past date-only edits do not attempt to create reminders in the past', async () => {
   const scheduled: RoutineSchedule = { ...entry, targetType: 'playlist', scheduledAt: new Date(Date.now() - 86400000).toISOString() };
@@ -187,7 +187,7 @@ test('failed date-only saves retain the previous playlist version and restore it
   await assert.rejects(persistScheduleChange(f.storage, 'key', [scheduled],
     editScheduledPlaylist(scheduled, 'New date-only', ['b', 'b']), scheduled.id, f.reminders), /Disk full/);
   assert.deepEqual(f.stored(), [scheduled]);
-  assert.deepEqual(f.events, ['create:new-reminder', 'cancel:old-reminder', 'cancel:new-reminder', 'create:old-reminder']);
+  assert.deepEqual(f.events, ['cancel:old-reminder', 'create:new-reminder', 'cancel:new-reminder', 'create:old-reminder']);
 });
 test('removing a date-only version returns that date to the live original without changing other dates', async () => {
   const scheduled: RoutineSchedule = { ...entry, targetType: 'playlist', targetId: 'p',
@@ -226,7 +226,7 @@ for (const targetType of ['routine', 'playlist'] as const) {
     assert.equal(next[0].notificationId, 'new-reminder');
     assert.deepEqual(next[1], other);
     assert.deepEqual(f.stored(), next);
-    assert.deepEqual(f.events, ['create:new-reminder', 'cancel:old-reminder']);
+    assert.deepEqual(f.events, ['cancel:old-reminder', 'create:new-reminder']);
   });
 }
 test('deleting a schedule cancels only its reminder and removes only that entry', async () => {
@@ -246,7 +246,7 @@ test('failed storage write cancels the new reminder and restores the existing on
   f.storage.setItem = async () => { throw new Error('Disk full'); };
   await assert.rejects(persistScheduleChange(f.storage, 'key', [entry],
     { ...entry, notificationId: undefined }, 's', f.reminders), /Disk full/);
-  assert.deepEqual(f.events, ['create:new-reminder', 'cancel:old-reminder', 'cancel:new-reminder', 'create:old-reminder']);
+  assert.deepEqual(f.events, ['cancel:old-reminder', 'create:new-reminder', 'cancel:new-reminder', 'create:old-reminder']);
   assert.deepEqual(f.stored(), [entry]);
 });
 test('storage that commits before rejecting is reconciled without undoing a successful save', async () => {
@@ -257,7 +257,7 @@ test('storage that commits before rejecting is reconciled without undoing a succ
   assert.equal(result[0].notificationId, 'new-reminder');
   assert.deepEqual(f.events, ['create:new-reminder']);
 });
-test('failed old-reminder cancellation prevents the edit and cleans up the new reminder', async () => {
+test('failed old-reminder cancellation prevents the edit before any new reminder is created', async () => {
   const f = fixture([entry]);
   const cancel = f.reminders.cancel;
   f.reminders.cancel = async (id) => {
@@ -267,7 +267,7 @@ test('failed old-reminder cancellation prevents the edit and cleans up the new r
   await assert.rejects(persistScheduleChange(f.storage, 'key', [entry],
     { ...entry, notificationId: undefined }, 's', f.reminders), /Could not cancel/);
   assert.deepEqual(f.stored(), [entry]);
-  assert.deepEqual(f.events, ['create:new-reminder', 'cancel:new-reminder']);
+  assert.deepEqual(f.events, []);
 });
 test('failed delete persistence restores the original future reminder', async () => {
   const f = fixture([entry]);
