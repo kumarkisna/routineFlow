@@ -15,7 +15,7 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
-import { formatDuration, getStepSeconds } from '@/types/routines';
+import { formatDuration, getStepDetails, getStepSeconds } from '@/types/routines';
 import type { Routine, RoutineStep } from '@/types/routines';
 
 export default function NewRoutineScreen() {
@@ -42,6 +42,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [category, setCategory] = useState(editingRoutine?.category ?? '');
   const [stepDraft, setStepDraft] = useState('');
   const [stepDescriptionDraft, setStepDescriptionDraft] = useState('');
+  const [additionalDetailsDraft, setAdditionalDetailsDraft] = useState<string[]>([]);
   const [hoursDraft, setHoursDraft] = useState('0');
   const [minutesDraft, setMinutesDraft] = useState('5');
   const [secondsDraft, setSecondsDraft] = useState('0');
@@ -57,6 +58,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setEditingStepId(null);
     setStepDraft('');
     setStepDescriptionDraft('');
+    setAdditionalDetailsDraft([]);
     setHoursDraft('0');
     setMinutesDraft('5');
     setSecondsDraft('0');
@@ -67,6 +69,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setEditingStepId(step.id);
     setStepDraft(step.title);
     setStepDescriptionDraft(step.description ?? '');
+    setAdditionalDetailsDraft([...(step.additionalDetails ?? [])]);
     setHoursDraft(String(Math.floor(duration / 3600)));
     setMinutesDraft(String(Math.floor((duration % 3600) / 60)));
     setSecondsDraft(String(duration % 60));
@@ -76,6 +79,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   function addStep() {
     const nextTitle = stepDraft.trim();
     const nextDescription = stepDescriptionDraft.trim();
+    const nextAdditionalDetails = additionalDetailsDraft.map((detail) => detail.trim()).filter(Boolean);
     if (!nextTitle) {
       setError('Give this step a name.');
       return;
@@ -90,12 +94,20 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     }
     if (editingStepId) {
       setSteps((current) => current.map((step) =>
-        step.id === editingStepId ? { ...step, title: nextTitle, description: nextDescription, durationSeconds } : step,
+        step.id === editingStepId
+          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, durationSeconds }
+          : step,
       ));
     } else {
       setSteps((current) => [
         ...current,
-        { id: `${Date.now().toString()}-${Math.random().toString(36).slice(2, 7)}`, title: nextTitle, description: nextDescription, durationSeconds },
+        {
+          id: `${Date.now().toString()}-${Math.random().toString(36).slice(2, 7)}`,
+          title: nextTitle,
+          description: nextDescription,
+          additionalDetails: nextAdditionalDetails,
+          durationSeconds,
+        },
       ]);
     }
     clearStepDraft();
@@ -298,6 +310,47 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             onChangeText={setStepDescriptionDraft}
             style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground }]}
           />
+          {additionalDetailsDraft.map((detail, index) => (
+            <View key={`detail-${index}`} style={styles.additionalDetailRow}>
+              <TextInput
+                accessibilityLabel={`Additional detail ${index + 1}`}
+                testID={`additional-step-detail-${index}`}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                placeholder={`Additional detail ${index + 1}`}
+                placeholderTextColor={colors.mutedForeground}
+                value={detail}
+                onChangeText={(value) => setAdditionalDetailsDraft((current) =>
+                  current.map((item, itemIndex) => itemIndex === index ? value : item),
+                )}
+                style={[
+                  styles.stepDescriptionInput,
+                  styles.additionalDetailInput,
+                  { borderColor: colors.border, color: colors.foreground },
+                ]}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Remove additional detail ${index + 1}`}
+                testID={`remove-step-detail-${index}`}
+                onPress={() => setAdditionalDetailsDraft((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                style={({ pressed }) => [styles.removeDetailButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+          ))}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add another step detail"
+            testID="add-step-detail"
+            onPress={() => setAdditionalDetailsDraft((current) => [...current, ''])}
+            style={({ pressed }) => [styles.addDetailButton, pressed && styles.pressed]}
+          >
+            <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+            <Text style={[styles.addDetailText, { color: colors.primary }]}>Add another detail</Text>
+          </Pressable>
           <View style={styles.durationComposer}>
             <Text style={[styles.durationLabel, { color: colors.mutedForeground }]}>Timer</Text>
             <View style={styles.timeInputs}>
@@ -351,8 +404,10 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             <View style={styles.stepCopy}>
               <Text style={[styles.stepTitle, { color: step.hidden ? colors.mutedForeground : colors.foreground }]}>{step.title}</Text>
               {step.hidden ? <Text style={[styles.stepDescription, { color: colors.mutedForeground }]}>Hidden · skipped in timer</Text> : null}
-              {step.description ? (
-                <Text style={[styles.stepDescription, { color: colors.mutedForeground }]} numberOfLines={2}>{step.description}</Text>
+              {getStepDetails(step).length > 0 ? (
+                <Text style={[styles.stepDescription, { color: colors.mutedForeground }]} numberOfLines={2}>
+                  {getStepDetails(step).join(' · ')}
+                </Text>
               ) : null}
               <Text style={[styles.stepDuration, { color: colors.mutedForeground }]}>
                 {formatDuration(getStepSeconds(step))}
@@ -451,6 +506,11 @@ const styles = StyleSheet.create({
   addStepButton: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   stepDescriptionLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginLeft: 8, marginTop: 4, marginBottom: 7 },
   stepDescriptionInput: { minHeight: 72, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 9, marginHorizontal: 6, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
+  additionalDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 7 },
+  additionalDetailInput: { flex: 1, marginHorizontal: 6 },
+  removeDetailButton: { width: 34, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  addDetailButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 4, marginLeft: 8, paddingHorizontal: 4 },
+  addDetailText: { fontFamily: 'Inter_500Medium', fontSize: 13 },
   durationComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingBottom: 4, paddingTop: 5 },
   durationLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   timeInputs: { flexDirection: 'row', alignItems: 'center' },

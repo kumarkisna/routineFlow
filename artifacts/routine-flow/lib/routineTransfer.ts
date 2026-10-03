@@ -36,6 +36,10 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
   if (value.description !== undefined && typeof value.description !== 'string') {
     throw new Error(`${label} has invalid details.`);
   }
+  if (value.additionalDetails !== undefined &&
+      (!Array.isArray(value.additionalDetails) || value.additionalDetails.some((detail) => typeof detail !== 'string'))) {
+    throw new Error(`${label} has invalid details.`);
+  }
   if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
     throw new Error(`${label} has an invalid visibility setting.`);
   }
@@ -54,6 +58,7 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     id: value.id,
     title: value.title,
     ...(value.description !== undefined ? { description: value.description as string } : {}),
+    ...(value.additionalDetails !== undefined ? { additionalDetails: value.additionalDetails as string[] } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden as boolean } : {}),
     durationSeconds: hasSeconds ? seconds : legacyMinutes * 60,
     ...(value.duration !== undefined ? { duration: value.duration as string } : {}),

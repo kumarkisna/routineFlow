@@ -8,17 +8,20 @@ export function StepDetails({
   linkColor,
   numberOfLines,
 }: {
-  details: string;
+  details: string | string[];
   style: StyleProp<TextStyle>;
   linkColor: string;
   numberOfLines?: number;
 }) {
   const [openError, setOpenError] = React.useState(false);
+  const detailText = (Array.isArray(details) ? details : [details])
+    .filter((detail) => detail.trim().length > 0)
+    .join('\n');
 
   return (
     <>
       <Text style={style} numberOfLines={numberOfLines}>
-        {splitStepDetails(details).map((segment, index) =>
+        {splitStepDetails(detailText).map((segment, index) =>
           segment.url ? (
             <Text
               key={index}

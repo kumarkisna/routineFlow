@@ -5,6 +5,8 @@ export type RoutineStep = {
   title: string;
   /** Optional so routines saved before step details still load unchanged. */
   description?: string;
+  /** Additional optional instructions that can be added independently. */
+  additionalDetails?: string[];
   /** Hidden steps are omitted from the timer and daily progress. */
   hidden?: boolean;
   durationSeconds: number;
@@ -37,6 +39,11 @@ export type CompletionMap = Record<string, Record<string, CompletionValue>>;
 
 export function isCompleted(value: CompletionValue | undefined): boolean {
   return value === true || (typeof value === 'object' && value !== null);
+}
+
+export function getStepDetails(step: Pick<RoutineStep, 'description' | 'additionalDetails'>): string[] {
+  return [step.description, ...(step.additionalDetails ?? [])]
+    .filter((detail): detail is string => typeof detail === 'string' && detail.trim().length > 0);
 }
 
 export function getStepSeconds(step: RoutineStep) {
