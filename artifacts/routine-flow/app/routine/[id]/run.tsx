@@ -24,6 +24,7 @@ import { nextPlaylistCursor, parsePlaylistQueue } from '@/lib/playlists';
 import {
   formatDuration,
   getStepDetails,
+  getSpokenStepDetails,
   getStepSeconds,
   type Routine,
   type RoutineNotificationSettings,
@@ -58,7 +59,7 @@ function describeDuration(totalSeconds: number) {
 
 function stepAnnouncement(routine: Routine, index: number) {
   const step = routine.steps[index];
-  const details = getStepDetails(step);
+  const details = getSpokenStepDetails(step);
   return `Step ${index + 1}. ${step.title}. ${details.length ? `${details.join('. ')}. ` : ''}You have ${describeDuration(getStepSeconds(step))}.`;
 }
 

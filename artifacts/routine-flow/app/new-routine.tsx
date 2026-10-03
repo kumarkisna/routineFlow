@@ -43,6 +43,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [stepDraft, setStepDraft] = useState('');
   const [stepDescriptionDraft, setStepDescriptionDraft] = useState('');
   const [additionalDetailsDraft, setAdditionalDetailsDraft] = useState<string[]>([]);
+  const [speakDetailsDraft, setSpeakDetailsDraft] = useState(true);
   const [hoursDraft, setHoursDraft] = useState('0');
   const [minutesDraft, setMinutesDraft] = useState('5');
   const [secondsDraft, setSecondsDraft] = useState('0');
@@ -59,6 +60,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft('');
     setStepDescriptionDraft('');
     setAdditionalDetailsDraft([]);
+    setSpeakDetailsDraft(true);
     setHoursDraft('0');
     setMinutesDraft('5');
     setSecondsDraft('0');
@@ -70,6 +72,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft(step.title);
     setStepDescriptionDraft(step.description ?? '');
     setAdditionalDetailsDraft([...(step.additionalDetails ?? [])]);
+    setSpeakDetailsDraft(step.speakDetails !== false);
     setHoursDraft(String(Math.floor(duration / 3600)));
     setMinutesDraft(String(Math.floor((duration % 3600) / 60)));
     setSecondsDraft(String(duration % 60));
@@ -95,7 +98,14 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     if (editingStepId) {
       setSteps((current) => current.map((step) =>
         step.id === editingStepId
-          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, durationSeconds }
+          ? {
+            ...step,
+            title: nextTitle,
+            description: nextDescription,
+            additionalDetails: nextAdditionalDetails,
+            speakDetails: speakDetailsDraft,
+            durationSeconds,
+          }
           : step,
       ));
     } else {
@@ -106,6 +116,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           title: nextTitle,
           description: nextDescription,
           additionalDetails: nextAdditionalDetails,
+          speakDetails: speakDetailsDraft,
           durationSeconds,
         },
       ]);
@@ -351,6 +362,21 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
             <Text style={[styles.addDetailText, { color: colors.primary }]}>Add another detail</Text>
           </Pressable>
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: speakDetailsDraft }}
+            accessibilityLabel="Speak step details aloud"
+            testID="speak-step-details-toggle"
+            onPress={() => setSpeakDetailsDraft((current) => !current)}
+            style={({ pressed }) => [styles.speakDetailsOption, pressed && styles.pressed]}
+          >
+            <Ionicons
+              name={speakDetailsDraft ? 'checkbox' : 'square-outline'}
+              size={20}
+              color={speakDetailsDraft ? colors.primary : colors.mutedForeground}
+            />
+            <Text style={[styles.speakDetailsLabel, { color: colors.foreground }]}>Speak these details aloud</Text>
+          </Pressable>
           <View style={styles.durationComposer}>
             <Text style={[styles.durationLabel, { color: colors.mutedForeground }]}>Timer</Text>
             <View style={styles.timeInputs}>
@@ -511,6 +537,8 @@ const styles = StyleSheet.create({
   removeDetailButton: { width: 34, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   addDetailButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 4, marginLeft: 8, paddingHorizontal: 4 },
   addDetailText: { fontFamily: 'Inter_500Medium', fontSize: 13 },
+  speakDetailsOption: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8, marginLeft: 8, paddingHorizontal: 4 },
+  speakDetailsLabel: { fontFamily: 'Inter_500Medium', fontSize: 13 },
   durationComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingBottom: 4, paddingTop: 5 },
   durationLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   timeInputs: { flexDirection: 'row', alignItems: 'center' },

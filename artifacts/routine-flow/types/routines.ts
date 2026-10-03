@@ -7,6 +7,8 @@ export type RoutineStep = {
   description?: string;
   /** Additional optional instructions that can be added independently. */
   additionalDetails?: string[];
+  /** Omitted means details remain spoken for routines saved before this choice existed. */
+  speakDetails?: boolean;
   /** Hidden steps are omitted from the timer and daily progress. */
   hidden?: boolean;
   durationSeconds: number;
@@ -44,6 +46,12 @@ export function isCompleted(value: CompletionValue | undefined): boolean {
 export function getStepDetails(step: Pick<RoutineStep, 'description' | 'additionalDetails'>): string[] {
   return [step.description, ...(step.additionalDetails ?? [])]
     .filter((detail): detail is string => typeof detail === 'string' && detail.trim().length > 0);
+}
+
+export function getSpokenStepDetails(
+  step: Pick<RoutineStep, 'description' | 'additionalDetails' | 'speakDetails'>,
+): string[] {
+  return step.speakDetails === false ? [] : getStepDetails(step);
 }
 
 export function getStepSeconds(step: RoutineStep) {

@@ -43,6 +43,9 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
   if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
     throw new Error(`${label} has an invalid visibility setting.`);
   }
+  if (value.speakDetails !== undefined && typeof value.speakDetails !== 'boolean') {
+    throw new Error(`${label} has an invalid spoken-details setting.`);
+  }
   if (value.duration !== undefined && typeof value.duration !== 'string') {
     throw new Error(`${label} has an invalid legacy duration.`);
   }
@@ -60,6 +63,7 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     ...(value.description !== undefined ? { description: value.description as string } : {}),
     ...(value.additionalDetails !== undefined ? { additionalDetails: value.additionalDetails as string[] } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden as boolean } : {}),
+    ...(value.speakDetails !== undefined ? { speakDetails: value.speakDetails as boolean } : {}),
     durationSeconds: hasSeconds ? seconds : legacyMinutes * 60,
     ...(value.duration !== undefined ? { duration: value.duration as string } : {}),
   };
