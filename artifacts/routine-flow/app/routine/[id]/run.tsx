@@ -23,6 +23,7 @@ import { Notifications } from '@/lib/localNotifications';
 import { nextPlaylistCursor, parsePlaylistQueue } from '@/lib/playlists';
 import {
   formatDuration,
+  getStepDetails,
   getStepSeconds,
   type Routine,
   type RoutineNotificationSettings,
@@ -57,7 +58,8 @@ function describeDuration(totalSeconds: number) {
 
 function stepAnnouncement(routine: Routine, index: number) {
   const step = routine.steps[index];
-  return `Step ${index + 1}. ${step.title}. ${step.description ? `${step.description}. ` : ''}You have ${describeDuration(getStepSeconds(step))}.`;
+  const details = getStepDetails(step);
+  return `Step ${index + 1}. ${step.title}. ${details.length ? `${details.join('. ')}. ` : ''}You have ${describeDuration(getStepSeconds(step))}.`;
 }
 
 export default function RoutineRunScreen() {
@@ -547,9 +549,9 @@ function RoutinePlayer() {
             {isFinished ? savingCompletion ? 'Saving completion…' : completionError ? 'Save needs attention'
               : inPlaylist ? 'Playlist complete' : 'Routine complete' : activeStep.title}
           </Text>
-          {!isFinished && activeStep.description ? (
+          {!isFinished && getStepDetails(activeStep).length > 0 ? (
             <StepDetails
-              details={activeStep.description}
+              details={getStepDetails(activeStep)}
               style={[styles.activeDescription, { color: colors.heroForeground }]}
               linkColor={colors.heroForeground}
             />
@@ -679,9 +681,9 @@ function RoutinePlayer() {
                 </View>
                 <View style={styles.stepCopy}>
                   <Text style={[styles.stepTitle, { color: colors.foreground }]} numberOfLines={2}>{step.title}</Text>
-                  {step.description ? (
+                  {getStepDetails(step).length > 0 ? (
                     <StepDetails
-                      details={step.description}
+                      details={getStepDetails(step)}
                       style={[styles.stepDescription, { color: colors.mutedForeground }]}
                       linkColor={colors.primary}
                       numberOfLines={2}

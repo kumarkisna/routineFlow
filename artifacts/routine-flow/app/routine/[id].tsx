@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
-import { formatDuration, getStepSeconds, isCompleted } from '@/types/routines';
+import { formatDuration, getStepDetails, getStepSeconds, isCompleted } from '@/types/routines';
 
 export default function RoutineDetailScreen() {
   const colors = useColors();
@@ -301,6 +301,7 @@ export default function RoutineDetailScreen() {
           {displayedSteps.map((step) => {
             const visibleIndex = visibleSteps.findIndex((item) => item.id === step.id);
             const isDone = isCompleted(todayProgress[`${currentRoutine.id}:${step.id}`]);
+            const details = getStepDetails(step);
             return (
               <View
                 key={step.id}
@@ -328,9 +329,9 @@ export default function RoutineDetailScreen() {
                     <Text style={[styles.stepTitle, { color: step.hidden ? colors.mutedForeground : isDone ? colors.success : colors.foreground }, isDone && !step.hidden && styles.completedText]}>
                       {step.title}
                     </Text>
-                    {step.description ? (
+                    {details.length > 0 ? (
                       <StepDetails
-                        details={step.description}
+                        details={details}
                         style={[styles.stepDescription, { color: colors.mutedForeground }]}
                         linkColor={colors.primary}
                       />

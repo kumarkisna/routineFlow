@@ -13,7 +13,11 @@ export function makeRoutineCopy(source: Routine, existing: Routine[], createId: 
     ...source,
     id: nextId(),
     title: `${source.title} (copy)`,
-    steps: source.steps.map((step) => ({ ...step, id: nextId() })),
+    steps: source.steps.map((step) => ({
+      ...step,
+      ...(step.additionalDetails ? { additionalDetails: [...step.additionalDetails] } : {}),
+      id: nextId(),
+    })),
     createdAt: new Date().toISOString(),
   };
 }

@@ -3,6 +3,7 @@
 - [Routine visibility behavior](routine-visibility.md) — hidden steps are inactive, not just concealed; keep run and progress logic aligned.
 - [Routine transfer safety](routine-transfer.md) — importing a routines backup adds missing data without overwriting current routines.
 - [Routine copies](routine-copies.md) — copied routines retain step settings but start with separate progress.
+- [Routine step details](routine-step-details.md) — steps keep the existing detail and support additional ordered entries added on demand.
 - [Routine categories](routine-categories.md) — category choices come from routine labels, not a separate category library.
 - [Expo web confirmations](expo-web-confirmations.md) — use an in-app confirmation for destructive actions that must work in the web preview.
 - [Workspace package installs](workspace-package-installs.md) — pnpm package additions can rewrite workspace YAML comments; preserve the original policy text.

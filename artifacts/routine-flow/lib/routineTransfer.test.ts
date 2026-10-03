@@ -12,7 +12,9 @@ import {
   serializePersonBackup,
   serializeRoutines,
 } from './routineTransfer';
+import { makeRoutineCopy } from './copyRoutine';
 import type { CompletionMap, Routine } from '@/types/routines';
+import { getStepDetails } from '@/types/routines';
 import { getHistoryForDay } from './progressHistory';
 
 const day = '2026-09-28';
@@ -78,6 +80,43 @@ test('version 5 export and import keep completed labels and legacy booleans', ()
   assert.deepEqual(parseRoutinesFile(backup(2, [source], { [day]: { 'morning:water': false } })).progress, {
     [day]: {},
   });
+});
+
+test('multiple step details survive backup round-trips while old single details remain valid', () => {
+  const legacy = routine();
+  assert.deepEqual(parseRoutinesFile(serializeRoutines([legacy])).routines, [legacy]);
+
+  const withMultipleDetails: Routine = {
+    ...legacy,
+    steps: legacy.steps.map((step) => ({
+      ...step,
+      description: 'Start with the first instruction.',
+      additionalDetails: ['Then follow the second instruction.', 'Finish with the last note.'],
+    })),
+  };
+  assert.deepEqual(getStepDetails(withMultipleDetails.steps[0]), [
+    'Start with the first instruction.',
+    'Then follow the second instruction.',
+    'Finish with the last note.',
+  ]);
+  assert.deepEqual(parseRoutinesFile(serializeRoutines([withMultipleDetails])).routines, [withMultipleDetails]);
+
+  const invalid = JSON.parse(serializeRoutines([withMultipleDetails])) as {
+    routines: Array<{ steps: Array<Record<string, unknown>> }>;
+  };
+  invalid.routines[0].steps[0].additionalDetails = ['Valid detail', 42];
+  assert.throws(() => parseRoutinesFile(JSON.stringify(invalid)), /invalid details/);
+});
+
+test('routine copies preserve additional details without sharing their arrays', () => {
+  const source = routine();
+  source.steps[0].additionalDetails = ['Use the saved checklist.'];
+  let nextId = 0;
+
+  const copied = makeRoutineCopy(source, [], () => `copy-${nextId++}`);
+
+  assert.deepEqual(copied.steps[0].additionalDetails, ['Use the saved checklist.']);
+  assert.notEqual(copied.steps[0].additionalDetails, source.steps[0].additionalDetails);
 });
 
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
