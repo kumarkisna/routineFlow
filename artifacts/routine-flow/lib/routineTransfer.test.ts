@@ -14,7 +14,7 @@ import {
 } from './routineTransfer';
 import { makeRoutineCopy } from './copyRoutine';
 import type { CompletionMap, Routine } from '@/types/routines';
-import { getStepDetails } from '@/types/routines';
+import { getSpokenStepDetails, getStepDetails } from '@/types/routines';
 import { getHistoryForDay } from './progressHistory';
 
 const day = '2026-09-28';
@@ -85,6 +85,7 @@ test('version 5 export and import keep completed labels and legacy booleans', ()
 test('multiple step details survive backup round-trips while old single details remain valid', () => {
   const legacy = routine();
   assert.deepEqual(parseRoutinesFile(serializeRoutines([legacy])).routines, [legacy]);
+  assert.deepEqual(getSpokenStepDetails(legacy.steps[0]), getStepDetails(legacy.steps[0]));
 
   const withMultipleDetails: Routine = {
     ...legacy,
@@ -92,6 +93,7 @@ test('multiple step details survive backup round-trips while old single details 
       ...step,
       description: 'Start with the first instruction.',
       additionalDetails: ['Then follow the second instruction.', 'Finish with the last note.'],
+      speakDetails: false,
     })),
   };
   assert.deepEqual(getStepDetails(withMultipleDetails.steps[0]), [
@@ -99,6 +101,7 @@ test('multiple step details survive backup round-trips while old single details 
     'Then follow the second instruction.',
     'Finish with the last note.',
   ]);
+  assert.deepEqual(getSpokenStepDetails(withMultipleDetails.steps[0]), []);
   assert.deepEqual(parseRoutinesFile(serializeRoutines([withMultipleDetails])).routines, [withMultipleDetails]);
 
   const invalid = JSON.parse(serializeRoutines([withMultipleDetails])) as {
@@ -106,17 +109,25 @@ test('multiple step details survive backup round-trips while old single details 
   };
   invalid.routines[0].steps[0].additionalDetails = ['Valid detail', 42];
   assert.throws(() => parseRoutinesFile(JSON.stringify(invalid)), /invalid details/);
+
+  const invalidSpeechSetting = JSON.parse(serializeRoutines([withMultipleDetails])) as {
+    routines: Array<{ steps: Array<Record<string, unknown>> }>;
+  };
+  invalidSpeechSetting.routines[0].steps[0].speakDetails = 'no';
+  assert.throws(() => parseRoutinesFile(JSON.stringify(invalidSpeechSetting)), /invalid spoken-details setting/);
 });
 
 test('routine copies preserve additional details without sharing their arrays', () => {
   const source = routine();
   source.steps[0].additionalDetails = ['Use the saved checklist.'];
+  source.steps[0].speakDetails = false;
   let nextId = 0;
 
   const copied = makeRoutineCopy(source, [], () => `copy-${nextId++}`);
 
   assert.deepEqual(copied.steps[0].additionalDetails, ['Use the saved checklist.']);
   assert.notEqual(copied.steps[0].additionalDetails, source.steps[0].additionalDetails);
+  assert.equal(copied.steps[0].speakDetails, false);
 });
 
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
