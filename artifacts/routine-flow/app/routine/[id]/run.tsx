@@ -467,12 +467,6 @@ function RoutinePlayer() {
         return;
       }
       try {
-        if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('routine-flow', {
-            name: 'Routine Flow',
-            importance: Notifications.AndroidImportance.DEFAULT,
-          });
-        }
         let permission = await Notifications.getPermissionsAsync();
         if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
         if (!permission.granted) {

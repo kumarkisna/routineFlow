@@ -19,4 +19,10 @@ When using only local reminders on Android Expo Go, avoid importing the `expo-no
 
 **Why:** Android Expo Go no longer supports remote push notifications, and the push-token module throws during route loading even when the app never requests a push token. This can make a timer screen appear to hang before rendering.
 
-**How to apply:** If adding notification use to an Expo Go screen, inspect the import graph for remote push modules. Keep local scheduling, permissions, channels, and foreground handlers separate from push registration; preserve the reminder behavior rather than disabling it.
+**How to apply:** If adding notification use to an Expo Go screen, inspect the import graph for remote push modules. Keep local scheduling, permissions, and foreground handlers separate from push registration; preserve reminders rather than disabling them.
+
+On the current Android Expo Go runtime, avoid calling `setNotificationChannelAsync` or `setNotificationChannelGroupAsync`; leave the notification trigger's `channelId` unset so Expo can use its native fallback channel.
+
+**Why:** Both JS channel-manager calls failed on-device because the native `NotificationsChannelsProvider` was missing, while Expo's notification presenter creates a high-importance fallback channel when no channel ID is requested.
+
+**How to apply:** If a future feature needs custom channel settings, verify the provider exists in the target native client first. Keep schedule creation on the fallback path in Expo Go.
