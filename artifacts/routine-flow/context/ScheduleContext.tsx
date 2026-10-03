@@ -6,7 +6,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { playablePlaylistIds } from '@/lib/playlists';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { createPersonStorage } from '@/lib/personStorage';
-import { Notifications } from '@/lib/localNotifications';
+import { Notifications, REMINDER_CHANNEL_GROUP_ID, SCHEDULE_REMINDER_CHANNEL_ID } from '@/lib/localNotifications';
 import { alertDate, futureScheduleAlerts, scheduleAlertContent, scheduleAlertOffsets, validateAlertOffsets } from '@/lib/scheduleAlerts';
 import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, parseSchedules, persistScheduleChange,
   scheduledPlaylistSource, type RoutineSchedule, type ScheduleTargetType } from '@/lib/schedules';
@@ -31,8 +31,13 @@ function createReminderService(personId: string) {
     create: async (schedule: RoutineSchedule, offsetMinutes = 0): Promise<string> => {
       if (Platform.OS === 'web') throw new Error('Phone reminders are unavailable in the web preview. Turn off the reminder to save.');
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('routine-schedules', {
-          name: 'Scheduled routines', importance: Notifications.AndroidImportance.HIGH,
+        await Notifications.setNotificationChannelGroupAsync(REMINDER_CHANNEL_GROUP_ID, {
+          name: 'Routine Flow reminders',
+        });
+        await Notifications.setNotificationChannelAsync(SCHEDULE_REMINDER_CHANNEL_ID, {
+          name: 'Scheduled routines',
+          importance: Notifications.AndroidImportance.HIGH,
+          groupId: REMINDER_CHANNEL_GROUP_ID,
         });
       }
       let permission = await Notifications.getPermissionsAsync();
@@ -47,7 +52,7 @@ function createReminderService(personId: string) {
         ...(schedule.notificationId ? { identifier: schedule.notificationId } : {}),
         content: { ...alertContent, data: { ...alertContent.data, personId } },
         trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: notificationAt, ...(Platform.OS === 'android' ? { channelId: 'routine-schedules' } : {}) },
+          date: notificationAt, ...(Platform.OS === 'android' ? { channelId: SCHEDULE_REMINDER_CHANNEL_ID } : {}) },
       });
     },
     cancel: async (id: string) => {
