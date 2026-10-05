@@ -1,13 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Print from 'expo-print';
 import { router, useFocusEffect } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, AppState, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePeople } from '@/context/PeopleContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSchedules } from '@/context/ScheduleContext';
 import { useColors } from '@/hooks/useColors';
 import { playablePlaylistIds } from '@/lib/playlists';
+import { buildSchedulePrintHtml } from '@/lib/schedulePrint';
 import { scheduledPlaylistSource, type RoutineSchedule } from '@/lib/schedules';
 import { formatAlertOffset, scheduleAlertOffsets } from '@/lib/scheduleAlerts';
 
@@ -16,13 +19,16 @@ type Row = { kind: 'head'; key: string; label: string } | { kind: 'item'; key: s
 export default function ScheduleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { activePerson } = usePeople();
   const { schedules, loading, error, reload, deleteSchedule } = useSchedules();
   const { routines, loading: rLoading } = useRoutines();
   const { playlists, loading: pLoading } = usePlaylists();
   const [pending, setPending] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [printBusy, setPrintBusy] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const lock = React.useRef(false);
+  const printLock = React.useRef(false);
   const [now, setNow] = React.useState(Date.now);
   useFocusEffect(React.useCallback(() => {
     const refresh = () => setNow(Date.now());
@@ -73,6 +79,49 @@ export default function ScheduleScreen() {
   function fmt(iso: string) {
     const d = new Date(iso);
     return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+  }
+
+  async function printSchedule(s: RoutineSchedule) {
+    if (printLock.current) return;
+    const src = source(s);
+    const printableRoutines = src.ids
+      .map(id => routines.find(routine => routine.id === id))
+      .filter((routine): routine is NonNullable<typeof routine> => routine !== undefined);
+    if (!src.title || !printableRoutines.length) {
+      setMessage('This schedule has no visible routines to print.');
+      return;
+    }
+
+    printLock.current = true;
+    setPrintBusy(true);
+    setMessage('');
+    try {
+      const html = buildSchedulePrintHtml({
+        personName: activePerson.name,
+        scheduledAt: s.scheduledAt,
+        title: src.title,
+        targetType: s.targetType,
+        routines: printableRoutines,
+      });
+      if (Platform.OS === 'web') {
+        if (typeof window === 'undefined') throw new Error('Browser printing is unavailable.');
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) throw new Error('Allow pop-ups in your browser to print this schedule.');
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.onafterprint = () => printWindow.close();
+        printWindow.focus();
+        printWindow.print();
+      } else {
+        await Print.printAsync({ html });
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not open the print dialog.');
+    } finally {
+      printLock.current = false;
+      setPrintBusy(false);
+    }
   }
 
   return (
@@ -218,6 +267,18 @@ export default function ScheduleScreen() {
                   style={({ pressed }) => [styles.editPl, { borderColor: colors.primary, backgroundColor: colors.coralSoft }, pressed && styles.pressed]}>
                   <Ionicons name="create-outline" size={18} color={colors.primary} />
                   <Text style={[styles.btnText, { color: colors.primary }]}>Edit playlist for this date</Text>
+                </Pressable>
+              ) : null}
+              {!confirming ? (
+                <Pressable accessibilityRole="button"
+                  accessibilityLabel={`Print ${src.title ?? s.targetTitle} for ${activePerson.name}`}
+                  accessibilityState={{ disabled: !runnable || printBusy }}
+                  testID={`print-schedule-${s.id}`}
+                  disabled={!runnable || printBusy}
+                  onPress={() => void printSchedule(s)}
+                  style={({ pressed }) => [styles.editPl, { borderColor: colors.border, opacity: runnable && !printBusy ? 1 : 0.5 }, pressed && styles.pressed]}>
+                  <Ionicons name="print-outline" size={18} color={colors.primary} />
+                  <Text style={[styles.btnText, { color: colors.primary }]}>{printBusy ? 'Preparing print…' : 'Print plan'}</Text>
                 </Pressable>
               ) : null}
             </View>

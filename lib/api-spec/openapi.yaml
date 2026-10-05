@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: backup
+    description: Person backup delivery
 paths:
   /healthz:
     get:
@@ -24,6 +26,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /backup/email/status:
+    get:
+      operationId: getBackupEmailStatus
+      tags: [backup]
+      summary: Check whether person backup email delivery is configured
+      responses:
+        "200":
+          description: Email delivery configuration status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupEmailStatus"
+  /backup/email:
+    post:
+      operationId: sendPersonBackupEmail
+      tags: [backup]
+      summary: Email the configured recipient a person backup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendPersonBackupEmailRequest"
+      responses:
+        "200":
+          description: Backup email sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupEmailSendResult"
+        "400":
+          description: Invalid backup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Backup is too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Sending limit reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Email provider could not send the backup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Email delivery is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +95,36 @@ components:
           type: string
       required:
         - status
+    BackupEmailStatus:
+      type: object
+      properties:
+        configured:
+          type: boolean
+        recipientHint:
+          type: string
+      required:
+        - configured
+    SendPersonBackupEmailRequest:
+      type: object
+      properties:
+        backupJson:
+          type: string
+          minLength: 2
+          maxLength: 5000000
+      required:
+        - backupJson
+    BackupEmailSendResult:
+      type: object
+      properties:
+        sent:
+          type: boolean
+      required:
+        - sent
+    ApiError:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
 

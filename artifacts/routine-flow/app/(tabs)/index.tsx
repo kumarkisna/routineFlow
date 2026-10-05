@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React from 'react';
+import { useGetBackupEmailStatus, useSendPersonBackupEmail } from '@workspace/api-client-react';
 import {
   ActivityIndicator,
   FlatList,
@@ -34,6 +35,8 @@ export default function HomeScreen() {
   const { activePerson } = usePeople();
   const insets = useSafeAreaInsets();
   const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday, renameCategory, removeCategory } = useRoutines();
+  const emailStatusQuery = useGetBackupEmailStatus();
+  const emailBackupMutation = useSendPersonBackupEmail();
   const [showHidden, setShowHidden] = React.useState(false);
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
   const [renameDraft, setRenameDraft] = React.useState<string | null>(null);
@@ -48,11 +51,12 @@ export default function HomeScreen() {
   const [visibilityBusyId, setVisibilityBusyId] = React.useState<string | null>(null);
   const [visibilityError, setVisibilityError] = React.useState('');
   const visibilityLock = React.useRef(false);
-  const [transferBusy, setTransferBusy] = React.useState<'export' | 'import' | null>(null);
+  const [transferBusy, setTransferBusy] = React.useState<'export' | 'import' | 'email' | null>(null);
   const [transferStatus, setTransferStatus] = React.useState<{ message: string; error: boolean } | null>(null);
   const transferLock = React.useRef(false);
   const [includeHistory, setIncludeHistory] = React.useState(false);
   const [pendingBackup, setPendingBackup] = React.useState<RoutineBackup | null>(null);
+  const [confirmEmail, setConfirmEmail] = React.useState(false);
   const visibleRoutines = loading ? [] : routines.filter((routine) => !routine.hidden);
   const categories = listRoutineCategories(routines);
   const activeCategory = categoryFilter !== null && categoryFilter !== '' &&
@@ -156,26 +160,31 @@ export default function HomeScreen() {
     }
   }
 
+  async function buildPersonBackupFile() {
+    const filename = `routine-flow-person-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const personData = await readPersonExportSnapshot(activePerson.id);
+    const contents = serializePersonBackup(
+      personData.routines,
+      {
+        playlists: personData.playlists,
+        schedules: personData.schedules,
+        selectedThemeId: personData.selectedThemeId,
+      },
+      includeHistory ? personData.progress : undefined,
+    );
+    if (new Blob([contents]).size > MAX_ROUTINE_FILE_BYTES) {
+      throw new Error('This person backup exceeds 5 MB. Try omitting daily progress or reducing the saved data.');
+    }
+    return { filename, personData, contents };
+  }
+
   async function exportPersonFile() {
     if (transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading) return;
     transferLock.current = true;
     setTransferBusy('export');
     setTransferStatus(null);
     try {
-      const filename = `routine-flow-person-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      const personData = await readPersonExportSnapshot(activePerson.id);
-      const contents = serializePersonBackup(
-        personData.routines,
-        {
-          playlists: personData.playlists,
-          schedules: personData.schedules,
-          selectedThemeId: personData.selectedThemeId,
-        },
-        includeHistory ? personData.progress : undefined,
-      );
-      if (new Blob([contents]).size > MAX_ROUTINE_FILE_BYTES) {
-        throw new Error('This person backup exceeds 5 MB. Try omitting daily progress or reducing the saved data.');
-      }
+      const { filename, personData, contents } = await buildPersonBackupFile();
       if (Platform.OS === 'web') {
         const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
         const link = document.createElement('a');
@@ -199,6 +208,28 @@ export default function HomeScreen() {
       });
     } catch (error) {
       setTransferStatus({ message: error instanceof Error ? error.message : 'Could not export routines.', error: true });
+    } finally {
+      transferLock.current = false;
+      setTransferBusy(null);
+    }
+  }
+
+  async function emailPersonBackup() {
+    if (!emailStatusQuery.data?.configured || !confirmEmail
+      || transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading) return;
+    transferLock.current = true;
+    setTransferBusy('email');
+    setConfirmEmail(false);
+    setTransferStatus(null);
+    try {
+      const { contents } = await buildPersonBackupFile();
+      const result = await emailBackupMutation.mutateAsync({ data: { backupJson: contents } });
+      if (!result.sent) throw new Error('The email service did not confirm delivery.');
+      const recipient = emailStatusQuery.data.recipientHint ?? 'the configured address';
+      const historyNote = includeHistory ? ' Daily progress was included.' : ' Daily progress was not included.';
+      setTransferStatus({ message: `Person backup sent to ${recipient}.${historyNote}`, error: false });
+    } catch (error) {
+      setTransferStatus({ message: error instanceof Error ? error.message : 'Could not email the person backup.', error: true });
     } finally {
       transferLock.current = false;
       setTransferBusy(null);
@@ -610,7 +641,7 @@ export default function HomeScreen() {
                 accessibilityState={{ checked: includeHistory }}
                 accessibilityLabel="Include daily progress in export"
                 testID="include-daily-progress"
-                 disabled={transferBusy !== null || renameBusy || pendingBackup !== null}
+                disabled={transferBusy !== null || renameBusy || pendingBackup !== null || confirmEmail}
                 onPress={() => setIncludeHistory((current) => !current)}
                 style={styles.historyOption}
               >
@@ -621,7 +652,7 @@ export default function HomeScreen() {
                 <Pressable
                   accessibilityLabel={`Export all data for ${activePerson.name}`}
                   testID="export-person-data"
-                   disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                  disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null || confirmEmail}
                   onPress={() => void exportPersonFile()}
                   style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -633,7 +664,7 @@ export default function HomeScreen() {
                 <Pressable
                   accessibilityLabel="Import routines"
                   testID="import-routines"
-                   disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                  disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null || confirmEmail}
                   onPress={() => void importRoutinesFile()}
                   style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -643,6 +674,68 @@ export default function HomeScreen() {
                   </Text>
                 </Pressable>
               </View>
+              <Text style={[styles.transferDescription, { color: colors.mutedForeground }]} testID="backup-email-status">
+                {emailStatusQuery.isLoading
+                  ? 'Checking email backup availability…'
+                  : emailStatusQuery.isError
+                    ? 'Email backup is temporarily unavailable. Check your connection and try again.'
+                    : !emailStatusQuery.data
+                      ? 'Email backup is unavailable until this app can reach its email service.'
+                      : emailStatusQuery.data.configured
+                        ? `Email backups go to ${emailStatusQuery.data.recipientHint ?? 'the configured address'} after you confirm.`
+                        : emailStatusQuery.data.recipientHint
+                          ? `Email backup is not ready. The destination is ${emailStatusQuery.data.recipientHint}; this app also needs a verified sender.`
+                          : 'Email backup is not configured for this app yet.'}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Email the full backup for ${activePerson.name}`}
+                accessibilityState={{ disabled: !emailStatusQuery.data?.configured || transferBusy !== null || loading || confirmEmail }}
+                testID="email-person-backup"
+                disabled={!emailStatusQuery.data?.configured || transferBusy !== null || loading || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null || confirmEmail}
+                onPress={() => { setTransferStatus(null); setConfirmEmail(true); }}
+                style={({ pressed }) => [
+                  styles.emailButton,
+                  { borderColor: colors.border, opacity: emailStatusQuery.data?.configured && !transferBusy && !confirmEmail ? 1 : 0.5 },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons name="mail-outline" size={18} color={colors.primary} />
+                <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                  {transferBusy === 'email' ? 'Sending…' : 'Email person backup'}
+                </Text>
+              </Pressable>
+              {confirmEmail ? (
+                <View style={[styles.importChoice, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.historyLabel, { color: colors.foreground }]}>
+                    Send the full backup for {activePerson.name} to {emailStatusQuery.data?.recipientHint ?? 'the configured email'}?
+                  </Text>
+                  <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                    This includes routines, playlists, schedules, and the selected theme. Daily progress {includeHistory ? 'will be included' : 'will not be included'}.
+                  </Text>
+                  <View style={styles.transferActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Cancel email backup"
+                      testID="cancel-email-backup"
+                      onPress={() => setConfirmEmail(false)}
+                      style={[styles.transferButton, { borderColor: colors.border }]}
+                    >
+                      <Text style={[styles.transferButtonText, { color: colors.mutedForeground }]}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Confirm email backup for ${activePerson.name}`}
+                      testID="confirm-email-backup"
+                      onPress={() => void emailPersonBackup()}
+                      style={[styles.transferButton, { borderColor: colors.primary, backgroundColor: colors.coralSoft }]}
+                    >
+                      <Ionicons name="send-outline" size={16} color={colors.primary} />
+                      <Text style={[styles.transferButtonText, { color: colors.primary }]}>Send backup</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
               {pendingBackup ? (
                 <View style={[styles.importChoice, { borderTopColor: colors.border }]}>
                   <Text style={[styles.historyLabel, { color: colors.foreground }]}>This backup includes daily progress.</Text>
@@ -781,6 +874,7 @@ const styles = StyleSheet.create({
   cancelImport: { alignSelf: 'center', padding: 12, marginTop: 4 },
   transferActions: { flexDirection: 'row', gap: 9, marginTop: 15 },
   transferButton: { flex: 1, minHeight: 44, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 6 },
+  emailButton: { width: '100%', minHeight: 44, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginTop: 10, paddingHorizontal: 10 },
   transferButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   transferStatus: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginTop: 12 },
   resetButton: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8 },
