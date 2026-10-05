@@ -5,7 +5,11 @@ import { router } from 'expo-router';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme } from '@/lib/appThemes';
 import { buildPersonCopy, readPersonSnapshot, repairPersonRoutineDurations } from '@/lib/personCopy';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
-import { normalizeOptionalEmail } from '@/lib/personEmail';
+import {
+  normalizeBackupEmailMessage,
+  normalizeBackupEmailSubject,
+  normalizeOptionalEmail,
+} from '@/lib/personEmail';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 
 type Registry = { version: 1; people: Person[]; activePersonId: string };
@@ -169,6 +173,9 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       name: trimmed,
       backupEmailFrom: normalizeOptionalEmail(profile.backupEmailFrom, 'sender'),
       backupEmailTo: normalizeOptionalEmail(profile.backupEmailTo, 'recipient'),
+      backupEmailSubject: normalizeBackupEmailSubject(profile.backupEmailSubject),
+      backupEmailMessage: normalizeBackupEmailMessage(profile.backupEmailMessage),
+      includeDailyProgressByDefault: profile.includeDailyProgressByDefault ?? false,
     };
     await AsyncStorage.multiSet([
       [personStorageKey(person.id, PERSON_DATA_KEYS.routines), '[]'],
@@ -202,6 +209,11 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       name: trimmed,
       backupEmailFrom: normalizeOptionalEmail(profile.backupEmailFrom, 'sender'),
       backupEmailTo: normalizeOptionalEmail(profile.backupEmailTo, 'recipient'),
+      backupEmailSubject: normalizeBackupEmailSubject(profile.backupEmailSubject),
+      backupEmailMessage: normalizeBackupEmailMessage(profile.backupEmailMessage),
+      includeDailyProgressByDefault: profile.includeDailyProgressByDefault
+        ?? existing.includeDailyProgressByDefault
+        ?? false,
     };
     const next: Registry = {
       ...previous,

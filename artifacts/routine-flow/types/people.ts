@@ -7,11 +7,17 @@ export type Person = {
   name: string;
   backupEmailFrom?: string;
   backupEmailTo?: string;
+  backupEmailSubject?: string;
+  backupEmailMessage?: string;
+  includeDailyProgressByDefault?: boolean;
 };
 export type PersonProfileInput = {
   name: string;
   backupEmailFrom?: string;
   backupEmailTo?: string;
+  backupEmailSubject?: string;
+  backupEmailMessage?: string;
+  includeDailyProgressByDefault?: boolean;
 };
 export type PersonSnapshot = {
   routines: Routine[];
