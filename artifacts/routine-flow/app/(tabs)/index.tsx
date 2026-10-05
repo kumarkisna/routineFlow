@@ -23,7 +23,12 @@ import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
 import { readPersonExportSnapshot } from '@/lib/personCopy';
-import { isValidEmailAddress, maskEmailAddress } from '@/lib/personEmail';
+import {
+  DEFAULT_BACKUP_EMAIL_MESSAGE,
+  DEFAULT_BACKUP_EMAIL_SUBJECT,
+  isValidEmailAddress,
+  maskEmailAddress,
+} from '@/lib/personEmail';
 import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializePersonBackup, type RoutineBackup } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
 
@@ -56,6 +61,7 @@ export default function HomeScreen() {
   const [transferStatus, setTransferStatus] = React.useState<{ message: string; error: boolean } | null>(null);
   const transferLock = React.useRef(false);
   const [includeHistory, setIncludeHistory] = React.useState(false);
+  const [emailIncludeHistory, setEmailIncludeHistory] = React.useState(activePerson.includeDailyProgressByDefault ?? false);
   const [pendingBackup, setPendingBackup] = React.useState<RoutineBackup | null>(null);
   const [confirmEmail, setConfirmEmail] = React.useState(false);
   const visibleRoutines = loading ? [] : routines.filter((routine) => !routine.hidden);
@@ -73,7 +79,13 @@ export default function HomeScreen() {
   const todayLabel = formatDate();
   const backupEmailFrom = activePerson.backupEmailFrom?.trim() ?? '';
   const backupEmailTo = activePerson.backupEmailTo?.trim() ?? '';
+  const backupEmailSubject = activePerson.backupEmailSubject || DEFAULT_BACKUP_EMAIL_SUBJECT;
+  const backupEmailMessage = activePerson.backupEmailMessage ?? DEFAULT_BACKUP_EMAIL_MESSAGE;
   const personEmailReady = isValidEmailAddress(backupEmailFrom) && isValidEmailAddress(backupEmailTo);
+
+  React.useEffect(() => {
+    setEmailIncludeHistory(activePerson.includeDailyProgressByDefault ?? false);
+  }, [activePerson.id, activePerson.includeDailyProgressByDefault]);
 
   function openRoutine(routine: Routine) {
     void Haptics.selectionAsync();
@@ -164,7 +176,7 @@ export default function HomeScreen() {
     }
   }
 
-  async function buildPersonBackupFile() {
+  async function buildPersonBackupFile(includeProgress = includeHistory) {
     const filename = `routine-flow-person-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const personData = await readPersonExportSnapshot(activePerson.id);
     const contents = serializePersonBackup(
@@ -174,7 +186,7 @@ export default function HomeScreen() {
         schedules: personData.schedules,
         selectedThemeId: personData.selectedThemeId,
       },
-      includeHistory ? personData.progress : undefined,
+      includeProgress ? personData.progress : undefined,
     );
     if (new Blob([contents]).size > MAX_ROUTINE_FILE_BYTES) {
       throw new Error('This person backup exceeds 5 MB. Try omitting daily progress or reducing the saved data.');
@@ -226,12 +238,18 @@ export default function HomeScreen() {
     setConfirmEmail(false);
     setTransferStatus(null);
     try {
-      const { contents } = await buildPersonBackupFile();
+      const { contents } = await buildPersonBackupFile(emailIncludeHistory);
       const result = await emailBackupMutation.mutateAsync({
-        data: { backupJson: contents, fromEmail: backupEmailFrom, toEmail: backupEmailTo },
+        data: {
+          backupJson: contents,
+          fromEmail: backupEmailFrom,
+          toEmail: backupEmailTo,
+          subject: backupEmailSubject,
+          message: backupEmailMessage,
+        },
       });
       if (!result.sent) throw new Error('The email service did not confirm delivery.');
-      const historyNote = includeHistory ? ' Daily progress was included.' : ' Daily progress was not included.';
+      const historyNote = emailIncludeHistory ? ' Daily progress was included.' : ' Daily progress was not included.';
       setTransferStatus({ message: `Person backup sent to ${maskEmailAddress(backupEmailTo)}.${historyNote}`, error: false });
     } catch (error) {
       setTransferStatus({ message: error instanceof Error ? error.message : 'Could not email the person backup.', error: true });
@@ -730,7 +748,25 @@ export default function HomeScreen() {
                     Send the full backup for {activePerson.name} to {maskEmailAddress(backupEmailTo)} from {maskEmailAddress(backupEmailFrom)}?
                   </Text>
                   <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
-                    This includes routines, playlists, schedules, and the selected theme. Daily progress {includeHistory ? 'will be included' : 'will not be included'}.
+                    Subject: {backupEmailSubject}
+                  </Text>
+                  <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                    Message: {backupEmailMessage || 'No message text'}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: emailIncludeHistory, disabled: transferBusy !== null }}
+                    accessibilityLabel="Include daily progress in this email backup"
+                    testID="include-daily-progress-email"
+                    disabled={transferBusy !== null}
+                    onPress={() => setEmailIncludeHistory((current) => !current)}
+                    style={styles.historyOption}
+                  >
+                    <Ionicons name={emailIncludeHistory ? 'checkbox' : 'square-outline'} size={22} color={colors.primary} />
+                    <Text style={[styles.historyLabel, { color: colors.foreground }]}>Include daily progress</Text>
+                  </Pressable>
+                  <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                    This includes routines, playlists, schedules, and the selected theme. Daily progress {emailIncludeHistory ? 'will be included' : 'will not be included'}.
                   </Text>
                   <View style={styles.transferActions}>
                     <Pressable

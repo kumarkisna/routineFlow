@@ -14,4 +14,4 @@
 - [Expo appearance API](expo-appearance.md) — newer React Native uses an explicit unspecified scheme to restore system appearance; do not cast older null-based examples.
 - [Expo SDK 57 checks](expo-sdk-57.md) — legacy splash configuration is invalid, and early Hermes V1 builds have a documented memory regression.
 - [Expo preview warmup](expo-web-preview.md) — early cold-start screenshots can be blank; wait for visible UI before diagnosing broken layout.
-- [Local person profiles](person-profiles.md) — backups include profile data; recipient and sender email settings belong to each person.
+- [Local person profiles](person-profiles.md) — email addresses, subject, message, and progress default are per person; Resend credentials stay server-side.

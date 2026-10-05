@@ -126,10 +126,19 @@ components:
           type: string
           format: email
           maxLength: 254
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 180
+        message:
+          type: string
+          maxLength: 2000
       required:
         - backupJson
         - fromEmail
         - toEmail
+        - subject
+        - message
     BackupEmailSendResult:
       type: object
       properties:

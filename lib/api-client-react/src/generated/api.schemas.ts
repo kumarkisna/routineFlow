@@ -32,6 +32,13 @@ export interface SendPersonBackupEmailRequest {
   fromEmail: string;
   /** @maxLength 254 */
   toEmail: string;
+  /**
+     * @minLength 1
+     * @maxLength 180
+     */
+  subject: string;
+  /** @maxLength 2000 */
+  message: string;
 }
 
 export interface BackupEmailSendResult {

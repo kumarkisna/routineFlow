@@ -100,9 +100,19 @@ async function checkResendAvailability(): Promise<{ available: boolean; issue?: 
   }
 }
 
-async function sendWithResend(fromEmail: string, toEmail: string, backupJson: string): Promise<void> {
+async function sendWithResend(
+  fromEmail: string,
+  toEmail: string,
+  subject: string,
+  message: string,
+  backupJson: string,
+): Promise<void> {
   if (!isEmailAddress(fromEmail) || !isEmailAddress(toEmail)) {
     throw new BackupEmailDeliveryError(400, 'Enter valid sender and recipient email addresses in this person’s profile.');
+  }
+  const safeSubject = subject.replace(/[\r\n]+/g, ' ').trim();
+  if (!safeSubject) {
+    throw new BackupEmailDeliveryError(400, 'Add a subject to this person’s backup email settings.');
   }
 
   const connectors = new ReplitConnectors();
@@ -111,8 +121,8 @@ async function sendWithResend(fromEmail: string, toEmail: string, backupJson: st
     body: {
       from: fromEmail.trim(),
       to: [toEmail.trim()],
-      subject: "Your Routine Flow person backup",
-      text: "Your Routine Flow person backup is attached as a JSON file.",
+      subject: safeSubject,
+      text: message,
       attachments: [{
         filename: `routine-flow-person-backup-${new Date().toISOString().slice(0, 10)}.json`,
         content: Buffer.from(backupJson, "utf8").toString("base64"),
@@ -148,7 +158,7 @@ router.post("/backup/email", async (req: Request, res) => {
     return;
   }
 
-  const { backupJson, fromEmail, toEmail } = parsed.data;
+  const { backupJson, fromEmail, toEmail, subject, message } = parsed.data;
   if (!isEmailAddress(fromEmail) || !isEmailAddress(toEmail)) {
     res.status(400).json({ message: 'Enter valid sender and recipient email addresses in this person’s profile.' });
     return;
@@ -170,7 +180,7 @@ router.post("/backup/email", async (req: Request, res) => {
   }
 
   try {
-    await sendWithResend(fromEmail, toEmail, backupJson);
+    await sendWithResend(fromEmail, toEmail, subject, message, backupJson);
     res.json(SendPersonBackupEmailResponse.parse({ sent: true }));
   } catch (error) {
     if (error instanceof BackupEmailDeliveryError) {

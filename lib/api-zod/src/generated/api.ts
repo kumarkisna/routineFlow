@@ -36,12 +36,18 @@ export const sendPersonBackupEmailBodyFromEmailMax = 254;
 
 export const sendPersonBackupEmailBodyToEmailMax = 254;
 
+export const sendPersonBackupEmailBodySubjectMax = 180;
+
+export const sendPersonBackupEmailBodyMessageMax = 2000;
+
 
 
 export const SendPersonBackupEmailBody = zod.object({
   "backupJson": zod.string().min(sendPersonBackupEmailBodyBackupJsonMin).max(sendPersonBackupEmailBodyBackupJsonMax),
   "fromEmail": zod.string().email().max(sendPersonBackupEmailBodyFromEmailMax),
-  "toEmail": zod.string().email().max(sendPersonBackupEmailBodyToEmailMax)
+  "toEmail": zod.string().email().max(sendPersonBackupEmailBodyToEmailMax),
+  "subject": zod.string().min(1).max(sendPersonBackupEmailBodySubjectMax),
+  "message": zod.string().max(sendPersonBackupEmailBodyMessageMax)
 })
 
 export const SendPersonBackupEmailResponse = zod.object({
