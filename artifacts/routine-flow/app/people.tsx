@@ -267,7 +267,7 @@ export default function PeopleScreen() {
                       onChangeText={(value) => { setEditingEmailFrom(value); setError(''); }}
                     />
                     <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-                      The sender must use a domain verified in the connected Resend account.
+                      These addresses belong to this profile. The sender domain must be verified in Resend; the Resend connection is shared by the app.
                     </Text>
                     <View style={styles.formActions}>
                       <Pressable
@@ -327,7 +327,7 @@ export default function PeopleScreen() {
             onChangeText={(value) => { setNewEmailFrom(value); setError(''); }}
           />
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-            New people start empty and become active right away. Email fields are optional; both are needed to send a backup. The sender domain must be verified in Resend.
+            New people start empty and become active right away. Sender and recipient are saved per person; both are needed to send a backup. The sender domain must be verified in Resend. The Resend connection is shared by the app.
           </Text>
         </View>
 

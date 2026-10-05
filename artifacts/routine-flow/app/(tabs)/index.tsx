@@ -688,7 +688,7 @@ export default function HomeScreen() {
                       ? 'Email backup is unavailable until this app can reach its email service.'
                       : !emailStatusQuery.data.available
                         ? emailStatusQuery.data.issue === 'invalid_credentials'
-                          ? 'The Resend API key is invalid. Update the existing Resend connection in Replit before emailing backups.'
+                          ? 'The app-wide Resend API key is invalid. Sender and recipient are still set per person; update the existing Resend connection in Replit.'
                           : 'The Resend connection is unavailable. Check the connection and try again.'
                         : personEmailReady
                           ? `After confirmation, this backup goes to ${maskEmailAddress(backupEmailTo)} from ${maskEmailAddress(backupEmailFrom)}.`
