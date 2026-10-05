@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import { File as ExpoFile } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -216,16 +217,29 @@ export default function HomeScreen() {
     setTransferBusy('import');
     setTransferStatus(null);
     try {
-      const picked = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
-      if (picked.canceled) return;
-      const file = picked.assets[0];
-      if (!file) throw new Error('No file was selected.');
-      if (file.size && file.size > MAX_ROUTINE_FILE_BYTES) {
-        throw new Error('This file is too large to import (5 MB maximum).');
+      let contents: string;
+      if (Platform.OS === 'web') {
+        const picked = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+        if (picked.canceled) return;
+        const file = picked.assets[0];
+        if (!file) throw new Error('No file was selected.');
+        if (file.size && file.size > MAX_ROUTINE_FILE_BYTES) {
+          throw new Error('This file is too large to import (5 MB maximum).');
+        }
+        contents = file.file ? await file.file.text() : await (await fetch(file.uri)).text();
+      } else {
+        const picked = await ExpoFile.pickFileAsync({ mimeTypes: '*/*' });
+        if (picked.canceled) return;
+        const file = picked.result;
+        if (file.size > MAX_ROUTINE_FILE_BYTES) {
+          throw new Error('This file is too large to import (5 MB maximum).');
+        }
+        try {
+          contents = await file.text();
+        } catch {
+          throw new Error('Could not access that file. Save the JSON backup on this device and try selecting it again.');
+        }
       }
-      const contents = Platform.OS === 'web'
-        ? file.file ? await file.file.text() : await (await fetch(file.uri)).text()
-        : await FileSystem.readAsStringAsync(file.uri);
       const imported = parseRoutinesFile(contents);
       if (imported.progress !== undefined) {
         setPendingBackup(imported);
