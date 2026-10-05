@@ -14,5 +14,5 @@
 - [Expo appearance API](expo-appearance.md) — newer React Native uses an explicit unspecified scheme to restore system appearance; do not cast older null-based examples.
 - [Expo SDK 57 checks](expo-sdk-57.md) — legacy splash configuration is invalid, and early Hermes V1 builds have a documented memory regression.
 - [Expo preview warmup](expo-web-preview.md) — early cold-start screenshots can be blank; wait for visible UI before diagnosing broken layout.
-- [Android backup imports](android-backup-imports.md) — use the native Expo file picker for provider-backed Android URIs; legacy string reads can fail despite cache-copy settings.
+- [Android backup files](android-backup-imports.md) — use Expo FileSystem pickers for provider-backed imports and local folder saves; sharing opens an app chooser, not a save dialog.
 - [Local person profiles](person-profiles.md) — profiles keep separate routine data; person backups use JSON import/export, with no email settings.

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { File as ExpoFile } from 'expo-file-system';
+import { Directory, File as ExpoFile } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -205,6 +205,34 @@ export default function HomeScreen() {
       });
     } catch (error) {
       setTransferStatus({ message: error instanceof Error ? error.message : 'Could not export routines.', error: true });
+    } finally {
+      transferLock.current = false;
+      setTransferBusy(null);
+    }
+  }
+
+  async function savePersonFileLocally() {
+    if (Platform.OS !== 'android' || transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading) return;
+    transferLock.current = true;
+    setTransferBusy('export');
+    setTransferStatus(null);
+    try {
+      const { filename, personData, contents } = await buildPersonBackupFile();
+      let directory: Directory;
+      try {
+        directory = await Directory.pickDirectoryAsync();
+      } catch (error) {
+        if (error instanceof Error && error.message.toLowerCase().includes('file picker was cancelled')) return;
+        throw error;
+      }
+      const backupFile = directory.createFile(filename, 'application/json');
+      backupFile.write(contents);
+      setTransferStatus({
+        message: `Person backup saved to the selected folder: ${personData.routines.length} routines, ${personData.playlists.length} playlists, ${personData.schedules.length} schedules, and the selected theme${includeHistory ? ' with daily progress' : ''}.`,
+        error: false,
+      });
+    } catch (error) {
+      setTransferStatus({ message: error instanceof Error ? error.message : 'Could not save the backup to this device.', error: true });
     } finally {
       transferLock.current = false;
       setTransferBusy(null);
@@ -622,7 +650,7 @@ export default function HomeScreen() {
             <View style={[styles.transferCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.transferTitle, { color: colors.foreground }]}>Back up {activePerson.name}</Text>
               <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
-                Export this person’s routines, playlists, schedules, and selected theme as one JSON file. Daily progress is optional. Import JSON only restores routines and optional progress; it does not restore playlists, schedules, or theme.
+                Export this person’s routines, playlists, schedules, and selected theme as one JSON file. Daily progress is optional. {Platform.OS === 'android' ? 'On Android, save to a folder on your device or share the backup with another app. ' : ''}Import JSON only restores routines and optional progress; it does not restore playlists, schedules, or theme.
               </Text>
               <Pressable
                 accessibilityRole="checkbox"
@@ -637,18 +665,33 @@ export default function HomeScreen() {
                 <Text style={[styles.historyLabel, { color: colors.foreground }]}>Include daily progress in export</Text>
               </Pressable>
               <View style={styles.transferActions}>
-                <Pressable
-                  accessibilityLabel={`Export all data for ${activePerson.name}`}
-                  testID="export-person-data"
-                  disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
-                  onPress={() => void exportPersonFile()}
-                  style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
-                >
-                  <Ionicons name="download-outline" size={18} color={colors.primary} />
-                  <Text style={[styles.transferButtonText, { color: colors.primary }]}>
-                    {transferBusy === 'export' ? 'Exporting…' : 'Export person backup'}
-                  </Text>
-                </Pressable>
+                {Platform.OS === 'android' ? (
+                  <Pressable
+                    accessibilityLabel={`Save all data for ${activePerson.name} on this device`}
+                    testID="save-person-data"
+                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                    onPress={() => void savePersonFileLocally()}
+                    style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="download-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                      {transferBusy === 'export' ? 'Saving…' : 'Save to device'}
+                    </Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    accessibilityLabel={`Export all data for ${activePerson.name}`}
+                    testID="export-person-data"
+                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                    onPress={() => void exportPersonFile()}
+                    style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="download-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                      {transferBusy === 'export' ? 'Exporting…' : 'Export person backup'}
+                    </Text>
+                  </Pressable>
+                )}
                 <Pressable
                   accessibilityLabel="Import routines"
                   testID="import-routines"
@@ -662,6 +705,22 @@ export default function HomeScreen() {
                   </Text>
                 </Pressable>
               </View>
+              {Platform.OS === 'android' ? (
+                <View style={[styles.transferActions, { marginTop: 8 }]}>
+                  <Pressable
+                    accessibilityLabel={`Share all data for ${activePerson.name}`}
+                    testID="export-person-data"
+                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                    onPress={() => void exportPersonFile()}
+                    style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="share-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                      {transferBusy === 'export' ? 'Preparing…' : 'Share backup with another app'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
               {pendingBackup ? (
                 <View style={[styles.importChoice, { borderTopColor: colors.border }]}>
                   <Text style={[styles.historyLabel, { color: colors.foreground }]}>This backup includes daily progress.</Text>
