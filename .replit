@@ -57,3 +57,9 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 packages = ["glib", "nspr", "nss", "dbus", "atk", "at-spi2-core", "cups", "libdrm", "libxkbcommon", "alsa-lib", "pango", "cairo", "fontconfig", "freetype", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXfixes", "xorg.libXrandr", "xorg.libXext", "xorg.libXcursor", "xorg.libXi", "xorg.libXrender", "xorg.libxcb", "xorg.libXtst", "gtk3"]
+
+[userenv]
+
+[userenv.shared]
+ROUTINE_BACKUP_TO_EMAIL = "kumarkisna@gmail.com"
+ROUTINE_BACKUP_FROM_EMAIL = "kumarkisna@gmail.com"
