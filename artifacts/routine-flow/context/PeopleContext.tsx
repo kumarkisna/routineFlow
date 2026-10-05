@@ -5,11 +5,6 @@ import { router } from 'expo-router';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme } from '@/lib/appThemes';
 import { buildPersonCopy, readPersonSnapshot, repairPersonRoutineDurations } from '@/lib/personCopy';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
-import {
-  normalizeBackupEmailMessage,
-  normalizeBackupEmailSubject,
-  normalizeOptionalEmail,
-} from '@/lib/personEmail';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 
 type Registry = { version: 1; people: Person[]; activePersonId: string };
@@ -41,7 +36,11 @@ function parseRegistry(raw: string): Registry {
     || !item.people.some(person => person.id === item.activePersonId)) {
     throw new Error('Saved people are invalid. Your data has not been replaced.');
   }
-  return item as Registry;
+  return {
+    version: 1,
+    people: item.people.map(person => ({ id: person.id, name: person.name })),
+    activePersonId: item.activePersonId!,
+  };
 }
 
 async function saveRegistry(registry: Registry) {
@@ -91,7 +90,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       const raw = await AsyncStorage.getItem(PEOPLE_KEY);
       const next = raw ? parseRegistry(raw) : initialRegistry;
       activePersonId = next.activePersonId;
-      if (!raw) await saveRegistry(next);
+      if (!raw || JSON.stringify(next) !== raw) await saveRegistry(next);
       await readPersonSnapshot(next.activePersonId);
       await validatePersonSettings(next.activePersonId);
       current.current = next;
@@ -171,11 +170,6 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     const person: Person = {
       id: `person-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       name: trimmed,
-      backupEmailFrom: normalizeOptionalEmail(profile.backupEmailFrom, 'sender'),
-      backupEmailTo: normalizeOptionalEmail(profile.backupEmailTo, 'recipient'),
-      backupEmailSubject: normalizeBackupEmailSubject(profile.backupEmailSubject),
-      backupEmailMessage: normalizeBackupEmailMessage(profile.backupEmailMessage),
-      includeDailyProgressByDefault: profile.includeDailyProgressByDefault ?? false,
     };
     await AsyncStorage.multiSet([
       [personStorageKey(person.id, PERSON_DATA_KEYS.routines), '[]'],
@@ -207,13 +201,6 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     const updated: Person = {
       ...existing,
       name: trimmed,
-      backupEmailFrom: normalizeOptionalEmail(profile.backupEmailFrom, 'sender'),
-      backupEmailTo: normalizeOptionalEmail(profile.backupEmailTo, 'recipient'),
-      backupEmailSubject: normalizeBackupEmailSubject(profile.backupEmailSubject),
-      backupEmailMessage: normalizeBackupEmailMessage(profile.backupEmailMessage),
-      includeDailyProgressByDefault: profile.includeDailyProgressByDefault
-        ?? existing.includeDailyProgressByDefault
-        ?? false,
     };
     const next: Registry = {
       ...previous,

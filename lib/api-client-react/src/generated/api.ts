@@ -6,29 +6,21 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
-  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
-  MutationFunction,
   QueryFunction,
   QueryKey,
-  UseMutationOptions,
-  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
 
 import type {
-  ApiError,
-  BackupEmailSendResult,
-  BackupEmailStatus,
-  HealthStatus,
-  SendPersonBackupEmailRequest
+  HealthStatus
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
-import type { ErrorType , BodyType } from '../custom-fetch';
+import type { ErrorType } from '../custom-fetch';
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -131,169 +123,4 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
 
 
-
-export const getGetBackupEmailStatusUrl = () => {
-
-
-
-
-  return `/api/backup/email/status`
-}
-
-/**
- * @summary Check whether the Resend connection is available
- */
-export const getBackupEmailStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<BackupEmailStatus> => {
-
-  return customFetch<BackupEmailStatus>(getGetBackupEmailStatusUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getGetBackupEmailStatusQueryKey = () => {
-    return [
-    `/api/backup/email/status`
-    ] as const;
-    }
-
-
-export const getGetBackupEmailStatusQueryOptions = <TData = Awaited<ReturnType<typeof getBackupEmailStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBackupEmailStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetBackupEmailStatusQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBackupEmailStatus>>> = ({ signal }) => getBackupEmailStatus({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBackupEmailStatus>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type GetBackupEmailStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getBackupEmailStatus>>>
-export type GetBackupEmailStatusQueryError = ErrorType<unknown>
-
-
-/**
- * @summary Check whether the Resend connection is available
- */
-
-export function useGetBackupEmailStatus<TData = Awaited<ReturnType<typeof getBackupEmailStatus>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBackupEmailStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getGetBackupEmailStatusQueryOptions(options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
-
-export const getSendPersonBackupEmailUrl = () => {
-
-
-
-
-  return `/api/backup/email`
-}
-
-/**
- * @summary Email a person backup using that person's sender and recipient addresses
- */
-export const sendPersonBackupEmail = async (sendPersonBackupEmailRequest: SendPersonBackupEmailRequest, options?: Parameters<typeof customFetch>[1]): Promise<BackupEmailSendResult> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return customFetch<BackupEmailSendResult>(getSendPersonBackupEmailUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(sendPersonBackupEmailRequest)
-  }
-);}
-
-
-
-
-
-export const getSendPersonBackupEmailMutationKey = () => ['sendPersonBackupEmail'] as const;
-
-export const getSendPersonBackupEmailMutationOptions = <TError = ErrorType<ApiError>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPersonBackupEmail>>, TError,SendPersonBackupEmailMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof sendPersonBackupEmail>>, TError,SendPersonBackupEmailMutationVariables, TContext> => {
-
-const mutationKey = getSendPersonBackupEmailMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendPersonBackupEmail>>, SendPersonBackupEmailMutationVariables> = (props) => {
-          const {data} = props ?? {};
-
-          return  sendPersonBackupEmail(data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type SendPersonBackupEmailMutationResult = NonNullable<Awaited<ReturnType<typeof sendPersonBackupEmail>>>
-    export type SendPersonBackupEmailMutationBody = BodyType<SendPersonBackupEmailRequest>
-    export type SendPersonBackupEmailMutationError = ErrorType<ApiError>
-    export type SendPersonBackupEmailMutationVariables = {data: BodyType<SendPersonBackupEmailRequest>}
-
-    /**
- * @summary Email a person backup using that person's sender and recipient addresses
- */
-export const useSendPersonBackupEmail = <TError = ErrorType<ApiError>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPersonBackupEmail>>, TError,SendPersonBackupEmailMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof sendPersonBackupEmail>>,
-        TError,
-        SendPersonBackupEmailMutationVariables,
-        TContext
-      > => {
-      return useMutation(getSendPersonBackupEmailMutationOptions(options));
-    }
 

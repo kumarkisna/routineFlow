@@ -10,8 +10,6 @@ servers:
 tags:
   - name: health
     description: Health operations
-  - name: backup
-    description: Person backup delivery
 paths:
   /healthz:
     get:
@@ -26,72 +24,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
-  /backup/email/status:
-    get:
-      operationId: getBackupEmailStatus
-      tags: [backup]
-      summary: Check whether the Resend connection is available
-      responses:
-        "200":
-          description: Resend connection status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BackupEmailStatus"
-  /backup/email:
-    post:
-      operationId: sendPersonBackupEmail
-      tags: [backup]
-      summary: Email a person backup using that person's sender and recipient addresses
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SendPersonBackupEmailRequest"
-      responses:
-        "200":
-          description: Backup email sent
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BackupEmailSendResult"
-        "400":
-          description: Invalid backup
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "413":
-          description: Backup is too large
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "429":
-          description: Sending limit reached
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "422":
-          description: Resend rejected a sender or recipient address
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "502":
-          description: Email provider could not send the backup
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: Resend connection is unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
 components:
   schemas:
     HealthStatus:
@@ -101,56 +33,4 @@ components:
           type: string
       required:
         - status
-    BackupEmailStatus:
-      type: object
-      properties:
-        available:
-          type: boolean
-        issue:
-          type: string
-          enum: [invalid_credentials, unavailable]
-      required:
-        - available
-    SendPersonBackupEmailRequest:
-      type: object
-      properties:
-        backupJson:
-          type: string
-          minLength: 2
-          maxLength: 5000000
-        fromEmail:
-          type: string
-          format: email
-          maxLength: 254
-        toEmail:
-          type: string
-          format: email
-          maxLength: 254
-        subject:
-          type: string
-          minLength: 1
-          maxLength: 180
-        message:
-          type: string
-          maxLength: 2000
-      required:
-        - backupJson
-        - fromEmail
-        - toEmail
-        - subject
-        - message
-    BackupEmailSendResult:
-      type: object
-      properties:
-        sent:
-          type: boolean
-      required:
-        - sent
-    ApiError:
-      type: object
-      properties:
-        message:
-          type: string
-      required:
-        - message
 

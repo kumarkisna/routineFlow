@@ -5,19 +5,9 @@ import type { RoutineSchedule } from '@/lib/schedules';
 export type Person = {
   id: string;
   name: string;
-  backupEmailFrom?: string;
-  backupEmailTo?: string;
-  backupEmailSubject?: string;
-  backupEmailMessage?: string;
-  includeDailyProgressByDefault?: boolean;
 };
 export type PersonProfileInput = {
   name: string;
-  backupEmailFrom?: string;
-  backupEmailTo?: string;
-  backupEmailSubject?: string;
-  backupEmailMessage?: string;
-  includeDailyProgressByDefault?: boolean;
 };
 export type PersonSnapshot = {
   routines: Routine[];

@@ -21,11 +21,11 @@ Full-person exports must include that person's routines, playlists, schedules, a
 
 **How to apply:** Keep future person-backup exports scoped to the active profile and include all four sections.
 
-Each person profile controls its backup recipient, sender, subject, message, and default for including daily progress. The Resend API credential remains in the shared server-side connection, not profile data. Sender domains must be verified in the connected Resend account.
+Routine Flow intentionally has no backup email feature or per-person email settings. Person backups use JSON export/import and stay scoped to the active person.
 
-**Why:** The user requested all backup email options be configurable per person. The Resend credential is a secret and must not be stored on the device or in profile data.
+**Why:** The user asked to remove email because of Resend setup uncertainty and concern about future charges.
 
-**How to apply:** Persist email preferences with each profile and use only the active person's settings for a confirmed backup. Keep provider authentication app-wide and server-side.
+**How to apply:** Do not add email sending or per-person email configuration unless the user explicitly requests it. Removing app-side email does not disconnect the workspace's Resend integration.
 
 When local routine data cannot validate at startup, offer a targeted, explicit repair and preserve the raw routine payload before changing it. Do not clear the profile or app storage to recover one malformed step.
 

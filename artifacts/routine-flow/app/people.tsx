@@ -2,147 +2,23 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { usePeople } from '@/context/PeopleContext';
 import { useColors } from '@/hooks/useColors';
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
-import {
-  BACKUP_EMAIL_MESSAGE_MAX_LENGTH,
-  BACKUP_EMAIL_SUBJECT_MAX_LENGTH,
-  DEFAULT_BACKUP_EMAIL_MESSAGE,
-  DEFAULT_BACKUP_EMAIL_SUBJECT,
-} from '@/lib/personEmail';
 import type { Person, PersonSnapshot } from '@/types/people';
 
 const msg = (e: unknown, fb: string) => (e instanceof Error && e.message ? e.message : fb);
-
-function PersonEmailField({
-  label,
-  testID,
-  value,
-  editable,
-  onChangeText,
-}: {
-  label: string;
-  testID: string;
-  value: string;
-  editable: boolean;
-  onChangeText: (value: string) => void;
-}) {
-  const colors = useColors();
-  return (
-    <View style={styles.emailField}>
-      <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{label}</Text>
-      <TextInput
-        testID={testID}
-        accessibilityLabel={label}
-        placeholder={label}
-        placeholderTextColor={colors.mutedForeground}
-        value={value}
-        onChangeText={onChangeText}
-        editable={editable}
-        maxLength={254}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        autoCorrect={false}
-        style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
-      />
-    </View>
-  );
-}
-
-function PersonTextField({
-  label,
-  testID,
-  value,
-  editable,
-  multiline = false,
-  maxLength,
-  onChangeText,
-}: {
-  label: string;
-  testID: string;
-  value: string;
-  editable: boolean;
-  multiline?: boolean;
-  maxLength: number;
-  onChangeText: (value: string) => void;
-}) {
-  const colors = useColors();
-  return (
-    <View style={styles.emailField}>
-      <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{label}</Text>
-      <TextInput
-        testID={testID}
-        accessibilityLabel={label}
-        placeholder={label}
-        placeholderTextColor={colors.mutedForeground}
-        value={value}
-        onChangeText={onChangeText}
-        editable={editable}
-        maxLength={maxLength}
-        multiline={multiline}
-        textAlignVertical={multiline ? 'top' : 'center'}
-        style={[
-          styles.input,
-          multiline && styles.messageInput,
-          { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground },
-        ]}
-      />
-    </View>
-  );
-}
-
-function ProgressDefaultField({
-  value,
-  editable,
-  onValueChange,
-  testID,
-}: {
-  value: boolean;
-  editable: boolean;
-  onValueChange: (value: boolean) => void;
-  testID: string;
-}) {
-  const colors = useColors();
-  return (
-    <View style={styles.switchRow}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={[styles.fieldLabel, { color: colors.foreground }]}>Include daily progress by default</Text>
-        <Text style={[styles.sub, { color: colors.mutedForeground }]}>You can change this for an individual backup before sending.</Text>
-      </View>
-      <Switch
-        testID={testID}
-        accessibilityLabel="Include daily progress by default"
-        value={value}
-        disabled={!editable}
-        onValueChange={onValueChange}
-        trackColor={{ false: colors.border, true: colors.primary }}
-        thumbColor={colors.card}
-      />
-    </View>
-  );
-}
 
 export default function PeopleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { people, activePerson, busy, notice, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson } = usePeople();
   const [name, setName] = React.useState('');
-  const [newEmailFrom, setNewEmailFrom] = React.useState('');
-  const [newEmailTo, setNewEmailTo] = React.useState('');
-  const [newEmailSubject, setNewEmailSubject] = React.useState(DEFAULT_BACKUP_EMAIL_SUBJECT);
-  const [newEmailMessage, setNewEmailMessage] = React.useState(DEFAULT_BACKUP_EMAIL_MESSAGE);
-  const [newIncludeProgress, setNewIncludeProgress] = React.useState(false);
   const [editingPersonId, setEditingPersonId] = React.useState<string | null>(null);
   const [editingName, setEditingName] = React.useState('');
-  const [editingEmailFrom, setEditingEmailFrom] = React.useState('');
-  const [editingEmailTo, setEditingEmailTo] = React.useState('');
-  const [editingEmailSubject, setEditingEmailSubject] = React.useState(DEFAULT_BACKUP_EMAIL_SUBJECT);
-  const [editingEmailMessage, setEditingEmailMessage] = React.useState(DEFAULT_BACKUP_EMAIL_MESSAGE);
-  const [editingIncludeProgress, setEditingIncludeProgress] = React.useState(false);
   const [error, setError] = React.useState('');
   const [working, setWorking] = React.useState(false);
   const [sourceId, setSourceId] = React.useState<string | null>(null);
@@ -194,43 +70,19 @@ export default function PeopleScreen() {
     }
     setEditingPersonId(person.id);
     setEditingName(person.name);
-    setEditingEmailFrom(person.backupEmailFrom ?? '');
-    setEditingEmailTo(person.backupEmailTo ?? '');
-    setEditingEmailSubject(person.backupEmailSubject ?? DEFAULT_BACKUP_EMAIL_SUBJECT);
-    setEditingEmailMessage(person.backupEmailMessage ?? DEFAULT_BACKUP_EMAIL_MESSAGE);
-    setEditingIncludeProgress(person.includeDailyProgressByDefault ?? false);
     setError('');
   }
 
   function submitAdd() {
     void run(async () => {
-      await addPerson({
-        name,
-        backupEmailFrom: newEmailFrom,
-        backupEmailTo: newEmailTo,
-        backupEmailSubject: newEmailSubject,
-        backupEmailMessage: newEmailMessage,
-        includeDailyProgressByDefault: newIncludeProgress,
-      });
+      await addPerson({ name });
       setName('');
-      setNewEmailFrom('');
-      setNewEmailTo('');
-      setNewEmailSubject(DEFAULT_BACKUP_EMAIL_SUBJECT);
-      setNewEmailMessage(DEFAULT_BACKUP_EMAIL_MESSAGE);
-      setNewIncludeProgress(false);
     }, 'Could not add person.');
   }
 
   function submitEdit(personId: string) {
     void run(async () => {
-      await updatePerson(personId, {
-        name: editingName,
-        backupEmailFrom: editingEmailFrom,
-        backupEmailTo: editingEmailTo,
-        backupEmailSubject: editingEmailSubject,
-        backupEmailMessage: editingEmailMessage,
-        includeDailyProgressByDefault: editingIncludeProgress,
-      });
+      await updatePerson(personId, { name: editingName });
       setEditingPersonId(null);
     }, 'Could not update person.');
   }
@@ -318,7 +170,7 @@ export default function PeopleScreen() {
                     <View style={{ flex: 1 }}>
                       <Text numberOfLines={1} style={[styles.itemText, { color: colors.foreground }]}>{p.name}</Text>
                       <Text numberOfLines={1} style={[styles.sub, { color: colors.mutedForeground }]}>
-                        {p.backupEmailTo ? 'Backup recipient set' : 'No backup recipient'}
+                        Personal routines and progress
                       </Text>
                     </View>
                     {active ? <Text style={[styles.linkText, { color: colors.primary }]}>Active</Text> : <Text style={[styles.linkText, { color: colors.mutedForeground }]}>Switch</Text>}
@@ -353,46 +205,6 @@ export default function PeopleScreen() {
                         style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
                       />
                     )}
-                    <PersonEmailField
-                      testID={`person-edit-email-to-${p.id}`}
-                      label="Backup recipient email"
-                      value={editingEmailTo}
-                      editable={!disabled}
-                      onChangeText={(value) => { setEditingEmailTo(value); setError(''); }}
-                    />
-                    <PersonEmailField
-                      testID={`person-edit-email-from-${p.id}`}
-                      label="Verified sender email"
-                      value={editingEmailFrom}
-                      editable={!disabled}
-                      onChangeText={(value) => { setEditingEmailFrom(value); setError(''); }}
-                    />
-                    <PersonTextField
-                      testID={`person-edit-email-subject-${p.id}`}
-                      label="Backup email subject"
-                      value={editingEmailSubject}
-                      editable={!disabled}
-                      maxLength={BACKUP_EMAIL_SUBJECT_MAX_LENGTH}
-                      onChangeText={(value) => { setEditingEmailSubject(value); setError(''); }}
-                    />
-                    <PersonTextField
-                      testID={`person-edit-email-message-${p.id}`}
-                      label="Backup email message"
-                      value={editingEmailMessage}
-                      editable={!disabled}
-                      multiline
-                      maxLength={BACKUP_EMAIL_MESSAGE_MAX_LENGTH}
-                      onChangeText={(value) => { setEditingEmailMessage(value); setError(''); }}
-                    />
-                    <ProgressDefaultField
-                      testID={`person-edit-progress-default-${p.id}`}
-                      value={editingIncludeProgress}
-                      editable={!disabled}
-                      onValueChange={setEditingIncludeProgress}
-                    />
-                    <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-                      Sender, recipient, subject, and message belong to this profile. The sender domain must be verified in Resend; its connection is shared by the app.
-                    </Text>
                     <View style={styles.formActions}>
                       <Pressable
                         testID={`person-edit-cancel-${p.id}`}
@@ -436,45 +248,8 @@ export default function PeopleScreen() {
               <Text style={[styles.linkText, { color: colors.primaryForeground }]}>Add</Text>
             </Pressable>
           </View>
-          <PersonEmailField
-            testID="person-new-email-to"
-            label="Backup recipient email"
-            value={newEmailTo}
-            editable={!disabled}
-            onChangeText={(value) => { setNewEmailTo(value); setError(''); }}
-          />
-          <PersonEmailField
-            testID="person-new-email-from"
-            label="Verified sender email"
-            value={newEmailFrom}
-            editable={!disabled}
-            onChangeText={(value) => { setNewEmailFrom(value); setError(''); }}
-          />
-          <PersonTextField
-            testID="person-new-email-subject"
-            label="Backup email subject"
-            value={newEmailSubject}
-            editable={!disabled}
-            maxLength={BACKUP_EMAIL_SUBJECT_MAX_LENGTH}
-            onChangeText={(value) => { setNewEmailSubject(value); setError(''); }}
-          />
-          <PersonTextField
-            testID="person-new-email-message"
-            label="Backup email message"
-            value={newEmailMessage}
-            editable={!disabled}
-            multiline
-            maxLength={BACKUP_EMAIL_MESSAGE_MAX_LENGTH}
-            onChangeText={(value) => { setNewEmailMessage(value); setError(''); }}
-          />
-          <ProgressDefaultField
-            testID="person-new-progress-default"
-            value={newIncludeProgress}
-            editable={!disabled}
-            onValueChange={setNewIncludeProgress}
-          />
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-            New people start empty and become active right away. Sender, recipient, subject, message, and the progress default are saved per person. The sender domain must be verified in Resend; its connection is shared by the app.
+            New people start empty and become active right away. Each person keeps separate routines, playlists, schedules, and progress.
           </Text>
         </View>
 
@@ -544,10 +319,6 @@ const styles = StyleSheet.create({
   personSelect: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
   avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontFamily: 'Inter_500Medium', fontSize: 15 },
-  emailField: { width: '100%', gap: 5 },
-  fieldLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
-  messageInput: { minHeight: 96, paddingTop: 12, textAlignVertical: 'top' },
-  switchRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
   profileEditor: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 },
   editButton: { minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   formActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },

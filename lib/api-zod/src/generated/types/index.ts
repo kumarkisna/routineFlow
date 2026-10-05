@@ -6,9 +6,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export * from './apiError';
-export * from './backupEmailSendResult';
-export * from './backupEmailStatus';
-export * from './backupEmailStatusIssue';
 export * from './healthStatus';
-export * from './sendPersonBackupEmailRequest';
