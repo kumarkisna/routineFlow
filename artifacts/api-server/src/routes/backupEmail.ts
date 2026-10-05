@@ -12,28 +12,34 @@ const MAX_BACKUP_BYTES = 5_000_000;
 const SEND_WINDOW_MS = 60 * 60 * 1000;
 const MAX_SENDS_PER_IP_PER_WINDOW = 3;
 
-type EmailConfig = { from: string | null; to: string | null };
 type SendWindow = { count: number; resetAt: number };
+type ProviderError = { code?: string; message?: string };
 
 const sendWindows = new Map<string, SendWindow>();
+const EMAIL_ADDRESS = /^[^\s@]+@(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,}$/i;
 
-function isEmailAddress(value: string | undefined): value is string {
-  if (!value || value.length > 254 || /\s/.test(value)) return false;
-  return /^[^\s@]+@(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,}$/i.test(value);
+function isEmailAddress(value: string): boolean {
+  return value.length <= 254 && EMAIL_ADDRESS.test(value.trim());
 }
 
-function readEmailConfig(): EmailConfig {
-  const from = process.env.ROUTINE_BACKUP_FROM_EMAIL?.trim();
-  const to = process.env.ROUTINE_BACKUP_TO_EMAIL?.trim();
-  return {
-    from: isEmailAddress(from) ? from : null,
-    to: isEmailAddress(to) ? to : null,
-  };
+function sanitizeProviderMessage(value: string): string {
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email address]')
+    .replace(/\b(?:re|rk|sk)_[A-Z0-9_-]{8,}\b/gi, '[credential]')
+    .slice(0, 300);
 }
 
-function maskEmailAddress(address: string): string {
-  const at = address.lastIndexOf("@");
-  return `${address.slice(0, 1)}***${address.slice(at)}`;
+async function readProviderError(response: Response): Promise<ProviderError> {
+  try {
+    const body: unknown = await response.clone().json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
+    const value = body as Record<string, unknown>;
+    const code = typeof value.name === 'string' ? value.name : typeof value.code === 'string' ? value.code : undefined;
+    const message = typeof value.message === 'string' ? sanitizeProviderMessage(value.message) : undefined;
+    return { ...(code ? { code } : {}), ...(message ? { message } : {}) };
+  } catch {
+    return {};
+  }
 }
 
 function isBackupJson(value: string): boolean {
@@ -67,15 +73,44 @@ function takeSendSlot(ip: string, now = Date.now()): { allowed: boolean; retryAf
   return { allowed: true, retryAfterSeconds: 0 };
 }
 
-async function sendWithResend(config: EmailConfig, backupJson: string): Promise<void> {
-  if (!config.from || !config.to) throw new Error("Backup email is not configured.");
+class BackupEmailDeliveryError extends Error {
+  constructor(readonly statusCode: number, message: string) {
+    super(message);
+  }
+}
+
+async function checkResendAvailability(): Promise<{ available: boolean; issue?: 'invalid_credentials' | 'unavailable' }> {
+  try {
+    const response = await new ReplitConnectors().proxy('resend', '/domains', { method: 'GET' });
+    if (response.ok) return { available: true };
+
+    const providerError = await readProviderError(response);
+    const invalidCredentials = /api key.{0,20}invalid|invalid.{0,20}api key/i.test(providerError.message ?? '');
+    logger.warn(
+      { statusCode: response.status, providerCode: providerError.code },
+      'Resend connection is unavailable',
+    );
+    return { available: false, issue: invalidCredentials ? 'invalid_credentials' : 'unavailable' };
+  } catch (error) {
+    logger.warn(
+      { errorType: error instanceof Error ? error.name : 'UnknownError' },
+      'Resend availability check failed',
+    );
+    return { available: false, issue: 'unavailable' };
+  }
+}
+
+async function sendWithResend(fromEmail: string, toEmail: string, backupJson: string): Promise<void> {
+  if (!isEmailAddress(fromEmail) || !isEmailAddress(toEmail)) {
+    throw new BackupEmailDeliveryError(400, 'Enter valid sender and recipient email addresses in this person’s profile.');
+  }
 
   const connectors = new ReplitConnectors();
   const response = await connectors.proxy("resend", "/emails", {
     method: "POST",
     body: {
-      from: config.from,
-      to: [config.to],
+      from: fromEmail.trim(),
+      to: [toEmail.trim()],
       subject: "Your Routine Flow person backup",
       text: "Your Routine Flow person backup is attached as a JSON file.",
       attachments: [{
@@ -87,18 +122,23 @@ async function sendWithResend(config: EmailConfig, backupJson: string): Promise<
   });
 
   if (!response.ok) {
-    logger.error({ statusCode: response.status }, "Resend rejected a person backup email");
-    throw new Error("Resend could not send the backup.");
+    const providerError = await readProviderError(response);
+    logger.error(
+      { statusCode: response.status, providerCode: providerError.code, providerMessage: providerError.message },
+      "Resend rejected a person backup email",
+    );
+    if (/api key.{0,20}invalid|invalid.{0,20}api key/i.test(providerError.message ?? '')) {
+      throw new BackupEmailDeliveryError(503, 'The Resend API key is invalid. Update the existing Resend connection in Replit, then try again.');
+    }
+    if (/not verified|verified domain|domain.*verify/i.test(providerError.message ?? '')) {
+      throw new BackupEmailDeliveryError(422, 'This person’s sender address must use a domain verified in the connected Resend account.');
+    }
+    throw new BackupEmailDeliveryError(502, 'Resend rejected this backup. Check this person’s sender and recipient addresses and the Resend connection.');
   }
 }
 
-router.get("/backup/email/status", (_req, res) => {
-  const config = readEmailConfig();
-  const data = GetBackupEmailStatusResponse.parse({
-    configured: Boolean(config.from && config.to),
-    ...(config.to ? { recipientHint: maskEmailAddress(config.to) } : {}),
-  });
-  res.json(data);
+router.get('/backup/email/status', async (_req, res) => {
+  res.json(GetBackupEmailStatusResponse.parse(await checkResendAvailability()));
 });
 
 router.post("/backup/email", async (req: Request, res) => {
@@ -108,19 +148,17 @@ router.post("/backup/email", async (req: Request, res) => {
     return;
   }
 
-  const { backupJson } = parsed.data;
+  const { backupJson, fromEmail, toEmail } = parsed.data;
+  if (!isEmailAddress(fromEmail) || !isEmailAddress(toEmail)) {
+    res.status(400).json({ message: 'Enter valid sender and recipient email addresses in this person’s profile.' });
+    return;
+  }
   if (Buffer.byteLength(backupJson, "utf8") > MAX_BACKUP_BYTES) {
     res.status(413).json({ message: "This person backup exceeds 5 MB." });
     return;
   }
   if (!isBackupJson(backupJson)) {
     res.status(400).json({ message: "Choose a valid Routine Flow person backup." });
-    return;
-  }
-
-  const config = readEmailConfig();
-  if (!config.from || !config.to) {
-    res.status(503).json({ message: "Email backup is not configured for this app." });
     return;
   }
 
@@ -132,14 +170,18 @@ router.post("/backup/email", async (req: Request, res) => {
   }
 
   try {
-    await sendWithResend(config, backupJson);
+    await sendWithResend(fromEmail, toEmail, backupJson);
     res.json(SendPersonBackupEmailResponse.parse({ sent: true }));
   } catch (error) {
+    if (error instanceof BackupEmailDeliveryError) {
+      res.status(error.statusCode).json({ message: error.message });
+      return;
+    }
     logger.error(
       { errorType: error instanceof Error ? error.name : "UnknownError" },
       "Person backup email delivery failed",
     );
-    res.status(502).json({ message: "The email service could not send this backup. Check the Resend sender configuration and try again." });
+    res.status(502).json({ message: 'The email service could not send this backup. Check the Resend connection and this person’s email settings.' });
   }
 });
 

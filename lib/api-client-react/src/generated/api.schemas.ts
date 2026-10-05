@@ -9,9 +9,17 @@ export interface HealthStatus {
   status: string;
 }
 
+export type BackupEmailStatusIssue = typeof BackupEmailStatusIssue[keyof typeof BackupEmailStatusIssue];
+
+
+export const BackupEmailStatusIssue = {
+  invalid_credentials: 'invalid_credentials',
+  unavailable: 'unavailable',
+} as const;
+
 export interface BackupEmailStatus {
-  configured: boolean;
-  recipientHint?: string;
+  available: boolean;
+  issue?: BackupEmailStatusIssue;
 }
 
 export interface SendPersonBackupEmailRequest {
@@ -20,6 +28,10 @@ export interface SendPersonBackupEmailRequest {
      * @maxLength 5000000
      */
   backupJson: string;
+  /** @maxLength 254 */
+  fromEmail: string;
+  /** @maxLength 254 */
+  toEmail: string;
 }
 
 export interface BackupEmailSendResult {
@@ -29,3 +41,4 @@ export interface BackupEmailSendResult {
 export interface ApiError {
   message: string;
 }
+

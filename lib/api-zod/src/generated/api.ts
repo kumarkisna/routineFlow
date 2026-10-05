@@ -18,26 +18,34 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
- * @summary Check whether person backup email delivery is configured
+ * @summary Check whether the Resend connection is available
  */
 export const GetBackupEmailStatusResponse = zod.object({
-  "configured": zod.boolean(),
-  "recipientHint": zod.string().optional()
+  "available": zod.boolean(),
+  "issue": zod.enum(['invalid_credentials', 'unavailable']).optional()
 })
 
 
 /**
- * @summary Email the configured recipient a person backup
+ * @summary Email a person backup using that person's sender and recipient addresses
  */
 export const sendPersonBackupEmailBodyBackupJsonMin = 2;
 export const sendPersonBackupEmailBodyBackupJsonMax = 5000000;
 
+export const sendPersonBackupEmailBodyFromEmailMax = 254;
+
+export const sendPersonBackupEmailBodyToEmailMax = 254;
+
 
 
 export const SendPersonBackupEmailBody = zod.object({
-  "backupJson": zod.string().min(sendPersonBackupEmailBodyBackupJsonMin).max(sendPersonBackupEmailBodyBackupJsonMax)
+  "backupJson": zod.string().min(sendPersonBackupEmailBodyBackupJsonMin).max(sendPersonBackupEmailBodyBackupJsonMax),
+  "fromEmail": zod.string().email().max(sendPersonBackupEmailBodyFromEmailMax),
+  "toEmail": zod.string().email().max(sendPersonBackupEmailBodyToEmailMax)
 })
 
 export const SendPersonBackupEmailResponse = zod.object({
   "sent": zod.boolean()
 })
+
+

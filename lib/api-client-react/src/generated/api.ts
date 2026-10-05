@@ -141,7 +141,7 @@ export const getGetBackupEmailStatusUrl = () => {
 }
 
 /**
- * @summary Check whether person backup email delivery is configured
+ * @summary Check whether the Resend connection is available
  */
 export const getBackupEmailStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<BackupEmailStatus> => {
 
@@ -188,7 +188,7 @@ export type GetBackupEmailStatusQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Check whether person backup email delivery is configured
+ * @summary Check whether the Resend connection is available
  */
 
 export function useGetBackupEmailStatus<TData = Awaited<ReturnType<typeof getBackupEmailStatus>>, TError = ErrorType<unknown>>(
@@ -218,7 +218,7 @@ export const getSendPersonBackupEmailUrl = () => {
 }
 
 /**
- * @summary Email the configured recipient a person backup
+ * @summary Email a person backup using that person's sender and recipient addresses
  */
 export const sendPersonBackupEmail = async (sendPersonBackupEmailRequest: SendPersonBackupEmailRequest, options?: Parameters<typeof customFetch>[1]): Promise<BackupEmailSendResult> => {
 
@@ -284,7 +284,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type SendPersonBackupEmailMutationVariables = {data: BodyType<SendPersonBackupEmailRequest>}
 
     /**
- * @summary Email the configured recipient a person backup
+ * @summary Email a person backup using that person's sender and recipient addresses
  */
 export const useSendPersonBackupEmail = <TError = ErrorType<ApiError>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPersonBackupEmail>>, TError,SendPersonBackupEmailMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -296,3 +296,4 @@ export const useSendPersonBackupEmail = <TError = ErrorType<ApiError>,
       > => {
       return useMutation(getSendPersonBackupEmailMutationOptions(options));
     }
+

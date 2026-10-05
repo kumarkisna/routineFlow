@@ -12,4 +12,8 @@ export interface SendPersonBackupEmailRequest {
      * @maxLength 5000000
      */
   backupJson: string;
+  /** @maxLength 254 */
+  fromEmail: string;
+  /** @maxLength 254 */
+  toEmail: string;
 }

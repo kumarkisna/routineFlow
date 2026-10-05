@@ -7,15 +7,57 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { usePeople } from '@/context/PeopleContext';
 import { useColors } from '@/hooks/useColors';
+import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
 import type { PersonSnapshot } from '@/types/people';
 
 const msg = (e: unknown, fb: string) => (e instanceof Error && e.message ? e.message : fb);
 
+function PersonEmailField({
+  label,
+  testID,
+  value,
+  editable,
+  onChangeText,
+}: {
+  label: string;
+  testID: string;
+  value: string;
+  editable: boolean;
+  onChangeText: (value: string) => void;
+}) {
+  const colors = useColors();
+  return (
+    <View style={styles.emailField}>
+      <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{label}</Text>
+      <TextInput
+        testID={testID}
+        accessibilityLabel={label}
+        placeholder={label}
+        placeholderTextColor={colors.mutedForeground}
+        value={value}
+        onChangeText={onChangeText}
+        editable={editable}
+        maxLength={254}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+      />
+    </View>
+  );
+}
+
 export default function PeopleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { people, activePerson, busy, notice, addPerson, switchPerson, loadPerson, copyFromPerson } = usePeople();
+  const { people, activePerson, busy, notice, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson } = usePeople();
   const [name, setName] = React.useState('');
+  const [newEmailFrom, setNewEmailFrom] = React.useState('');
+  const [newEmailTo, setNewEmailTo] = React.useState('');
+  const [editingPersonId, setEditingPersonId] = React.useState<string | null>(null);
+  const [editingName, setEditingName] = React.useState('');
+  const [editingEmailFrom, setEditingEmailFrom] = React.useState('');
+  const [editingEmailTo, setEditingEmailTo] = React.useState('');
   const [error, setError] = React.useState('');
   const [working, setWorking] = React.useState(false);
   const [sourceId, setSourceId] = React.useState<string | null>(null);
@@ -57,6 +99,39 @@ export default function PeopleScreen() {
     lock.current = true; setWorking(true); setError('');
     try { await fn(); void Haptics.selectionAsync(); } catch (e) { setError(msg(e, fail)); }
     finally { lock.current = false; setWorking(false); }
+  }
+
+  function beginEdit(person: { id: string; name: string; backupEmailFrom?: string; backupEmailTo?: string }) {
+    if (editingPersonId === person.id) {
+      setEditingPersonId(null);
+      setError('');
+      return;
+    }
+    setEditingPersonId(person.id);
+    setEditingName(person.name);
+    setEditingEmailFrom(person.backupEmailFrom ?? '');
+    setEditingEmailTo(person.backupEmailTo ?? '');
+    setError('');
+  }
+
+  function submitAdd() {
+    void run(async () => {
+      await addPerson({ name, backupEmailFrom: newEmailFrom, backupEmailTo: newEmailTo });
+      setName('');
+      setNewEmailFrom('');
+      setNewEmailTo('');
+    }, 'Could not add person.');
+  }
+
+  function submitEdit(personId: string) {
+    void run(async () => {
+      await updatePerson(personId, {
+        name: editingName,
+        backupEmailFrom: editingEmailFrom,
+        backupEmailTo: editingEmailTo,
+      });
+      setEditingPersonId(null);
+    }, 'Could not update person.');
   }
 
   const toggle = (k: 'r' | 'p' | 's', id: string) =>
@@ -128,18 +203,95 @@ export default function PeopleScreen() {
           {ordered.map((p) => {
             const active = p.id === activePerson.id;
             return (
-              <Pressable key={p.id} testID={`person-switch-${p.id}`} accessibilityRole="button"
-                accessibilityLabel={active ? `${p.name}, active` : `Switch to ${p.name}`}
-                accessibilityState={{ selected: active, disabled: disabled || active }}
-                disabled={disabled || active}
-                onPress={() => void run(() => switchPerson(p.id), 'Could not switch person.')}
-                style={[styles.item, { backgroundColor: colors.card, borderColor: active ? colors.primary : colors.border, borderWidth: active ? 2 : 1 }]}>
-                <View style={[styles.avatar, { backgroundColor: colors.coralSoft }]}>
-                  <Text style={[styles.linkText, { color: colors.primary }]}>{p.name.trim().charAt(0).toUpperCase()}</Text>
+              <View key={p.id} style={{ gap: 8 }}>
+                <View style={[styles.item, { backgroundColor: colors.card, borderColor: active ? colors.primary : colors.border, borderWidth: active ? 2 : 1 }]}>
+                  <Pressable testID={`person-switch-${p.id}`} accessibilityRole="button"
+                    accessibilityLabel={active ? `${p.name}, active` : `Switch to ${p.name}`}
+                    accessibilityState={{ selected: active, disabled: disabled || active }}
+                    disabled={disabled || active}
+                    onPress={() => void run(() => switchPerson(p.id), 'Could not switch person.')}
+                    style={styles.personSelect}>
+                    <View style={[styles.avatar, { backgroundColor: colors.coralSoft }]}>
+                      <Text style={[styles.linkText, { color: colors.primary }]}>{p.name.trim().charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[styles.itemText, { color: colors.foreground }]}>{p.name}</Text>
+                      <Text numberOfLines={1} style={[styles.sub, { color: colors.mutedForeground }]}>
+                        {p.backupEmailTo ? 'Backup recipient set' : 'No backup recipient'}
+                      </Text>
+                    </View>
+                    {active ? <Text style={[styles.linkText, { color: colors.primary }]}>Active</Text> : <Text style={[styles.linkText, { color: colors.mutedForeground }]}>Switch</Text>}
+                  </Pressable>
+                  <Pressable
+                    testID={`person-edit-${p.id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${editingPersonId === p.id ? 'Close' : 'Edit'} ${p.name} profile`}
+                    disabled={disabled}
+                    onPress={() => beginEdit(p)}
+                    style={styles.editButton}
+                  >
+                    <Ionicons name={editingPersonId === p.id ? 'close' : 'create-outline'} size={18} color={colors.primary} />
+                    <Text style={[styles.linkText, { color: colors.primary }]}>{editingPersonId === p.id ? 'Close' : 'Edit'}</Text>
+                  </Pressable>
                 </View>
-                <Text numberOfLines={1} style={[styles.itemText, { color: colors.foreground }]}>{p.name}</Text>
-                {active ? <Text style={[styles.linkText, { color: colors.primary }]}>Active</Text> : <Text style={[styles.linkText, { color: colors.mutedForeground }]}>Switch</Text>}
-              </Pressable>
+                {editingPersonId === p.id ? (
+                  <View style={[styles.profileEditor, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.h2, { color: colors.foreground }]}>Edit {p.name}</Text>
+                    {p.id === DEFAULT_PERSON_ID ? (
+                      <Text style={[styles.sub, { color: colors.mutedForeground }]}>The default profile name stays “Me”.</Text>
+                    ) : (
+                      <TextInput
+                        testID={`person-edit-name-${p.id}`}
+                        accessibilityLabel="Person name"
+                        placeholder="Name"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={editingName}
+                        onChangeText={(value) => { setEditingName(value); setError(''); }}
+                        editable={!disabled}
+                        maxLength={50}
+                        style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+                      />
+                    )}
+                    <PersonEmailField
+                      testID={`person-edit-email-to-${p.id}`}
+                      label="Backup recipient email"
+                      value={editingEmailTo}
+                      editable={!disabled}
+                      onChangeText={(value) => { setEditingEmailTo(value); setError(''); }}
+                    />
+                    <PersonEmailField
+                      testID={`person-edit-email-from-${p.id}`}
+                      label="Verified sender email"
+                      value={editingEmailFrom}
+                      editable={!disabled}
+                      onChangeText={(value) => { setEditingEmailFrom(value); setError(''); }}
+                    />
+                    <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                      The sender must use a domain verified in the connected Resend account.
+                    </Text>
+                    <View style={styles.formActions}>
+                      <Pressable
+                        testID={`person-edit-cancel-${p.id}`}
+                        accessibilityRole="button"
+                        disabled={disabled}
+                        onPress={() => { setEditingPersonId(null); setError(''); }}
+                        style={[styles.btnSecondary, { borderColor: colors.border }]}
+                      >
+                        <Text style={[styles.linkText, { color: colors.foreground }]}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        testID={`person-edit-save-${p.id}`}
+                        accessibilityRole="button"
+                        disabled={disabled}
+                        onPress={() => submitEdit(p.id)}
+                        style={[styles.btn, { backgroundColor: colors.primary, opacity: disabled ? 0.5 : 1 }]}
+                      >
+                        <Text style={[styles.linkText, { color: colors.primaryForeground }]}>Save profile</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
             );
           })}
         </View>
@@ -147,20 +299,36 @@ export default function PeopleScreen() {
         <View style={{ gap: 8 }}>
           <Text style={[styles.h2, { color: colors.foreground }]}>Add a person</Text>
           <View style={styles.row}>
-            <TextInput testID="person-name-input" accessibilityLabel="New person name" placeholder="Name" maxLength={40}
+            <TextInput testID="person-name-input" accessibilityLabel="New person name" placeholder="Name" maxLength={50}
               placeholderTextColor={colors.mutedForeground} value={name} editable={!disabled}
               onChangeText={(t) => { setName(t); setError(''); }}
-              onSubmitEditing={() => void run(async () => { await addPerson(name); setName(''); }, 'Could not add person.')}
+              onSubmitEditing={submitAdd}
               returnKeyType="done"
               style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, flex: 1 }]} />
             <Pressable testID="person-add" accessibilityRole="button" accessibilityLabel="Add person"
               disabled={disabled || !name.trim()}
-              onPress={() => void run(async () => { await addPerson(name); setName(''); }, 'Could not add person.')}
+              onPress={submitAdd}
               style={[styles.btn, { backgroundColor: colors.primary, opacity: disabled || !name.trim() ? 0.5 : 1 }]}>
               <Text style={[styles.linkText, { color: colors.primaryForeground }]}>Add</Text>
             </Pressable>
           </View>
-          <Text style={[styles.sub, { color: colors.mutedForeground }]}>New people start empty and become active right away.</Text>
+          <PersonEmailField
+            testID="person-new-email-to"
+            label="Backup recipient email"
+            value={newEmailTo}
+            editable={!disabled}
+            onChangeText={(value) => { setNewEmailTo(value); setError(''); }}
+          />
+          <PersonEmailField
+            testID="person-new-email-from"
+            label="Verified sender email"
+            value={newEmailFrom}
+            editable={!disabled}
+            onChangeText={(value) => { setNewEmailFrom(value); setError(''); }}
+          />
+          <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+            New people start empty and become active right away. Email fields are optional; both are needed to send a backup. The sender domain must be verified in Resend.
+          </Text>
         </View>
 
         <View style={{ gap: 10 }}>
@@ -226,8 +394,15 @@ const styles = StyleSheet.create({
   sub: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
   itemText: { fontFamily: 'Inter_600SemiBold', fontSize: 15, flex: 1 },
+  personSelect: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
   avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontFamily: 'Inter_500Medium', fontSize: 15 },
+  emailField: { width: '100%', gap: 5 },
+  fieldLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  profileEditor: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 },
+  editButton: { minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  formActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
+  btnSecondary: { minHeight: 48, paddingHorizontal: 18, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   btn: { minHeight: 48, paddingHorizontal: 20, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   link: { minHeight: 40, paddingHorizontal: 8, justifyContent: 'center' },
   linkText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },

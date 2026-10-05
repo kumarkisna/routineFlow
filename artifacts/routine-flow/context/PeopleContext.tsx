@@ -5,7 +5,8 @@ import { router } from 'expo-router';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme } from '@/lib/appThemes';
 import { buildPersonCopy, readPersonSnapshot, repairPersonRoutineDurations } from '@/lib/personCopy';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
-import type { Person, PersonCopySelection, PersonCopySummary, PersonSnapshot } from '@/types/people';
+import { normalizeOptionalEmail } from '@/lib/personEmail';
+import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 
 type Registry = { version: 1; people: Person[]; activePersonId: string };
 type PeopleContextValue = {
@@ -14,7 +15,8 @@ type PeopleContextValue = {
   revision: number;
   busy: boolean;
   notice: string;
-  addPerson: (name: string) => Promise<void>;
+  addPerson: (profile: PersonProfileInput) => Promise<void>;
+  updatePerson: (id: string, profile: PersonProfileInput) => Promise<void>;
   switchPerson: (id: string) => Promise<void>;
   loadPerson: (id: string) => Promise<PersonSnapshot>;
   copyFromPerson: (sourceId: string, selection: PersonCopySelection) => Promise<PersonCopySummary>;
@@ -155,14 +157,19 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     setRegistry(next);
   }), [runOperation]);
 
-  const addPerson = useCallback((name: string) => runOperation(async () => {
-    const trimmed = name.trim();
+  const addPerson = useCallback((profile: PersonProfileInput) => runOperation(async () => {
+    const trimmed = profile.name.trim();
     const previous = current.current;
     if (!trimmed || trimmed.length > 50) throw new Error('Enter a person’s name, up to 50 characters.');
     if (previous.people.some(person => person.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase())) {
       throw new Error('A person with this name already exists.');
     }
-    const person: Person = { id: `person-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, name: trimmed };
+    const person: Person = {
+      id: `person-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      name: trimmed,
+      backupEmailFrom: normalizeOptionalEmail(profile.backupEmailFrom, 'sender'),
+      backupEmailTo: normalizeOptionalEmail(profile.backupEmailTo, 'recipient'),
+    };
     await AsyncStorage.multiSet([
       [personStorageKey(person.id, PERSON_DATA_KEYS.routines), '[]'],
       [personStorageKey(person.id, PERSON_DATA_KEYS.progress), '{}'],
@@ -176,6 +183,34 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     current.current = next;
     setNotice(`${trimmed} is now active. New people start with their own empty routines, playlists, and schedules.`);
     setRegistry(next);
+  }), [runOperation]);
+
+  const updatePerson = useCallback((id: string, profile: PersonProfileInput) => runOperation(async () => {
+    const previous = current.current;
+    const existing = previous.people.find(person => person.id === id);
+    if (!existing) throw new Error('Person not found.');
+    await waitForPersonWrites(id);
+
+    const trimmed = id === DEFAULT_PERSON_ID ? existing.name : profile.name.trim();
+    if (!trimmed || trimmed.length > 50) throw new Error('Enter a person’s name, up to 50 characters.');
+    if (previous.people.some(person => person.id !== id && person.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase())) {
+      throw new Error('A person with this name already exists.');
+    }
+
+    const updated: Person = {
+      ...existing,
+      name: trimmed,
+      backupEmailFrom: normalizeOptionalEmail(profile.backupEmailFrom, 'sender'),
+      backupEmailTo: normalizeOptionalEmail(profile.backupEmailTo, 'recipient'),
+    };
+    const next: Registry = {
+      ...previous,
+      people: previous.people.map(person => person.id === id ? updated : person),
+    };
+    await saveRegistry(next);
+    current.current = next;
+    setRegistry(next);
+    setNotice(`${updated.name}’s profile was updated.`);
   }), [runOperation]);
 
   const loadPerson = useCallback(async (id: string) => {
@@ -213,8 +248,8 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const canRepairDurations = repairPersonId !== null && /needs a valid duration|invalid legacy duration/.test(error);
   const value = useMemo(() => ({
     people: registry.people, activePerson, revision, busy, notice,
-    addPerson, switchPerson, loadPerson, copyFromPerson,
-  }), [registry.people, activePerson, revision, busy, notice, addPerson, switchPerson, loadPerson, copyFromPerson]);
+    addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson,
+  }), [registry.people, activePerson, revision, busy, notice, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson]);
 
   if (loading || error) {
     return <View style={styles.loading} testID="people-startup">

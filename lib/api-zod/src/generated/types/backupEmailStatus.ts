@@ -5,8 +5,9 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { BackupEmailStatusIssue } from './backupEmailStatusIssue';
 
 export interface BackupEmailStatus {
-  configured: boolean;
-  recipientHint?: string;
+  available: boolean;
+  issue?: BackupEmailStatusIssue;
 }

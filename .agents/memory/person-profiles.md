@@ -21,6 +21,12 @@ Full-person exports must include that person's routines, playlists, schedules, a
 
 **How to apply:** Keep future person-backup exports scoped to the active profile and include all four sections.
 
+Backup recipient and sender email addresses are configured separately on each person profile, not in shared app-level email settings. The sender address must use a domain verified in the connected Resend account.
+
+**Why:** The user chose per-person configuration for both addresses so each profile can send backups to its own recipient from its own sender.
+
+**How to apply:** Keep recipient and sender settings with the profile when adding or editing people, and use only the active person's settings for a confirmed backup.
+
 When local routine data cannot validate at startup, offer a targeted, explicit repair and preserve the raw routine payload before changing it. Do not clear the profile or app storage to recover one malformed step.
 
 **Why:** The user asked to recover the app without losing other saved routines or profile data and said not to recommend clearing app storage as the fix.

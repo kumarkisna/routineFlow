@@ -9,5 +9,6 @@
 export * from './apiError';
 export * from './backupEmailSendResult';
 export * from './backupEmailStatus';
+export * from './backupEmailStatusIssue';
 export * from './healthStatus';
 export * from './sendPersonBackupEmailRequest';

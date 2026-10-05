@@ -23,6 +23,7 @@ import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
 import { readPersonExportSnapshot } from '@/lib/personCopy';
+import { isValidEmailAddress, maskEmailAddress } from '@/lib/personEmail';
 import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializePersonBackup, type RoutineBackup } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
 
@@ -70,6 +71,9 @@ export default function HomeScreen() {
   const progress = totalSteps ? completedSteps / totalSteps : 0;
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const todayLabel = formatDate();
+  const backupEmailFrom = activePerson.backupEmailFrom?.trim() ?? '';
+  const backupEmailTo = activePerson.backupEmailTo?.trim() ?? '';
+  const personEmailReady = isValidEmailAddress(backupEmailFrom) && isValidEmailAddress(backupEmailTo);
 
   function openRoutine(routine: Routine) {
     void Haptics.selectionAsync();
@@ -215,7 +219,7 @@ export default function HomeScreen() {
   }
 
   async function emailPersonBackup() {
-    if (!emailStatusQuery.data?.configured || !confirmEmail
+    if (!emailStatusQuery.data?.available || !personEmailReady || !confirmEmail
       || transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading) return;
     transferLock.current = true;
     setTransferBusy('email');
@@ -223,11 +227,12 @@ export default function HomeScreen() {
     setTransferStatus(null);
     try {
       const { contents } = await buildPersonBackupFile();
-      const result = await emailBackupMutation.mutateAsync({ data: { backupJson: contents } });
+      const result = await emailBackupMutation.mutateAsync({
+        data: { backupJson: contents, fromEmail: backupEmailFrom, toEmail: backupEmailTo },
+      });
       if (!result.sent) throw new Error('The email service did not confirm delivery.');
-      const recipient = emailStatusQuery.data.recipientHint ?? 'the configured address';
       const historyNote = includeHistory ? ' Daily progress was included.' : ' Daily progress was not included.';
-      setTransferStatus({ message: `Person backup sent to ${recipient}.${historyNote}`, error: false });
+      setTransferStatus({ message: `Person backup sent to ${maskEmailAddress(backupEmailTo)}.${historyNote}`, error: false });
     } catch (error) {
       setTransferStatus({ message: error instanceof Error ? error.message : 'Could not email the person backup.', error: true });
     } finally {
@@ -681,22 +686,36 @@ export default function HomeScreen() {
                     ? 'Email backup is temporarily unavailable. Check your connection and try again.'
                     : !emailStatusQuery.data
                       ? 'Email backup is unavailable until this app can reach its email service.'
-                      : emailStatusQuery.data.configured
-                        ? `Email backups go to ${emailStatusQuery.data.recipientHint ?? 'the configured address'} after you confirm.`
-                        : emailStatusQuery.data.recipientHint
-                          ? `Email backup is not ready. The destination is ${emailStatusQuery.data.recipientHint}; this app also needs a verified sender.`
-                          : 'Email backup is not configured for this app yet.'}
+                      : !emailStatusQuery.data.available
+                        ? emailStatusQuery.data.issue === 'invalid_credentials'
+                          ? 'The Resend API key is invalid. Update the existing Resend connection in Replit before emailing backups.'
+                          : 'The Resend connection is unavailable. Check the connection and try again.'
+                        : personEmailReady
+                          ? `After confirmation, this backup goes to ${maskEmailAddress(backupEmailTo)} from ${maskEmailAddress(backupEmailFrom)}.`
+                          : 'Add a valid recipient and sender email for this person in People settings. The sender domain must be verified in Resend.'}
               </Text>
+              {!personEmailReady ? (
+                <Pressable
+                  testID="manage-person-backup-emails"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Set email addresses for ${activePerson.name}`}
+                  onPress={() => router.push('/people')}
+                  style={styles.transferButton}
+                >
+                  <Ionicons name="person-outline" size={18} color={colors.primary} />
+                  <Text style={[styles.transferButtonText, { color: colors.primary }]}>Set up in People</Text>
+                </Pressable>
+              ) : null}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Email the full backup for ${activePerson.name}`}
-                accessibilityState={{ disabled: !emailStatusQuery.data?.configured || transferBusy !== null || loading || confirmEmail }}
+                accessibilityState={{ disabled: !emailStatusQuery.data?.available || !personEmailReady || transferBusy !== null || loading || confirmEmail }}
                 testID="email-person-backup"
-                disabled={!emailStatusQuery.data?.configured || transferBusy !== null || loading || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null || confirmEmail}
+                disabled={!emailStatusQuery.data?.available || !personEmailReady || transferBusy !== null || loading || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null || confirmEmail}
                 onPress={() => { setTransferStatus(null); setConfirmEmail(true); }}
                 style={({ pressed }) => [
                   styles.emailButton,
-                  { borderColor: colors.border, opacity: emailStatusQuery.data?.configured && !transferBusy && !confirmEmail ? 1 : 0.5 },
+                  { borderColor: colors.border, opacity: emailStatusQuery.data?.available && personEmailReady && !transferBusy && !confirmEmail ? 1 : 0.5 },
                   pressed && styles.pressed,
                 ]}
               >
@@ -708,7 +727,7 @@ export default function HomeScreen() {
               {confirmEmail ? (
                 <View style={[styles.importChoice, { borderTopColor: colors.border }]}>
                   <Text style={[styles.historyLabel, { color: colors.foreground }]}>
-                    Send the full backup for {activePerson.name} to {emailStatusQuery.data?.recipientHint ?? 'the configured email'}?
+                    Send the full backup for {activePerson.name} to {maskEmailAddress(backupEmailTo)} from {maskEmailAddress(backupEmailFrom)}?
                   </Text>
                   <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
                     This includes routines, playlists, schedules, and the selected theme. Daily progress {includeHistory ? 'will be included' : 'will not be included'}.
