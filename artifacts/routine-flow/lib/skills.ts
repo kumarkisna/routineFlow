@@ -59,6 +59,10 @@ export function validateSkillName(name: string, skills: RoutineSkill[], exceptId
   return normalized;
 }
 
+export function removeSkillFromCatalog(skills: RoutineSkill[], skillId: string): RoutineSkill[] {
+  return skills.filter(skill => skill.id !== skillId);
+}
+
 export function parseSkills(value: string): RoutineSkill[] {
   let parsed: unknown;
   try {

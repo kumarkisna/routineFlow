@@ -12,6 +12,7 @@ import {
   normalizeSkillName,
   parseSkillRatingWindow,
   parseSkills,
+  removeSkillFromCatalog,
   validateSkillName,
   MAX_SKILL_NOTE_LENGTH,
   type RoutineSkill,
@@ -172,7 +173,7 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
       removePlaylistAssignments(id),
       removeScheduleAssignments(id),
     ]);
-    const next = current.current.filter(skill => skill.id !== id);
+    const next = removeSkillFromCatalog(current.current, id);
     await storage.setItem(KEY, JSON.stringify(next));
     current.current = next;
     setSkills(next);
