@@ -31,6 +31,11 @@ import {
   updateRunKeepalive,
 } from '@/lib/runKeepalive';
 import { buildRunReminderRequests, requestRunReminderPermission } from '@/lib/runReminders';
+import {
+  getNextRoutineStepIndex,
+  getPlayableRoutine,
+  getRoutinePlaybackStepSeconds,
+} from '@/lib/routinePlayback';
 import { buildStepAnnouncement } from '@/lib/routineSpeech';
 import { createSkillRatingRun, getPlaylistSkillIds, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
 import {
@@ -93,11 +98,9 @@ function RoutinePlayer() {
   const { skills } = useSkills();
   const routine = useMemo(() => {
     const savedRoutine = routines.find((item) => item.id === id);
-    return savedRoutine
-      ? { ...savedRoutine, steps: savedRoutine.steps.filter((step) => !step.hidden) }
-      : undefined;
+    return savedRoutine ? getPlayableRoutine(savedRoutine) : undefined;
   }, [routines, id]);
-  const initialRemainingSeconds = routine?.steps[0] ? getStepSeconds(routine.steps[0]) : 0;
+  const initialRemainingSeconds = routine?.steps.length ? getRoutinePlaybackStepSeconds(routine, 0) : 0;
   const [activeIndex, setActiveIndex] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(initialRemainingSeconds);
   const [isRunning, setIsRunning] = useState(false);
@@ -379,7 +382,7 @@ function RoutinePlayer() {
       const stopped = stopAnnouncement();
       void cancelNotifications();
       activeIndexRef.current = index;
-      const remaining = milliseconds ?? getStepSeconds(routine.steps[index]) * 1000;
+      const remaining = milliseconds ?? getRoutinePlaybackStepSeconds(routine, index) * 1000;
       remainingMillisecondsRef.current = remaining;
       stepEndsAtRef.current = null;
       isRunningRef.current = false;
@@ -494,11 +497,12 @@ function RoutinePlayer() {
       if (!stepEndAt) return;
 
       if (stepEndAt <= now) {
-        if (index >= routine.steps.length - 1) {
+        const nextIndex = getNextRoutineStepIndex(routine, index);
+        if (nextIndex === null) {
           finishRoutine();
           return;
         }
-        prepareStep(index + 1, true);
+        prepareStep(nextIndex, true);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         return;
       }

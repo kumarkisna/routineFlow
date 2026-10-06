@@ -1,6 +1,7 @@
 import type { Routine } from '../types/routines';
 import { getSpokenStepDetails, getStepSeconds } from '../types/routines';
 import type { RoutineSkill } from './skills';
+import { getRoutinePlaybackStep } from './routinePlayback';
 
 function describeDuration(totalSeconds: number) {
   const safeSeconds = Math.max(0, Math.round(totalSeconds));
@@ -28,7 +29,7 @@ export function buildStepAnnouncement(
   skills: RoutineSkill[],
   playlist?: { title: string; skillIds: string[] },
 ) {
-  const step = routine.steps[index];
+  const step = getRoutinePlaybackStep(routine, index);
   const details = getSpokenStepDetails(step);
   const intro: string[] = [];
   if (index === 0 && playlist) {
