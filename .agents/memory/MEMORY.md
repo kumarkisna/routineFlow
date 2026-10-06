@@ -16,5 +16,6 @@
 - [Expo appearance API](expo-appearance.md) — newer React Native uses an explicit unspecified scheme to restore system appearance; do not cast older null-based examples.
 - [Expo SDK 57 checks](expo-sdk-57.md) — legacy splash configuration is invalid, and early Hermes V1 builds have a documented memory regression.
 - [Expo preview warmup](expo-web-preview.md) — early cold-start screenshots can be blank; wait for visible UI before diagnosing broken layout.
+- [Locked-run platform behavior](android-locked-runs.md) — Android keeps active runs alive with a foreground service; iOS alerts and resumes; Expo Go cannot exercise the native service.
 - [Android backup files](android-backup-imports.md) — use Expo FileSystem pickers for provider-backed imports and local folder saves; sharing opens an app chooser, not a save dialog.
 - [Local person profiles](person-profiles.md) — skill ratings, reflections, and their shared average window belong to the person; cross-person copies do not transfer ratings.
