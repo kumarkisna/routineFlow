@@ -59,7 +59,7 @@ test('reads version 1 backups with legacy step durations but no history', () => 
   );
 });
 
-test('version 6 export and import keep completed labels and legacy booleans', () => {
+test('version 7 export and import keep completed labels and legacy booleans', () => {
   const source = routine();
   const raw = serializeRoutines([source], {
     [day]: { 'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
@@ -67,7 +67,7 @@ test('version 6 export and import keep completed labels and legacy booleans', ()
     'not-a-date': { 'morning:water': true },
   });
   const json = JSON.parse(raw);
-  assert.equal(json.version, 6);
+  assert.equal(json.version, 7);
   assert.deepEqual(json.progress, { [day]: {
     'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
     'morning:stretch': true,
@@ -80,6 +80,45 @@ test('version 6 export and import keep completed labels and legacy booleans', ()
   });
   assert.deepEqual(parseRoutinesFile(backup(2, [source], { [day]: { 'morning:water': false } })).progress, {
     [day]: {},
+  });
+});
+
+test('version 7 backs up playlist run tags and remaps restored playlist IDs', () => {
+  const source = routine();
+  const taggedProgress = {
+    [day]: {
+      'morning:water': {
+        routineTitle: 'Morning',
+        stepTitle: 'Drink water',
+        playlistRuns: [{ playlistId: 'old-playlist', playlistTitle: 'Morning launch' }],
+      },
+    },
+  };
+  const raw = serializeRoutines([source], taggedProgress);
+  const json = JSON.parse(raw);
+  assert.equal(json.version, 7);
+  const imported = parseRoutinesFile(raw);
+  assert.deepEqual(imported.progress, taggedProgress);
+  assert.throws(
+    () => parseRoutinesFile(backup(6, [source], taggedProgress)),
+    /invalid step progress/,
+  );
+
+  const mappedRoutines = mergeImportedRoutines(
+    [{ ...routine(), title: 'Different local routine' }],
+    imported.routines,
+    () => 'morning-copy',
+  );
+  const restored = mergeImportedProgress(
+    {},
+    imported.progress!,
+    mappedRoutines.idMap,
+    { 'old-playlist': 'local-playlist' },
+  );
+  assert.deepEqual(restored.progress[day]['morning-copy:water'], {
+    routineTitle: 'Morning',
+    stepTitle: 'Drink water',
+    playlistRuns: [{ playlistId: 'local-playlist', playlistTitle: 'Morning launch' }],
   });
 });
 
@@ -370,7 +409,7 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
   const source = routine();
   const invalidFiles = [
     '{',
-    backup(7, [source]),
+    backup(8, [source]),
     backup(2, [source], []),
     backup(2, [source], { '2026-02-30': { 'morning:water': true } }),
     backup(2, [source], { [day]: [] }),

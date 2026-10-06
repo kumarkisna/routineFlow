@@ -39,8 +39,13 @@ export type RoutineNotificationSettings = {
   routineCompletion: boolean;
 };
 
+export type PlaylistCompletionSource = { playlistId: string; playlistTitle: string };
 /** Older saved completions are booleans; new completions retain their original labels. */
-export type CompletionValue = boolean | { routineTitle: string; stepTitle: string };
+export type CompletionValue = boolean | {
+  routineTitle: string;
+  stepTitle: string;
+  playlistRuns?: PlaylistCompletionSource[];
+};
 export type CompletionMap = Record<string, Record<string, CompletionValue>>;
 
 export function isCompleted(value: CompletionValue | undefined): boolean {

@@ -7,7 +7,7 @@ import { parseSkillRatingWindow, parseSkills, type RoutineSkill } from './skills
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
-export const ROUTINE_BACKUP_VERSION = 6;
+export const ROUTINE_BACKUP_VERSION = 7;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
 
 export type PersonBackupData = {
@@ -130,10 +130,22 @@ function isDay(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-function isValidCompletion(value: unknown): value is CompletionMap[string][string] {
-  return typeof value === 'boolean' ||
-    (isRecord(value) && Object.keys(value).length === 2 &&
-      isText(value.routineTitle) && isText(value.stepTitle));
+function isValidCompletion(value: unknown, allowPlaylistRuns = true): value is CompletionMap[string][string] {
+  if (typeof value === 'boolean') return true;
+  if (!isRecord(value) || !isText(value.routineTitle) || !isText(value.stepTitle)) return false;
+  if (value.playlistRuns === undefined) return Object.keys(value).length === 2;
+  if (!allowPlaylistRuns || Object.keys(value).length !== 3
+    || !Array.isArray(value.playlistRuns) || value.playlistRuns.length === 0 || value.playlistRuns.length > 1000) {
+    return false;
+  }
+  const ids = new Set<string>();
+  return value.playlistRuns.every(run => {
+    if (!isRecord(run) || Object.keys(run).length !== 2
+      || typeof run.playlistId !== 'string' || !run.playlistId.trim() || run.playlistId.length > 160
+      || !isText(run.playlistTitle) || run.playlistTitle.length > 100 || ids.has(run.playlistId)) return false;
+    ids.add(run.playlistId);
+    return true;
+  });
 }
 
 function parseProgress(value: unknown, routines: Routine[], version: number): CompletionMap {
@@ -151,7 +163,8 @@ function parseProgress(value: unknown, routines: Routine[], version: number): Co
       // V4 restores removed steps; V5 and later also retain history of deleted routines.
       const historicalStep = parsed && version >= 4 &&
         (version >= 5 || routineIds.has(parsed.routineId));
-      if (!(allowed.has(key) || historicalStep) || !isValidCompletion(completed) || ++count > 100_000) {
+      if (!(allowed.has(key) || historicalStep)
+        || !isValidCompletion(completed, version >= 7) || ++count > 100_000) {
         throw new Error('The backup has invalid step progress.');
       }
       if (isCompleted(completed)) {
@@ -361,6 +374,7 @@ export function mergeImportedProgress(
   existing: CompletionMap,
   imported: CompletionMap,
   idMap: Record<string, string>,
+  playlistIdMap: Record<string, string> = {},
 ): { progress: CompletionMap; added: number; kept: number } {
   const progress = { ...existing };
   let added = 0;
@@ -377,7 +391,15 @@ export function mergeImportedProgress(
       if (Object.prototype.hasOwnProperty.call(nextDay, targetKey)) {
         kept++;
       } else {
-        nextDay[targetKey] = completed;
+        nextDay[targetKey] = typeof completed === 'object' && completed !== null && completed.playlistRuns?.length
+          ? {
+              ...completed,
+              playlistRuns: completed.playlistRuns.map(run => ({
+                ...run,
+                playlistId: playlistIdMap[run.playlistId] ?? run.playlistId,
+              })),
+            }
+          : completed;
         added++;
       }
     }

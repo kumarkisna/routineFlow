@@ -4,22 +4,47 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSkills } from '@/context/SkillContext';
+import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
-import { formatHistoryDay, getHistoryForDay, localDayKey, recordedPastDays } from '@/lib/progressHistory';
+import {
+  formatHistoryDay, getHistoryForDay, localDayKey, playlistHistoryOptions,
+  recordedPastDays, routineHistoryOptions, type HistoryFilter,
+} from '@/lib/progressHistory';
 
 export default function HistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { progress, routines, loading } = useRoutines();
   const { skills, loading: skillsLoading, error: skillsError } = useSkills();
+  const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
   const [selectedDay, setSelectedDay] = React.useState<string | null>(null);
+  const [filterKind, setFilterKind] = React.useState<'all' | 'routine' | 'playlist'>('all');
+  const [selectedRoutineId, setSelectedRoutineId] = React.useState('');
+  const [selectedPlaylistId, setSelectedPlaylistId] = React.useState('');
   const today = localDayKey(new Date());
-  const days = recordedPastDays(progress, today);
+  const routineOptions = routineHistoryOptions(progress, routines);
+  const playlistOptions = playlistHistoryOptions(progress, playlists);
+  const selectedRoutine = routineOptions.find(item => item.id === selectedRoutineId) ?? routineOptions[0];
+  const selectedPlaylist = playlistOptions.find(item => item.id === selectedPlaylistId) ?? playlistOptions[0];
+  const activeFilter: HistoryFilter | undefined = filterKind === 'routine' && selectedRoutine
+    ? { kind: 'routine', id: selectedRoutine.id }
+    : filterKind === 'playlist' && selectedPlaylist
+      ? { kind: 'playlist', id: selectedPlaylist.id }
+      : undefined;
+  const days = filterKind === 'all' || activeFilter ? recordedPastDays(progress, today, activeFilter) : [];
   // If a restore adds a more recent day, keep the user's current selection.
   const activeDay = selectedDay && days.includes(selectedDay) ? selectedDay : days[0];
   const activeIndex = days.indexOf(activeDay);
-  const groups = activeDay ? getHistoryForDay(progress, routines, activeDay, skills) : [];
+  const groups = activeDay ? getHistoryForDay(progress, routines, activeDay, skills, activeFilter) : [];
   const total = groups.reduce((sum, group) => sum + group.steps.length, 0);
+  const isLoading = loading || skillsLoading || playlistsLoading;
+
+  function chooseFilter(kind: 'all' | 'routine' | 'playlist') {
+    setFilterKind(kind);
+    setSelectedDay(null);
+    if (kind === 'routine' && routineOptions[0]) setSelectedRoutineId(routineOptions[0].id);
+    if (kind === 'playlist' && playlistOptions[0]) setSelectedPlaylistId(playlistOptions[0].id);
+  }
 
   return (
     <ScrollView
@@ -32,20 +57,111 @@ export default function HistoryScreen() {
       showsVerticalScrollIndicator={false}
     >
       <Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>YOUR JOURNEY</Text>
-      <Text style={[styles.heading, { color: colors.foreground }]}>Past days</Text>
+      <Text style={[styles.heading, { color: colors.foreground }]}>History</Text>
       <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-        A look at the steps you completed on earlier days.
+        Browse completed routines, playlist runs, skill ratings, and notes.
       </Text>
 
-      {loading || skillsLoading ? (
+      <View style={styles.filterBlock}>
+        <Text style={[styles.filterLabel, { color: colors.mutedForeground }]}>SHOW HISTORY FOR</Text>
+        <View style={styles.filterKinds}>
+          {([
+            ['all', 'All'],
+            ['routine', 'Routines'],
+            ['playlist', 'Playlists'],
+          ] as const).map(([kind, label]) => {
+            const selected = filterKind === kind;
+            return (
+              <Pressable
+                key={kind}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                testID={`history-filter-${kind}`}
+                onPress={() => chooseFilter(kind)}
+                style={({ pressed }) => [
+                  styles.filterKindButton,
+                  { backgroundColor: selected ? colors.primary : colors.card,
+                    borderColor: selected ? colors.primary : colors.border },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={[styles.filterKindText,
+                  { color: selected ? colors.primaryForeground : colors.foreground }]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {filterKind === 'routine' ? (
+          routineOptions.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterItems} testID="history-routine-options">
+              {routineOptions.map(item => {
+                const selected = selectedRoutine?.id === item.id;
+                return (
+                  <Pressable key={item.id} accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`${item.title}${item.archived ? ', removed routine history' : ''}`}
+                    testID={`history-routine-${item.id}`}
+                    onPress={() => { setSelectedRoutineId(item.id); setSelectedDay(null); }}
+                    style={({ pressed }) => [
+                      styles.filterItemButton,
+                      { backgroundColor: selected ? colors.sageSoft : colors.card,
+                        borderColor: selected ? colors.sage : colors.border },
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text numberOfLines={1} style={[styles.filterItemText, { color: colors.foreground }]}>
+                      {item.title}{item.archived ? ' · removed' : ''}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : <Text style={[styles.filterEmpty, { color: colors.mutedForeground }]}>No routines available to filter.</Text>
+        ) : null}
+        {filterKind === 'playlist' ? (
+          playlistOptions.length ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterItems} testID="history-playlist-options">
+              {playlistOptions.map(item => {
+                const selected = selectedPlaylist?.id === item.id;
+                return (
+                  <Pressable key={item.id} accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={`${item.title}${item.archived ? ', removed playlist history' : ''}`}
+                    testID={`history-playlist-${item.id}`}
+                    onPress={() => { setSelectedPlaylistId(item.id); setSelectedDay(null); }}
+                    style={({ pressed }) => [
+                      styles.filterItemButton,
+                      { backgroundColor: selected ? colors.sageSoft : colors.card,
+                        borderColor: selected ? colors.sage : colors.border },
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text numberOfLines={1} style={[styles.filterItemText, { color: colors.foreground }]}>
+                      {item.title}{item.archived ? ' · removed' : ''}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : <Text style={[styles.filterEmpty, { color: colors.mutedForeground }]}>No playlists available to filter.</Text>
+        ) : null}
+      </View>
+
+      {skillsError ? (
+        <Text accessibilityRole="alert" style={[styles.skillHistoryError, { color: colors.destructive }]}>
+          Skill ratings and notes could not load. Retry from the Skills page to view them here.
+        </Text>
+      ) : null}
+      {playlistsError ? (
+        <Text accessibilityRole="alert" style={[styles.skillHistoryError, { color: colors.destructive }]}>
+          Playlists could not load. Retry from the Playlists page to use playlist filters.
+        </Text>
+      ) : null}
+
+      {isLoading ? (
         <ActivityIndicator style={styles.loading} color={colors.primary} />
       ) : activeDay ? (
         <>
-          {skillsError ? (
-            <Text accessibilityRole="alert" style={[styles.skillHistoryError, { color: colors.destructive }]}>
-              Skill notes could not load. Retry from the Skills page to view them here.
-            </Text>
-          ) : null}
           <View style={[styles.dayCard, { backgroundColor: colors.hero }]}>
             <Text style={[styles.dayOverline, { color: colors.accent }]}>RECORDED PROGRESS</Text>
             <Text style={[styles.dayTitle, { color: colors.heroForeground }]}>{formatHistoryDay(activeDay)}</Text>
@@ -91,6 +207,9 @@ export default function HistoryScreen() {
                   <Text style={[styles.routineTitle, { color: colors.foreground }]}>{group.title}</Text>
                   <Text style={[styles.routineMeta, { color: colors.mutedForeground }]}>
                     {group.steps.length} completed · {group.removed ? 'No longer in your routines' : group.hidden ? 'Currently hidden' : 'Routine'}
+                    {group.playlistRuns?.length
+                      ? ` · Playlist: ${group.playlistRuns.map(run => run.playlistTitle).join(', ')}`
+                      : ''}
                   </Text>
                 </View>
               </View>
@@ -107,14 +226,16 @@ export default function HistoryScreen() {
               ))}
               {group.skillRatings?.length ? (
                 <View style={[styles.skillNotes, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Skill reflections</Text>
+                  <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Skill ratings &amp; reflections</Text>
                   {group.skillRatings.map((entry) => (
                     <View key={entry.id} style={[styles.skillNote, { backgroundColor: colors.background }]}>
                       <View style={styles.skillNoteHeader}>
                         <Text style={[styles.skillNoteSkill, { color: colors.foreground }]}>{entry.skillName}</Text>
                         <Text style={[styles.skillNoteScore, { color: colors.primary }]}>{entry.rating}/10</Text>
                       </View>
-                      <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>{entry.note}</Text>
+                      <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>
+                        {entry.note ?? 'No note added.'}
+                      </Text>
                     </View>
                   ))}
                 </View>
@@ -125,9 +246,21 @@ export default function HistoryScreen() {
       ) : (
         <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Ionicons name="calendar-outline" size={32} color={colors.sage} />
-          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No past progress yet</Text>
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+            {filterKind === 'playlist' && selectedPlaylist
+              ? 'No runs from this playlist yet'
+              : filterKind === 'routine' && selectedRoutine
+                ? 'No history for this routine yet'
+                : filterKind === 'all'
+                  ? 'No past progress yet'
+                  : 'No matching history yet'}
+          </Text>
           <Text style={[styles.emptyCopy, { color: colors.mutedForeground }]}>
-            Completed steps from earlier days, including restored progress, will show up here.
+            {filterKind === 'playlist'
+              ? 'Only completions launched from this playlist appear in its history. New runs will show here.'
+              : filterKind === 'routine'
+                ? 'Completed steps from earlier days will show here.'
+                : 'Completed steps from earlier days, including restored progress, will show up here.'}
           </Text>
         </View>
       )}
@@ -140,6 +273,15 @@ const styles = StyleSheet.create({
   eyebrow: { fontFamily: 'Inter_700Bold', fontSize: 11, letterSpacing: 1.1, marginBottom: 9 },
   heading: { fontFamily: 'Inter_700Bold', fontSize: 29, letterSpacing: -0.7 },
   intro: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 20, marginTop: 7, marginBottom: 24 },
+  filterBlock: { marginBottom: 18 },
+  filterLabel: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.9, marginBottom: 9 },
+  filterKinds: { flexDirection: 'row', gap: 8 },
+  filterKindButton: { minHeight: 40, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  filterKindText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  filterItems: { gap: 8, paddingTop: 10, paddingRight: 20 },
+  filterItemButton: { maxWidth: 220, minHeight: 38, borderWidth: 1, borderRadius: 12, paddingHorizontal: 13, justifyContent: 'center' },
+  filterItemText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  filterEmpty: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 10 },
   loading: { marginTop: 32 },
   dayCard: { borderRadius: 25, padding: 21, marginBottom: 20 },
   dayOverline: { fontFamily: 'Inter_700Bold', fontSize: 10, letterSpacing: 0.9 },

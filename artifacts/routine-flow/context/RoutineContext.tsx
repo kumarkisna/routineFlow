@@ -8,7 +8,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { isCompleted, type CompletionMap, type Routine, type RoutineStep } from '@/types/routines';
+import {
+  isCompleted, type CompletionMap, type PlaylistCompletionSource, type Routine, type RoutineStep,
+} from '@/types/routines';
 import { makeRoutineCopy } from '@/lib/copyRoutine';
 import { recordCompletion } from '@/lib/progressHistory';
 import { removeRoutineCategory, renameRoutineCategory } from '@/lib/routineCategories';
@@ -67,7 +69,7 @@ type RoutineContextValue = {
   progress: CompletionMap;
   loading: boolean;
   toggleStep: (routineId: string, stepId: string) => Promise<void>;
-  completeRoutine: (routineId: string) => Promise<void>;
+  completeRoutine: (routineId: string, playlistRun?: PlaylistCompletionSource) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => Promise<void>;
@@ -78,6 +80,11 @@ type RoutineContextValue = {
     added: number; skipped: number; renamed: number; progressAdded: number; progressKept: number;
     routineIdMap: Record<string, string>;
   }>;
+  importProgress: (
+    progress: CompletionMap,
+    routineIdMap: Record<string, string>,
+    playlistIdMap: Record<string, string>,
+  ) => Promise<{ added: number; kept: number }>;
   setRoutineHidden: (routineId: string, hidden: boolean) => Promise<void>;
   setStepHidden: (routineId: string, stepId: string, hidden: boolean) => Promise<void>;
   deleteRoutine: (routineId: string) => Promise<void>;
@@ -104,6 +111,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   const { activePerson } = usePeople();
   const [routines, setRoutines] = useState<Routine[]>(activePerson.id === 'me' ? seedRoutines : []);
   const [progress, setProgress] = useState<CompletionMap>({});
+  const progressRef = useRef<CompletionMap>({});
   const [loading, setLoading] = useState(true);
   const importNeedsRestart = useRef(false);
   const runRoutineWrite = useRef(createRoutineWriteGuard()).current;
@@ -117,7 +125,9 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
         ]);
         if (storedRoutines) setRoutines(JSON.parse(storedRoutines) as Routine[]);
         else if (activePerson.id === 'me') await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(seedRoutines));
-        if (storedProgress) setProgress(JSON.parse(storedProgress) as CompletionMap);
+        const loadedProgress = storedProgress ? JSON.parse(storedProgress) as CompletionMap : {};
+        progressRef.current = loadedProgress;
+        setProgress(loadedProgress);
       } finally {
         setLoading(false);
       }
@@ -126,6 +136,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   }, [AsyncStorage, activePerson.id]);
 
   const saveProgress = useCallback(async (nextProgress: CompletionMap) => {
+    progressRef.current = nextProgress;
     setProgress(nextProgress);
     await AsyncStorage.setItem(PROGRESS_KEY, JSON.stringify(nextProgress));
   }, []);
@@ -152,14 +163,14 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const completeRoutine = useCallback(
-    async (routineId: string) => {
+    async (routineId: string, playlistRun?: PlaylistCompletionSource) => {
       const routine = routines.find((item) => item.id === routineId);
       if (!routine) return;
       const day = todayKey();
       const nextDay = { ...(progress[day] ?? {}) };
       routine.steps.filter((step) => !step.hidden).forEach((step) => {
         const key = `${routineId}:${step.id}`;
-        nextDay[key] = recordCompletion(routine.title, step.title, nextDay[key]);
+        nextDay[key] = recordCompletion(routine.title, step.title, nextDay[key], playlistRun);
       });
       await saveProgress({ ...progress, [day]: nextDay });
     },
@@ -269,7 +280,10 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
         : { progress, added: 0, kept: 0 };
       await persistImportedBackup(
         AsyncStorage, ROUTINES_KEY, PROGRESS_KEY, result.routines, merged.progress,
-        result.added, merged.added, setRoutines, setProgress,
+        result.added, merged.added, setRoutines, saved => {
+          progressRef.current = saved;
+          setProgress(saved);
+        },
         () => { importNeedsRestart.current = true; },
       );
       return { added: result.added, skipped: result.skipped, renamed: result.renamed,
@@ -277,6 +291,26 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
     }),
     [routines, progress, runRoutineWrite],
   );
+
+  const importProgress = useCallback((
+    imported: CompletionMap,
+    routineIdMap: Record<string, string>,
+    playlistIdMap: Record<string, string>,
+  ) => runRoutineWrite(async () => {
+    if (importNeedsRestart.current) {
+      throw new Error('Could not confirm the saved routines. Restart the app before trying this backup again to avoid duplicates.');
+    }
+    const merged = mergeImportedProgress(progressRef.current, imported, routineIdMap, playlistIdMap);
+    await persistImportedBackup(
+      AsyncStorage, ROUTINES_KEY, PROGRESS_KEY, [], merged.progress, 0, merged.added, () => {},
+      saved => {
+        progressRef.current = saved;
+        setProgress(saved);
+      },
+      () => { importNeedsRestart.current = true; },
+    );
+    return { added: merged.added, kept: merged.kept };
+  }), [AsyncStorage, runRoutineWrite]);
 
   const moveRoutine = useCallback(
     (routineId: string, adjacentId: string) => runRoutineWrite(async () => {
@@ -358,6 +392,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       removeCategory,
       moveRoutine,
       importRoutines,
+      importProgress,
       setRoutineHidden,
       setStepHidden,
       deleteRoutine,
@@ -378,6 +413,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       removeCategory,
       moveRoutine,
       importRoutines,
+      importProgress,
       setRoutineHidden,
       setStepHidden,
       deleteRoutine,

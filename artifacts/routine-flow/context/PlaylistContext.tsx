@@ -10,7 +10,9 @@ type PlaylistContextValue = {
   error: string;
   reload: () => Promise<void>;
   savePlaylist: (title: string, routineIds: string[], id?: string, skillIds?: string[]) => Promise<RoutinePlaylist>;
-  mergeImportedPlaylists: (playlists: RoutinePlaylist[]) => Promise<{ added: number; skipped: number; renamed: number; updated: number }>;
+  mergeImportedPlaylists: (playlists: RoutinePlaylist[]) => Promise<{
+    added: number; skipped: number; renamed: number; updated: number; idMap: Record<string, string>;
+  }>;
   deletePlaylist: (id: string) => Promise<void>;
   removeSkillAssignments: (skillId: string) => Promise<void>;
 };
@@ -64,7 +66,8 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
       current.current = result.playlists;
       setPlaylists(result.playlists);
     }
-    return { added: result.added, skipped: result.skipped, renamed: result.renamed, updated: result.updated };
+    return { added: result.added, skipped: result.skipped, renamed: result.renamed, updated: result.updated,
+      idMap: result.idMap };
   }), [error, loading, runWrite, AsyncStorage]);
   const deletePlaylist = useCallback((id: string) => runWrite(async () => {
     if (loading || error) throw new Error('Wait for playlists to load successfully before deleting.');

@@ -37,7 +37,7 @@ export default function PlaylistsScreen() {
     setMessage(skipped ? `${skipped} hidden or missing ${skipped === 1 ? 'routine was' : 'routines were'} skipped in “${p.title}”.` : '');
     router.push({
       pathname: '/routine/[id]/run',
-      params: { id: ids[0], queue: JSON.stringify(ids), cursor: '0', playlistTitle: p.title,
+      params: { id: ids[0], queue: JSON.stringify(ids), cursor: '0', playlistId: p.id, playlistTitle: p.title,
         playlistSkills: JSON.stringify(p.skillIds ?? []), autoStart: '1' },
     });
   }

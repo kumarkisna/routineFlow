@@ -101,16 +101,17 @@ function parseSkillIdsParam(value: string | string[] | undefined): string[] {
 }
 
 export default function RoutineRunScreen() {
-  const { id, cursor = '0', queue } = useLocalSearchParams<{ id: string; cursor?: string; queue?: string }>();
+  const { id, cursor = '0', queue, playlistId } =
+    useLocalSearchParams<{ id: string; cursor?: string; queue?: string; playlistId?: string }>();
   // A new routine (including a repeated routine) needs fresh timer/speech state.
-  return <RoutinePlayer key={`${id}:${cursor}:${queue ?? ''}`} />;
+  return <RoutinePlayer key={`${id}:${cursor}:${queue ?? ''}:${playlistId ?? ''}`} />;
 }
 
 function RoutinePlayer() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { id, queue, cursor = '0', playlistTitle, playlistSkills: playlistSkillsParam, autoStart, voice, stepReminder, routineReminder } =
-    useLocalSearchParams<{ id: string; queue?: string; cursor?: string; playlistTitle?: string;
+  const { id, queue, cursor = '0', playlistId, playlistTitle, playlistSkills: playlistSkillsParam, autoStart, voice, stepReminder, routineReminder } =
+    useLocalSearchParams<{ id: string; queue?: string; cursor?: string; playlistId?: string; playlistTitle?: string;
       playlistSkills?: string; autoStart?: string; voice?: string; stepReminder?: string; routineReminder?: string }>();
   const playlistQueue = useMemo(() => parsePlaylistQueue(queue), [queue]);
   const playlistSkillIds = useMemo(() => parseSkillIdsParam(playlistSkillsParam), [playlistSkillsParam]);
@@ -274,6 +275,7 @@ function RoutinePlayer() {
         id: playlistQueue[nextCursor],
         queue: JSON.stringify(playlistQueue),
         cursor: String(nextCursor),
+        ...(playlistId ? { playlistId } : {}),
         playlistTitle: playlistTitle ?? 'Playlist',
         playlistSkills: JSON.stringify(playlistSkillIds),
         autoStart: '1',
@@ -282,7 +284,7 @@ function RoutinePlayer() {
         routineReminder: notificationSettingsRef.current.routineCompletion ? '1' : '0',
       },
     });
-  }, [playlistQueue, playlistSkillIds, playlistTitle, voiceEnabled]);
+  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, voiceEnabled]);
 
   const closeRatingPrompt = useCallback(() => {
     const nextCursor = pendingPlaylistCursor;
@@ -373,7 +375,8 @@ function RoutinePlayer() {
     setSavingCompletion(true);
     setCompletionError('');
     void cancelNotifications();
-    void completeRoutine(routine.id).then(() => {
+    void completeRoutine(routine.id, inPlaylist && playlistId
+      ? { playlistId, playlistTitle: playlistTitle ?? 'Playlist' } : undefined).then(() => {
       if (!mountedRef.current) return;
       setSavingCompletion(false);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -395,7 +398,7 @@ function RoutinePlayer() {
       setCompletionError('Your completion could not be saved. Retry to continue.');
     });
   }, [cancelNotifications, completeRoutine, routine, stopAnnouncement, inPlaylist,
-    playlistQueue, queueCursor, routines, playlistSkillIds, advancePlaylist]);
+    playlistQueue, queueCursor, routines, playlistSkillIds, playlistId, playlistTitle, advancePlaylist]);
 
   const reconcileTimer = useCallback(
     (now: number) => {

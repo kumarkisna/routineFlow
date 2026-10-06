@@ -68,7 +68,8 @@ export default function ScheduleScreen() {
     else router.push({
       pathname: '/routine/[id]/run',
       params: { id: src.ids[0], queue: JSON.stringify(src.ids), cursor: '0',
-        playlistTitle: src.title ?? s.targetTitle, playlistSkills: JSON.stringify(src.skillIds), autoStart: '1' },
+        playlistId: s.targetId, playlistTitle: src.title ?? s.targetTitle,
+        playlistSkills: JSON.stringify(src.skillIds), autoStart: '1' },
     });
   }
   async function remove(id: string) {

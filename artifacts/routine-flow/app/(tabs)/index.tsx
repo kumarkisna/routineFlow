@@ -38,7 +38,10 @@ export default function HomeScreen() {
   const colors = useColors();
   const { activePerson } = usePeople();
   const insets = useSafeAreaInsets();
-  const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday, renameCategory, removeCategory } = useRoutines();
+  const {
+    routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine,
+    importRoutines, importProgress, resetToday, renameCategory, removeCategory,
+  } = useRoutines();
   const { mergeImportedPlaylists } = usePlaylists();
   const { mergeImportedSkills, setRatingWindow } = useSkills();
   const [showHidden, setShowHidden] = React.useState(false);
@@ -293,12 +296,20 @@ export default function HomeScreen() {
   async function applyImport(backup: RoutineBackup, restoreHistory: boolean) {
     const skillIdMap = await mergeImportedSkills(backup.skills ?? []);
     const remappedBackup = { ...backup, routines: remapRoutineSkillIds(backup.routines, skillIdMap) };
-    const result = await importRoutines(remappedBackup, restoreHistory);
+    const routineImport = await importRoutines(remappedBackup, false);
     const playlistResult = backup.personData
       ? await mergeImportedPlaylists(remapPlaylistReferences(
-        backup.personData.playlists, result.routineIdMap, skillIdMap,
+        backup.personData.playlists, routineImport.routineIdMap, skillIdMap,
       ))
       : undefined;
+    const historyImport = restoreHistory && remappedBackup.progress
+      ? await importProgress(remappedBackup.progress, routineImport.routineIdMap, playlistResult?.idMap ?? {})
+      : undefined;
+    const result = {
+      ...routineImport,
+      progressAdded: historyImport?.added ?? 0,
+      progressKept: historyImport?.kept ?? 0,
+    };
     if (backup.personData) await setRatingWindow(backup.personData.skillRatingWindow);
     const details = [
       `${result.added} ${result.added === 1 ? 'routine' : 'routines'} imported`,
