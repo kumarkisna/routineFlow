@@ -8,6 +8,7 @@ export const PERSON_DATA_KEYS = {
   playlists: '@routine-flow/playlists',
   schedules: '@routine-flow/schedules',
   skills: '@routine-flow/skills',
+  skillRatingWindow: '@routine-flow/skill-rating-window',
   appearance: '@routine-flow/appearance',
 } as const;
 

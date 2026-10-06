@@ -9,7 +9,7 @@ type PlaylistContextValue = {
   loading: boolean;
   error: string;
   reload: () => Promise<void>;
-  savePlaylist: (title: string, routineIds: string[], id?: string) => Promise<RoutinePlaylist>;
+  savePlaylist: (title: string, routineIds: string[], id?: string, skillIds?: string[]) => Promise<RoutinePlaylist>;
   deletePlaylist: (id: string) => Promise<void>;
   removeSkillAssignments: (skillId: string) => Promise<void>;
 };

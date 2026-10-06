@@ -54,18 +54,22 @@ export default function ScheduleScreen() {
   function source(s: RoutineSchedule) {
     if (s.targetType === 'routine') {
       const r = routines.find((x) => x.id === s.targetId);
-      if (!r) return { title: null as string | null, ids: [] as string[] };
-      return { title: r.title, ids: r.hidden ? [] : playablePlaylistIds([r.id], routines) };
+      if (!r) return { title: null as string | null, ids: [] as string[], skillIds: [] as string[] };
+      return { title: r.title, ids: r.hidden ? [] : playablePlaylistIds([r.id], routines), skillIds: [] as string[] };
     }
     const p = scheduledPlaylistSource(s, playlists);
-    if (!p) return { title: null, ids: [] };
-    return { title: p.title, ids: playablePlaylistIds(p.routineIds, routines) };
+    if (!p) return { title: null, ids: [], skillIds: [] };
+    return { title: p.title, ids: playablePlaylistIds(p.routineIds, routines), skillIds: p.skillIds ?? [] };
   }
   function start(s: RoutineSchedule) {
     const src = source(s);
     if (!src.ids.length) return;
     if (s.targetType === 'routine') router.push({ pathname: '/routine/[id]/run', params: { id: src.ids[0], autoStart: '1' } });
-    else router.push({ pathname: '/routine/[id]/run', params: { id: src.ids[0], queue: JSON.stringify(src.ids), cursor: '0', playlistTitle: src.title ?? s.targetTitle, autoStart: '1' } });
+    else router.push({
+      pathname: '/routine/[id]/run',
+      params: { id: src.ids[0], queue: JSON.stringify(src.ids), cursor: '0',
+        playlistTitle: src.title ?? s.targetTitle, playlistSkills: JSON.stringify(src.skillIds), autoStart: '1' },
+    });
   }
   async function remove(id: string) {
     if (lock.current) return;

@@ -4,6 +4,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'rea
 import { router } from 'expo-router';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme } from '@/lib/appThemes';
 import { buildPersonCopy, readPersonSnapshot, repairPersonRoutineDurations } from '@/lib/personCopy';
+import { DEFAULT_SKILL_RATING_WINDOW } from '@/lib/skills';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 
@@ -177,6 +178,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       [personStorageKey(person.id, PERSON_DATA_KEYS.playlists), '[]'],
       [personStorageKey(person.id, PERSON_DATA_KEYS.schedules), '[]'],
       [personStorageKey(person.id, PERSON_DATA_KEYS.skills), '[]'],
+      [personStorageKey(person.id, PERSON_DATA_KEYS.skillRatingWindow), String(DEFAULT_SKILL_RATING_WINDOW)],
       [personStorageKey(person.id, PERSON_DATA_KEYS.appearance), DEFAULT_THEME_ID],
     ]);
     const next: Registry = { version: 1, people: [...previous.people, person], activePersonId: person.id };
@@ -232,6 +234,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
         [personStorageKey(destinationId, PERSON_DATA_KEYS.playlists), JSON.stringify(result.snapshot.playlists)],
         [personStorageKey(destinationId, PERSON_DATA_KEYS.schedules), JSON.stringify(result.snapshot.schedules)],
         [personStorageKey(destinationId, PERSON_DATA_KEYS.skills), JSON.stringify(result.snapshot.skills)],
+        [personStorageKey(destinationId, PERSON_DATA_KEYS.skillRatingWindow), String(result.snapshot.skillRatingWindow)],
       ]);
     } catch {
       router.replace('/');

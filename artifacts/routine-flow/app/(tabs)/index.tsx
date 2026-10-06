@@ -37,7 +37,7 @@ export default function HomeScreen() {
   const { activePerson } = usePeople();
   const insets = useSafeAreaInsets();
   const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday, renameCategory, removeCategory } = useRoutines();
-  const { mergeImportedSkills } = useSkills();
+  const { mergeImportedSkills, setRatingWindow } = useSkills();
   const [showHidden, setShowHidden] = React.useState(false);
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
   const [renameDraft, setRenameDraft] = React.useState<string | null>(null);
@@ -170,6 +170,7 @@ export default function HomeScreen() {
         schedules: personData.schedules,
         selectedThemeId: personData.selectedThemeId,
         skills: personData.skills,
+        skillRatingWindow: personData.skillRatingWindow,
       },
       includeProgress ? personData.progress : undefined,
     );
@@ -204,7 +205,7 @@ export default function HomeScreen() {
         await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export person backup' });
       }
       setTransferStatus({
-        message: `Person backup ready: ${personData.routines.length} routines, ${personData.playlists.length} playlists, ${personData.schedules.length} schedules, and the selected theme${includeHistory ? ' with daily progress' : ''}.`,
+        message: `Person backup ready: ${personData.routines.length} routines, ${personData.playlists.length} playlists, ${personData.schedules.length} schedules, ${personData.skills.length} skills with rating history, the shared average window, and the selected theme${includeHistory ? ' with daily progress' : ''}.`,
         error: false,
       });
     } catch (error) {
@@ -232,7 +233,7 @@ export default function HomeScreen() {
       const backupFile = directory.createFile(filename, 'application/json');
       backupFile.write(contents);
       setTransferStatus({
-        message: `Person backup saved to the selected folder: ${personData.routines.length} routines, ${personData.playlists.length} playlists, ${personData.schedules.length} schedules, and the selected theme${includeHistory ? ' with daily progress' : ''}.`,
+        message: `Person backup saved to the selected folder: ${personData.routines.length} routines, ${personData.playlists.length} playlists, ${personData.schedules.length} schedules, ${personData.skills.length} skills with rating history, the shared average window, and the selected theme${includeHistory ? ' with daily progress' : ''}.`,
         error: false,
       });
     } catch (error) {
@@ -290,11 +291,13 @@ export default function HomeScreen() {
     const skillIdMap = await mergeImportedSkills(backup.skills ?? []);
     const remappedBackup = { ...backup, routines: remapRoutineSkillIds(backup.routines, skillIdMap) };
     const result = await importRoutines(remappedBackup, restoreHistory);
+    if (backup.personData) await setRatingWindow(backup.personData.skillRatingWindow);
     const details = [
       `${result.added} ${result.added === 1 ? 'routine' : 'routines'} imported`,
       result.skipped ? `${result.skipped} already present` : null,
       result.renamed ? `${result.renamed} kept as a separate copy` : null,
       backup.skills?.length ? 'Skills merged' : null,
+      backup.personData ? 'Shared skill-average window restored' : null,
       restoreHistory ? `${result.progressAdded} completed steps added${result.progressKept ? ` (${result.progressKept} local entries kept)` : ''}` : null,
       backup.personData ? 'Playlists, schedules, and selected theme are not restored by Import JSON.' : null,
     ].filter(Boolean).join(' · ');

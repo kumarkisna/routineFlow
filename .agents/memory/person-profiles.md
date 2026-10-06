@@ -15,6 +15,12 @@ Copies append independent items and include referenced dependencies. They retain
 
 **How to apply:** Copied schedules start with phone reminders disabled and explain how to enable them. Switching profiles alone must not cancel existing phone reminders. Reminder taps must open the owning person; older unowned reminders belong to Me.
 
+Skill ratings and their shared rolling-average window are person-scoped. Copying routines or playlists into another person includes any required skill definitions and assignments, but not the source person's rating history. Full-person backups preserve the ratings and window.
+
+**Why:** Ratings represent an individual's practice history; copying them to another person would misattribute that history.
+
+**How to apply:** Keep rating history with its profile during copies and profile switches, while allowing a full backup to round-trip ratings for the same person.
+
 Full-person exports must include that person's routines, playlists, schedules, and selected theme.
 
 **Why:** The user explicitly requested those four sections in each person's export.

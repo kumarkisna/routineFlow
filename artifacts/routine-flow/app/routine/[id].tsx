@@ -13,8 +13,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
 import { SkillTagList } from '@/components/SkillPicker';
+import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { getRoutineSkillIds } from '@/lib/skills';
 import { formatDuration, getStepDetails, getStepSeconds, isCompleted } from '@/types/routines';
 
 export default function RoutineDetailScreen() {
@@ -33,6 +35,8 @@ export default function RoutineDetailScreen() {
   const [visibilityBusy, setVisibilityBusy] = React.useState(false);
   const [showHiddenSteps, setShowHiddenSteps] = React.useState(false);
   const [reorderError, setReorderError] = React.useState('');
+  const [ratingSkillIds, setRatingSkillIds] = React.useState<string[]>([]);
+  const [showRatingPrompt, setShowRatingPrompt] = React.useState(false);
   const reorderLock = React.useRef(false);
   const routine = routines.find((item) => item.id === id);
 
@@ -85,13 +89,31 @@ export default function RoutineDetailScreen() {
   }
 
   async function handleStep(stepId: string) {
+    const progressKey = `${currentRoutine.id}:${stepId}`;
+    const wasComplete = isCompleted(todayProgress[progressKey]);
+    const completesRoutine = !wasComplete && visibleSteps.every(step =>
+      step.id === stepId || isCompleted(todayProgress[`${currentRoutine.id}:${step.id}`]));
     await toggleStep(currentRoutine.id, stepId);
     void Haptics.selectionAsync();
+    if (completesRoutine) openRatingPrompt();
   }
 
   async function handleComplete() {
     await completeRoutine(currentRoutine.id);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    openRatingPrompt();
+  }
+
+  function openRatingPrompt() {
+    const assigned = getRoutineSkillIds(currentRoutine);
+    if (!assigned.length) return;
+    setRatingSkillIds(assigned);
+    setShowRatingPrompt(true);
+  }
+
+  function closeRatingPrompt() {
+    setShowRatingPrompt(false);
+    setRatingSkillIds([]);
   }
 
   async function handleCopy() {
@@ -422,6 +444,13 @@ export default function RoutineDetailScreen() {
           </Pressable>
         </View>
       </ScrollView>
+      <SkillRatingPrompt
+        visible={showRatingPrompt}
+        skillIds={ratingSkillIds}
+        routineTitle={currentRoutine.title}
+        onSkip={closeRatingPrompt}
+        onSaved={closeRatingPrompt}
+      />
     </View>
   );
 }

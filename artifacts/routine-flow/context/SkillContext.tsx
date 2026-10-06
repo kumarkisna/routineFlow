@@ -4,9 +4,13 @@ import { useRoutines } from '@/context/RoutineContext';
 import { useSchedules } from '@/context/ScheduleContext';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import {
+  DEFAULT_SKILL_RATING_WINDOW,
   MAX_SKILLS,
+  MAX_SKILL_RATING_WINDOW,
+  MIN_SKILL_RATING_WINDOW,
   mergeSkillCatalog,
   normalizeSkillName,
+  parseSkillRatingWindow,
   parseSkills,
   validateSkillName,
   type RoutineSkill,
@@ -16,17 +20,21 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 
 type SkillContextValue = {
   skills: RoutineSkill[];
+  ratingWindow: number;
   loading: boolean;
   error: string;
   reload: () => Promise<void>;
   createSkill: (name: string) => Promise<RoutineSkill>;
   updateSkill: (id: string, name: string) => Promise<void>;
   deleteSkill: (id: string) => Promise<void>;
+  setRatingWindow: (value: number) => Promise<void>;
+  recordRatings: (routineTitle: string, ratings: { skillId: string; rating: number }[]) => Promise<void>;
   mergeImportedSkills: (skills: RoutineSkill[]) => Promise<Record<string, string>>;
 };
 
 const SkillContext = createContext<SkillContextValue | null>(null);
 const KEY = PERSON_DATA_KEYS.skills;
+const RATING_WINDOW_KEY = PERSON_DATA_KEYS.skillRatingWindow;
 
 function makeId() {
   return `skill-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -38,6 +46,7 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
   const { removeSkillAssignments: removePlaylistAssignments } = usePlaylists();
   const { removeSkillAssignments: removeScheduleAssignments } = useSchedules();
   const [skills, setSkills] = useState<RoutineSkill[]>([]);
+  const [ratingWindow, setRatingWindowState] = useState(DEFAULT_SKILL_RATING_WINDOW);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const current = useRef<RoutineSkill[]>([]);
@@ -47,10 +56,15 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setError('');
     try {
-      const stored = await storage.getItem(KEY);
+      const [stored, storedWindow] = await Promise.all([
+        storage.getItem(KEY),
+        storage.getItem(RATING_WINDOW_KEY),
+      ]);
       const next = stored === null ? [] : parseSkills(stored);
+      const nextWindow = parseSkillRatingWindow(storedWindow);
       current.current = next;
       setSkills(next);
+      setRatingWindowState(nextWindow);
     } catch {
       setError('Your skills could not load. Retry before making changes.');
     } finally {
@@ -83,6 +97,49 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
     setSkills(next);
   }), [error, loading, runWrite, storage]);
 
+  const setRatingWindow = useCallback((value: number) => runWrite(async () => {
+    if (loading || error) throw new Error('Wait for skills to load successfully before changing this setting.');
+    if (!Number.isInteger(value) || value < MIN_SKILL_RATING_WINDOW || value > MAX_SKILL_RATING_WINDOW) {
+      throw new Error(`Choose a whole number from ${MIN_SKILL_RATING_WINDOW} to ${MAX_SKILL_RATING_WINDOW}.`);
+    }
+    await storage.setItem(RATING_WINDOW_KEY, String(value));
+    setRatingWindowState(value);
+  }), [error, loading, runWrite, storage]);
+
+  const recordRatings = useCallback((routineTitle: string, entries: { skillId: string; rating: number }[]) =>
+    runWrite(async () => {
+      if (loading || error) throw new Error('Wait for skills to load successfully before saving ratings.');
+      const title = routineTitle.trim();
+      if (!title || title.length > 200) throw new Error('The completed routine name is invalid.');
+      if (!Array.isArray(entries) || entries.some(entry =>
+        !entry || typeof entry.skillId !== 'string'
+        || !Number.isInteger(entry.rating) || entry.rating < 1 || entry.rating > 10)
+        || new Set(entries.map(entry => entry.skillId)).size !== entries.length) {
+        throw new Error('Choose a rating from 1 to 10 for each selected skill.');
+      }
+      if (entries.some(entry => !current.current.some(skill => skill.id === entry.skillId))) {
+        throw new Error('One or more skills were removed. Refresh the skill list and try again.');
+      }
+      if (!entries.length) return;
+      const ratedAt = new Date().toISOString();
+      const ratingsBySkill = new Map(entries.map(entry => [entry.skillId, entry.rating]));
+      const next = current.current.map(skill => {
+        const rating = ratingsBySkill.get(skill.id);
+        if (rating === undefined) return skill;
+        const ratings = [...(skill.ratings ?? []), {
+          id: `rating-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+          rating,
+          ratedAt,
+          routineTitle: title,
+        }];
+        if (ratings.length > 20_000) throw new Error('This skill has reached its saved rating limit.');
+        return { ...skill, ratings };
+      });
+      await storage.setItem(KEY, JSON.stringify(next));
+      current.current = next;
+      setSkills(next);
+    }), [error, loading, runWrite, storage]);
+
   const deleteSkill = useCallback((id: string) => runWrite(async () => {
     if (loading || error) throw new Error('Wait for skills to load successfully before making changes.');
     if (!current.current.some(skill => skill.id === id)) throw new Error('Skill not found.');
@@ -113,7 +170,10 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
   }), [error, loading, runWrite, storage]);
 
   return (
-    <SkillContext.Provider value={{ skills, loading, error, reload, createSkill, updateSkill, deleteSkill, mergeImportedSkills }}>
+    <SkillContext.Provider value={{
+      skills, ratingWindow, loading, error, reload, createSkill, updateSkill, deleteSkill,
+      setRatingWindow, recordRatings, mergeImportedSkills,
+    }}>
       {children}
     </SkillContext.Provider>
   );

@@ -35,7 +35,11 @@ export default function PlaylistsScreen() {
     if (!ids.length) return;
     const skipped = p.routineIds.length - ids.length;
     setMessage(skipped ? `${skipped} hidden or missing ${skipped === 1 ? 'routine was' : 'routines were'} skipped in “${p.title}”.` : '');
-    router.push({ pathname: '/routine/[id]/run', params: { id: ids[0], queue: JSON.stringify(ids), cursor: '0', playlistTitle: p.title, autoStart: '1' } });
+    router.push({
+      pathname: '/routine/[id]/run',
+      params: { id: ids[0], queue: JSON.stringify(ids), cursor: '0', playlistTitle: p.title,
+        playlistSkills: JSON.stringify(p.skillIds ?? []), autoStart: '1' },
+    });
   }
   async function remove(id: string) {
     if (lock.current) return;

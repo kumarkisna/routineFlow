@@ -15,6 +15,7 @@ export type PersonSnapshot = {
   playlists: RoutinePlaylist[];
   schedules: RoutineSchedule[];
   skills: RoutineSkill[];
+  skillRatingWindow: number;
 };
 export type PersonCopySelection = {
   routineIds: string[];

@@ -1,9 +1,29 @@
 import type { Routine } from '@/types/routines';
 
-export type RoutineSkill = { id: string; name: string };
+export type RoutineSkill = { id: string; name: string; ratings?: SkillRating[] };
+export type SkillRating = {
+  id: string;
+  rating: number;
+  ratedAt: string;
+  routineTitle: string;
+};
+
+export type SkillRatingPoint = SkillRating & { average: number };
 
 export const MAX_SKILL_NAME = 50;
 export const MAX_SKILLS = 200;
+export const DEFAULT_SKILL_RATING_WINDOW = 5;
+export const MIN_SKILL_RATING_WINDOW = 1;
+export const MAX_SKILL_RATING_WINDOW = 100;
+
+export function parseSkillRatingWindow(value: string | null): number {
+  if (value === null) return DEFAULT_SKILL_RATING_WINDOW;
+  const windowSize = Number(value);
+  if (!Number.isInteger(windowSize) || windowSize < MIN_SKILL_RATING_WINDOW || windowSize > MAX_SKILL_RATING_WINDOW) {
+    throw new Error('Saved skill rating average setting could not be read.');
+  }
+  return windowSize;
+}
 
 export function normalizeSkillName(name: string) {
   return name.trim().replace(/\s+/g, ' ');
@@ -37,19 +57,47 @@ export function parseSkills(value: string): RoutineSkill[] {
   }
   const skills: RoutineSkill[] = [];
   for (const item of parsed) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)
-      || typeof item.id !== 'string' || !item.id.trim() || item.id.length > 160 || item.id.includes(':')
-      || typeof item.name !== 'string') {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
       throw new Error('Saved skills could not be read.');
     }
-    const name = normalizeSkillName(item.name);
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.id !== 'string' || !entry.id.trim() || entry.id.length > 160 || entry.id.includes(':')
+      || typeof entry.name !== 'string') {
+      throw new Error('Saved skills could not be read.');
+    }
+    const name = normalizeSkillName(entry.name);
     if (!name || name.length > MAX_SKILL_NAME
-      || skills.some(skill => skill.id === item.id || skillNameKey(skill.name) === skillNameKey(name))) {
+      || skills.some(skill => skill.id === entry.id || skillNameKey(skill.name) === skillNameKey(name))) {
       throw new Error('Saved skills could not be read.');
     }
-    skills.push({ id: item.id, name });
+    const ratings = parseRatings(entry.ratings);
+    skills.push({ id: entry.id, name, ...(ratings.length ? { ratings } : {}) });
   }
   return skills;
+}
+
+function parseRatings(value: unknown): SkillRating[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 20_000) throw new Error('Saved skills could not be read.');
+  const ratings: SkillRating[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Saved skills could not be read.');
+    const rating = item as Record<string, unknown>;
+    if (typeof rating.id !== 'string' || !rating.id.trim() || rating.id.length > 160 || rating.id.includes(':')
+      || typeof rating.rating !== 'number' || !Number.isInteger(rating.rating) || rating.rating < 1 || rating.rating > 10
+      || typeof rating.ratedAt !== 'string' || !Number.isFinite(Date.parse(rating.ratedAt))
+      || typeof rating.routineTitle !== 'string' || !rating.routineTitle.trim() || rating.routineTitle.length > 200
+      || ratings.some(existing => existing.id === rating.id)) {
+      throw new Error('Saved skills could not be read.');
+    }
+    ratings.push({
+      id: rating.id,
+      rating: rating.rating,
+      ratedAt: rating.ratedAt,
+      routineTitle: rating.routineTitle.trim(),
+    });
+  }
+  return ratings;
 }
 
 function makeSkillId(usedIds: Set<string>) {
@@ -75,6 +123,13 @@ export function mergeSkillCatalog(
     const sameName = skills.find(skill => skillNameKey(skill.name) === skillNameKey(incoming.name));
     if (sameName) {
       idMap[incoming.id] = sameName.id;
+      const existingRatings = sameName.ratings ?? [];
+      const existingRatingIds = new Set(existingRatings.map(rating => rating.id));
+      const mergedRatings = [...existingRatings, ...(incoming.ratings ?? []).filter(rating => !existingRatingIds.has(rating.id))];
+      if (mergedRatings.length !== existingRatings.length) {
+        const index = skills.findIndex(skill => skill.id === sameName.id);
+        skills[index] = { ...sameName, ratings: mergedRatings };
+      }
       continue;
     }
     const id = usedIds.has(incoming.id) ? createId(usedIds) : incoming.id;
@@ -96,4 +151,31 @@ export function remapRoutineSkillIds(routines: Routine[], idMap: Record<string, 
       ...(step.skillIds !== undefined ? { skillIds: remap(step.skillIds) } : {}),
     })),
   }));
+}
+
+export function getRoutineSkillIds(routine: Routine): string[] {
+  return [...new Set([
+    ...(routine.skillIds ?? []),
+    ...routine.steps.filter(step => !step.hidden).flatMap(step => step.skillIds ?? []),
+  ])];
+}
+
+function chronologicalRatings(skill: RoutineSkill) {
+  return [...(skill.ratings ?? [])].sort((a, b) =>
+    Date.parse(a.ratedAt) - Date.parse(b.ratedAt) || a.id.localeCompare(b.id));
+}
+
+export function getSkillRatingPoints(skill: RoutineSkill, windowSize: number, limit = 12): SkillRatingPoint[] {
+  const ratings = chronologicalRatings(skill);
+  return ratings.map((rating, index) => {
+    const start = Math.max(0, index - windowSize + 1);
+    const window = ratings.slice(start, index + 1);
+    return { ...rating, average: window.reduce((sum, item) => sum + item.rating, 0) / window.length };
+  }).slice(-limit);
+}
+
+export function getSkillAverage(skill: RoutineSkill, windowSize: number): { average: number | null; count: number } {
+  const recent = chronologicalRatings(skill).slice(-windowSize);
+  if (!recent.length) return { average: null, count: 0 };
+  return { average: recent.reduce((sum, item) => sum + item.rating, 0) / recent.length, count: recent.length };
 }

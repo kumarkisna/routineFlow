@@ -59,7 +59,7 @@ test('reads version 1 backups with legacy step durations but no history', () => 
   );
 });
 
-test('version 5 export and import keep completed labels and legacy booleans', () => {
+test('version 6 export and import keep completed labels and legacy booleans', () => {
   const source = routine();
   const raw = serializeRoutines([source], {
     [day]: { 'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
@@ -67,7 +67,7 @@ test('version 5 export and import keep completed labels and legacy booleans', ()
     'not-a-date': { 'morning:water': true },
   });
   const json = JSON.parse(raw);
-  assert.equal(json.version, 5);
+  assert.equal(json.version, 6);
   assert.deepEqual(json.progress, { [day]: {
     'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
     'morning:stretch': true,
@@ -75,6 +75,7 @@ test('version 5 export and import keep completed labels and legacy booleans', ()
   } });
   assert.deepEqual(parseRoutinesFile(raw), {
     routines: [source],
+    skills: [],
     progress: json.progress,
   });
   assert.deepEqual(parseRoutinesFile(backup(2, [source], { [day]: { 'morning:water': false } })).progress, {
@@ -142,6 +143,12 @@ test('person backup includes playlists, schedules, selected theme, and optional 
       reminder: false,
     }],
     selectedThemeId: 'routine-flow',
+    skills: [{
+      id: 'skill-focus',
+      name: 'Focus',
+      ratings: [{ id: 'rating-focus-1', rating: 8, ratedAt: '2030-01-02T03:04:05.000Z', routineTitle: 'Morning' }],
+    }],
+    skillRatingWindow: 7,
   };
   const progress = { [day]: { 'morning:water': true } };
 
@@ -149,7 +156,13 @@ test('person backup includes playlists, schedules, selected theme, and optional 
   const imported = parseRoutinesFile(exported);
 
   assert.deepEqual(imported.routines, [routine()]);
-  assert.deepEqual(imported.personData, personData);
+  assert.deepEqual(imported.personData, {
+    playlists: personData.playlists,
+    schedules: personData.schedules,
+    selectedThemeId: personData.selectedThemeId,
+    skillRatingWindow: personData.skillRatingWindow,
+  });
+  assert.deepEqual(imported.skills, personData.skills);
   assert.deepEqual(imported.progress, progress);
 });
 
@@ -287,7 +300,7 @@ test('deleted history merges missing dates and steps without replacing local val
   assert.equal(mergeImportedProgress(result.progress, incoming, {}).added, 0);
 });
 
-test('version 5 validates deleted and archived history while older backups reject it', () => {
+test('version 6 validates deleted and archived history while older backups reject it', () => {
   for (const version of [2, 3, 4]) {
     assert.throws(() => parseRoutinesFile(backup(version, [], {
       [day]: { 'deleted:old': true },
@@ -330,7 +343,7 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
   const source = routine();
   const invalidFiles = [
     '{',
-    backup(6, [source]),
+    backup(7, [source]),
     backup(2, [source], []),
     backup(2, [source], { '2026-02-30': { 'morning:water': true } }),
     backup(2, [source], { [day]: [] }),

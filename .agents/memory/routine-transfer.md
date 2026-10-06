@@ -26,3 +26,9 @@ History for routines absent from a backup must restore as detached history, even
 **Why:** A surviving routine provides a safe identity for remapping past step keys on import. A deleted routine does not; starter IDs can be reused by unrelated routines on another installation. Keeping history separate also prevents future routine imports from taking it over.
 
 **How to apply:** Keep deleted history outside the live routine identity space, preserve legacy boolean entries as well as labels, and reserve already-recorded routine identities when importing new routines.
+
+Skill catalogs in backups merge additively by normalized name. Assignment IDs are remapped to the destination skill, and repeated rating records are deduplicated by rating ID. Full-person backups also carry the shared rolling-average window.
+
+**Why:** Re-importing a backup should not duplicate ratings or replace a person's newer local history, while preserving assignments and settings across devices.
+
+**How to apply:** Keep local ratings when an imported rating ID already exists, merge only missing records, and restore the shared window from full-person backups.

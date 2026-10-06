@@ -5,7 +5,7 @@ import { parsePlaylists } from './playlists';
 import { PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from './personStorage';
 import { parseRoutinesFile, repairStoredRoutineDurations, ROUTINE_BACKUP_VERSION } from './routineTransfer';
 import { parseSchedules } from './schedules';
-import { parseSkills, skillNameKey } from './skills';
+import { parseSkillRatingWindow, parseSkills, skillNameKey } from './skills';
 import type { PersonCopySelection, PersonCopySummary, PersonSnapshot } from '@/types/people';
 import type { CompletionMap, Routine } from '@/types/routines';
 import type { RoutineSkill } from './skills';
@@ -132,7 +132,7 @@ export function buildPersonCopy(
     }
     const copiedId = makeId(usedIds);
     skillIdMap.set(sourceSkillId, copiedId);
-    const copied = { ...sourceSkill, id: copiedId };
+    const copied: RoutineSkill = { id: copiedId, name: sourceSkill.name };
     destinationSkills.push(copied);
   }
   const mapSkillIds = (ids: string[] | undefined) => ids?.map(id => skillIdMap.get(id)!);
@@ -195,6 +195,7 @@ export function buildPersonCopy(
       playlists: [...destination.playlists, ...copiedPlaylists],
       schedules: [...destination.schedules, ...copiedSchedules],
       skills: [...destinationSkills],
+      skillRatingWindow: destination.skillRatingWindow,
     },
     summary: {
       routines: copiedRoutines.length,
@@ -206,11 +207,12 @@ export function buildPersonCopy(
 
 /** Read only the selected person's content; progress is intentionally excluded. */
 export async function readPersonSnapshot(personId: string): Promise<PersonSnapshot> {
-  const [routineValue, playlistValue, scheduleValue, skillValue] = await Promise.all([
+  const [routineValue, playlistValue, scheduleValue, skillValue, ratingWindowValue] = await Promise.all([
     AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.routines)),
     AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.playlists)),
     AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.schedules)),
     AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.skills)),
+    AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.skillRatingWindow)),
   ]);
   let routines: Routine[] = [];
   if (routineValue !== null) {
@@ -227,6 +229,7 @@ export async function readPersonSnapshot(personId: string): Promise<PersonSnapsh
     playlists: playlistValue === null ? [] : parsePlaylists(playlistValue),
     schedules: scheduleValue === null ? [] : parseSchedules(scheduleValue),
     skills: skillValue === null ? [] : parseSkills(skillValue),
+    skillRatingWindow: parseSkillRatingWindow(ratingWindowValue),
   };
 }
 

@@ -3,7 +3,7 @@ import { MAX_CATEGORY_LENGTH, categoryKey } from '@/lib/routineCategories';
 import { detachedHistoryId, progressRoutineIds, splitProgressKey } from '@/lib/historyIdentity';
 import { parsePlaylists, type RoutinePlaylist } from './playlists';
 import { parseSchedules, type RoutineSchedule } from './schedules';
-import { parseSkills, type RoutineSkill } from './skills';
+import { parseSkillRatingWindow, parseSkills, type RoutineSkill } from './skills';
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
@@ -15,6 +15,7 @@ export type PersonBackupData = {
   schedules: RoutineSchedule[];
   selectedThemeId: string;
   skills: RoutineSkill[];
+  skillRatingWindow: number;
 };
 export type RoutineBackup = {
   routines: Routine[];
@@ -194,6 +195,9 @@ function parsePersonBackupData(value: unknown): Omit<PersonBackupData, 'skills'>
     playlists: parsePlaylists(JSON.stringify(value.playlists)),
     schedules: parseSchedules(JSON.stringify(value.schedules)),
     selectedThemeId: value.selectedThemeId,
+    skillRatingWindow: parseSkillRatingWindow(
+      value.skillRatingWindow === undefined ? null : String(value.skillRatingWindow),
+    ),
   };
 }
 

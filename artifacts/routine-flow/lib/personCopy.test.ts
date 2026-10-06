@@ -26,7 +26,9 @@ const sourceSnapshot = (): PersonSnapshot => ({
   routines: [routine('a'), routine('b', true), routine('unused')],
   playlists: [{ id: 'playlist', title: 'Sequence', routineIds: ['a', 'b', 'a'], skillIds: ['skill-cardio'] }],
   skills: [
-    { id: 'skill-mindfulness', name: 'Mindfulness' },
+    { id: 'skill-mindfulness', name: 'Mindfulness', ratings: [{
+      id: 'rating-mindfulness-1', rating: 9, ratedAt: '2035-04-01T08:00:00.000Z', routineTitle: 'Morning routine',
+    }] },
     { id: 'skill-mobility', name: 'Mobility' },
     { id: 'skill-cardio', name: 'Cardio' },
     { id: 'skill-special', name: 'Special' },
@@ -56,6 +58,7 @@ const sourceSnapshot = (): PersonSnapshot => ({
       playlistOverride: { title: 'Date-only order', routineIds: ['b', 'a', 'b'], skillIds: ['skill-special'] },
     },
   ],
+  skillRatingWindow: 3,
 });
 
 test('copies routine, playlist, schedule, and override dependencies with shared remapping', () => {
@@ -64,6 +67,7 @@ test('copies routine, playlist, schedule, and override dependencies with shared 
     routines: [routine('destination-routine')],
     playlists: [{ id: 'destination-playlist', title: 'Existing', routineIds: ['destination-routine'] }],
     skills: [{ id: 'destination-mobility', name: 'Mobility' }],
+    skillRatingWindow: 9,
     schedules: [{
       id: 'destination-schedule',
       targetType: 'routine',
@@ -88,6 +92,7 @@ test('copies routine, playlist, schedule, and override dependencies with shared 
   assert.equal(result.snapshot.playlists.length, destination.playlists.length + 1);
   assert.equal(result.snapshot.schedules.length, destination.schedules.length + 2);
   assert.equal('progress' in result.snapshot, false);
+  assert.equal(result.snapshot.skillRatingWindow, destination.skillRatingWindow);
 
   const copiedA = result.snapshot.routines[destination.routines.length];
   const copiedB = result.snapshot.routines[destination.routines.length + 1];
@@ -103,6 +108,7 @@ test('copies routine, playlist, schedule, and override dependencies with shared 
   assert.equal(copiedB.steps[0].hidden, true);
   assert.equal(copiedB.category, 'Morning');
   assert.equal(copiedB.steps[1].description, 'Details');
+  assert.equal(result.snapshot.skills.find(skill => skill.name === 'Mindfulness')!.ratings, undefined);
   const copiedMindfulness = result.snapshot.skills.find(skill => skill.name === 'Mindfulness')!;
   const copiedCardio = result.snapshot.skills.find(skill => skill.name === 'Cardio')!;
   const copiedSpecial = result.snapshot.skills.find(skill => skill.name === 'Special')!;
@@ -129,30 +135,30 @@ test('copies routine, playlist, schedule, and override dependencies with shared 
 test('each copy allocates fresh IDs and missing selections or dependencies are rejected', () => {
   const source = sourceSnapshot();
   const selection = { routineIds: [], playlistIds: ['playlist'], scheduleIds: [] };
-  const first = buildPersonCopy(source, { routines: [], playlists: [], schedules: [], skills: [] }, selection);
+  const first = buildPersonCopy(source, { routines: [], playlists: [], schedules: [], skills: [], skillRatingWindow: 5 }, selection);
   const second = buildPersonCopy(source, first.snapshot, selection);
   const firstRoutineId = first.snapshot.routines[0].id;
   const secondRoutineId = second.snapshot.routines[1].id;
   assert.notEqual(secondRoutineId, firstRoutineId);
   assert.notEqual(second.snapshot.playlists[1].id, first.snapshot.playlists[0].id);
 
-  assert.throws(() => buildPersonCopy(source, { routines: [], playlists: [], schedules: [], skills: [] }, {
+  assert.throws(() => buildPersonCopy(source, { routines: [], playlists: [], schedules: [], skills: [], skillRatingWindow: 5 }, {
     routineIds: [], playlistIds: [], scheduleIds: [],
   }), /Select at least one/);
-  assert.throws(() => buildPersonCopy(source, { routines: [], playlists: [], schedules: [], skills: [] }, {
+  assert.throws(() => buildPersonCopy(source, { routines: [], playlists: [], schedules: [], skills: [], skillRatingWindow: 5 }, {
     routineIds: ['missing'], playlistIds: [], scheduleIds: [],
   }), /selected routine "missing" was not found/);
-  assert.throws(() => buildPersonCopy(source, { routines: [], playlists: [], schedules: [], skills: [] }, {
+  assert.throws(() => buildPersonCopy(source, { routines: [], playlists: [], schedules: [], skills: [], skillRatingWindow: 5 }, {
     routineIds: [], playlistIds: [], scheduleIds: ['missing'],
   }), /selected schedule "missing" was not found/);
   assert.throws(() => buildPersonCopy(
     { ...source, playlists: [{ id: 'broken', title: 'Broken', routineIds: ['missing'] }] },
-    { routines: [], playlists: [], schedules: [], skills: [] },
+    { routines: [], playlists: [], schedules: [], skills: [], skillRatingWindow: 5 },
     { routineIds: [], playlistIds: ['broken'], scheduleIds: [] },
   ), /Playlist "broken" references missing routine "missing"/);
   assert.throws(() => buildPersonCopy(
     { ...source, schedules: [{ ...source.schedules[0], targetId: 'missing' }] },
-    { routines: [], playlists: [], schedules: [], skills: [] },
+    { routines: [], playlists: [], schedules: [], skills: [], skillRatingWindow: 5 },
     { routineIds: [], playlistIds: [], scheduleIds: ['routine-date'] },
   ), /Schedule "routine-date" references missing routine "missing"/);
 });
