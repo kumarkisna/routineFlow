@@ -83,6 +83,25 @@ test('version 6 export and import keep completed labels and legacy booleans', ()
   });
 });
 
+test('routine backup round-trips skill assignments and rating history', () => {
+  const base = routine();
+  const source: Routine = {
+    ...base,
+    skillIds: ['skill-focus'],
+    steps: [{ ...base.steps[0], skillIds: ['skill-mobility'] }, base.steps[1]],
+  };
+  const skills = [{
+    id: 'skill-focus',
+    name: 'Focus',
+    ratings: [{ id: 'rating-focus', rating: 9, ratedAt: '2030-01-01T00:00:00.000Z', routineTitle: 'Morning' }],
+  }];
+
+  const imported = parseRoutinesFile(serializeRoutines([source], undefined, skills));
+
+  assert.deepEqual(imported.routines, [source]);
+  assert.deepEqual(imported.skills, skills);
+});
+
 test('multiple step details survive backup round-trips while old single details remain valid', () => {
   const legacy = routine();
   assert.deepEqual(parseRoutinesFile(serializeRoutines([legacy])).routines, [legacy]);
@@ -133,7 +152,7 @@ test('routine copies preserve additional details without sharing their arrays', 
 
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
   const personData = {
-    playlists: [{ id: 'focus', title: 'Focus', routineIds: ['morning'] }],
+    playlists: [{ id: 'focus', title: 'Focus', routineIds: ['morning'], skillIds: ['skill-focus'] }],
     schedules: [{
       id: 'morning-appointment',
       targetType: 'routine' as const,
@@ -151,11 +170,17 @@ test('person backup includes playlists, schedules, selected theme, and optional 
     skillRatingWindow: 7,
   };
   const progress = { [day]: { 'morning:water': true } };
+  const base = routine();
+  const routineWithSkills: Routine = {
+    ...base,
+    skillIds: ['skill-focus'],
+    steps: base.steps.map((step, index) => index === 0 ? { ...step, skillIds: ['skill-mobility'] } : step),
+  };
 
-  const exported = serializePersonBackup([routine()], personData, progress);
+  const exported = serializePersonBackup([routineWithSkills], personData, progress);
   const imported = parseRoutinesFile(exported);
 
-  assert.deepEqual(imported.routines, [routine()]);
+  assert.deepEqual(imported.routines, [routineWithSkills]);
   assert.deepEqual(imported.personData, {
     playlists: personData.playlists,
     schedules: personData.schedules,

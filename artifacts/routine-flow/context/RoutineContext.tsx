@@ -76,6 +76,7 @@ type RoutineContextValue = {
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
   importRoutines: (backup: RoutineBackup, includeProgress: boolean) => Promise<{
     added: number; skipped: number; renamed: number; progressAdded: number; progressKept: number;
+    routineIdMap: Record<string, string>;
   }>;
   setRoutineHidden: (routineId: string, hidden: boolean) => Promise<void>;
   setStepHidden: (routineId: string, stepId: string, hidden: boolean) => Promise<void>;
@@ -272,7 +273,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
         () => { importNeedsRestart.current = true; },
       );
       return { added: result.added, skipped: result.skipped, renamed: result.renamed,
-        progressAdded: merged.added, progressKept: merged.kept };
+        progressAdded: merged.added, progressKept: merged.kept, routineIdMap: result.idMap };
     }),
     [routines, progress, runRoutineWrite],
   );

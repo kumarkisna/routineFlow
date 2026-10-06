@@ -1,10 +1,11 @@
 - [Expo notifications](expo-notifications.md) — align notification packages with the SDK; on Android Expo Go, custom channel APIs may need to be avoided.
 - [Speech-gated routine timers](speech-gated-timers.md) — speak assigned skill names in the step announcement before its countdown starts.
 - [Routine visibility behavior](routine-visibility.md) — hidden steps are inactive, not just concealed; keep run and progress logic aligned.
-- [Routine transfer safety](routine-transfer.md) — imports merge routines additively and merge skill ratings without replacing local history.
+- [Routine transfer safety](routine-transfer.md) — imports merge routines/playlists additively and preserve existing skill-rating history.
 - [Routine copies](routine-copies.md) — copied routines retain step settings but start with separate progress.
 - [Routine step details](routine-step-details.md) — steps keep the existing detail and support additional ordered entries added on demand.
 - [Routine categories](routine-categories.md) — categories remain labels; Skills are a separate managed library assigned across routines, steps, and playlists.
+- [Skill association browsing](skill-associations.md) — include direct/step routine assignments and playlists containing those routines, distinguishing hidden items.
 - [Expo web confirmations](expo-web-confirmations.md) — use an in-app confirmation for destructive actions that must work in the web preview.
 - [Workspace package installs](workspace-package-installs.md) — pnpm package additions can rewrite workspace YAML comments; preserve the original policy text.
 - [Browser persistence fixtures](browser-persistence-fixtures.md) — initialization scripts run again after reload; seed storage only when empty when testing persistence.

@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   DEFAULT_SKILL_RATING_WINDOW,
   getRoutineSkillIds,
+  getSkillAssociations,
   getSkillAverage,
   getSkillRatingPoints,
   mergeSkillCatalog,
@@ -39,12 +40,16 @@ test('rating history import merges matching skills and ignores duplicate rating 
   const incoming: RoutineSkill[] = [{
     id: 'imported-focus',
     name: ' focus ',
-    ratings: [history.ratings![0], history.ratings![1]],
+    ratings: [
+      { ...history.ratings![0], rating: 1 },
+      history.ratings![1],
+    ],
   }];
 
   const first = mergeSkillCatalog(existing, incoming);
   assert.equal(first.idMap['imported-focus'], 'local-focus');
   assert.deepEqual(first.skills[0].ratings?.map(rating => rating.id), ['rating-2', 'rating-4']);
+  assert.equal(first.skills[0].ratings?.[0].rating, 8, 'a conflicting imported copy must not replace local rating history');
   const second = mergeSkillCatalog(first.skills, incoming);
   assert.equal(second.skills[0].ratings?.length, 2);
 });
@@ -76,4 +81,48 @@ test('a completed routine rates unique skills from visible steps only', () => {
     ],
   });
   assert.deepEqual(skillIds, ['routine-skill', 'step-skill']);
+});
+
+test('skill usage includes direct and step assignments, plus playlists containing linked routines', () => {
+  const routines = [
+    {
+      id: 'direct', title: 'Direct routine', subtitle: '', icon: 'sun', tone: 'sage' as const,
+      createdAt: '2030-01-01T00:00:00.000Z', skillIds: ['skill-focus'],
+      steps: [
+        { id: 'visible', title: 'Stretch', durationSeconds: 30, skillIds: ['skill-focus'] },
+        { id: 'hidden', title: 'Optional mobility', durationSeconds: 30, hidden: true, skillIds: ['skill-focus'] },
+      ],
+    },
+    {
+      id: 'step-only', title: 'Step-only routine', subtitle: '', icon: 'sun', tone: 'sage' as const,
+      createdAt: '2030-01-01T00:00:00.000Z', hidden: true,
+      steps: [{ id: 'step', title: 'Breathe', durationSeconds: 30, skillIds: ['skill-focus'] }],
+    },
+    {
+      id: 'unrelated', title: 'Unrelated routine', subtitle: '', icon: 'sun', tone: 'sage' as const,
+      createdAt: '2030-01-01T00:00:00.000Z',
+      steps: [{ id: 'step', title: 'Rest', durationSeconds: 30 }],
+    },
+  ];
+  const playlists = [
+    { id: 'direct-playlist', title: 'Focus playlist', routineIds: ['direct'], skillIds: ['skill-focus'] },
+    { id: 'contains-routine', title: 'Breathing playlist', routineIds: ['step-only', 'step-only'] },
+    { id: 'unrelated-playlist', title: 'Other playlist', routineIds: ['unrelated'] },
+  ];
+
+  const uses = getSkillAssociations('skill-focus', routines, playlists);
+
+  assert.deepEqual(uses.routines.map(use => [use.id, use.hidden, use.assignedToRoutine, use.steps]), [
+    ['direct', false, true, [
+      { title: 'Stretch', hidden: false },
+      { title: 'Optional mobility', hidden: true },
+    ]],
+    ['step-only', true, false, [{ title: 'Breathe', hidden: false }]],
+  ]);
+  assert.deepEqual(uses.playlists.map(use => [
+    use.id, use.assignedToPlaylist, use.routines.map(routine => routine.title),
+  ]), [
+    ['direct-playlist', true, ['Direct routine']],
+    ['contains-routine', false, ['Step-only routine']],
+  ]);
 });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { nextPlaylistCursor, parsePlaylistQueue, parsePlaylists, playablePlaylistIds, validatePlaylist } from './playlists';
+import { mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylists, playablePlaylistIds,
+  remapPlaylistReferences, validatePlaylist } from './playlists';
 import type { Routine } from '../types/routines';
 
 const routine = (id: string, hidden = false, hiddenStep = false): Routine => ({
@@ -24,6 +25,53 @@ test('saved playlist parsing keeps ordered identifiers and rejects corrupt stora
   assert.throws(() => parsePlaylists('{}'));
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":[12]}]'));
 });
+
+test('playlist backup imports merge skill links and keep conflicting local playlists intact', () => {
+  const existing = [
+    { id: 'focus-local', title: 'Focus', routineIds: ['morning'], skillIds: ['local-skill'] },
+    { id: 'evening', title: 'Evening', routineIds: ['wind-down'] },
+  ];
+  const incoming = [
+    { id: 'focus-backup', title: 'Focus', routineIds: ['morning'], skillIds: ['backup-skill'] },
+    { id: 'evening', title: 'Evening v2', routineIds: ['wind-down', 'stretch'], skillIds: ['mobility'] },
+  ];
+  let nextId = 0;
+  const first = mergePlaylistCatalog(existing, incoming, () => `copy-${++nextId}`);
+
+  assert.deepEqual(first.playlists, [
+    { ...existing[0], skillIds: ['local-skill', 'backup-skill'] },
+    existing[1],
+    { ...incoming[1], id: 'copy-1' },
+  ]);
+  assert.deepEqual({ added: first.added, skipped: first.skipped, renamed: first.renamed, updated: first.updated }, {
+    added: 1, skipped: 0, renamed: 1, updated: 1,
+  });
+  assert.equal(first.idMap['focus-backup'], 'focus-local');
+  assert.equal(first.idMap.evening, 'copy-1');
+
+  const retry = mergePlaylistCatalog(first.playlists, incoming, () => {
+    throw new Error('Repeated import must not allocate another playlist ID');
+  });
+  assert.deepEqual({ added: retry.added, skipped: retry.skipped, renamed: retry.renamed, updated: retry.updated }, {
+    added: 0, skipped: 2, renamed: 0, updated: 0,
+  });
+  assert.deepEqual(retry.playlists, first.playlists);
+});
+
+test('backup playlist references follow remapped routine and skill IDs', () => {
+  assert.deepEqual(remapPlaylistReferences([{
+    id: 'playlist', title: 'Focus', routineIds: ['routine-old', 'local-routine'],
+    skillIds: ['skill-old', 'local-skill'],
+  }], {
+    'routine-old': 'routine-copy',
+  }, {
+    'skill-old': 'local-focus',
+  }), [{
+    id: 'playlist', title: 'Focus', routineIds: ['routine-copy', 'local-routine'],
+    skillIds: ['local-focus', 'local-skill'],
+  }]);
+});
+
 test('run queue parsing rejects invalid route data', () => {
   assert.deepEqual(parsePlaylistQueue('["b","a","b"]'), ['b', 'a', 'b']);
   assert.equal(parsePlaylistQueue('nope'), null);

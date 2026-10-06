@@ -1,6 +1,6 @@
 import { usePersonStorage } from '@/context/PeopleContext';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { parsePlaylists, validatePlaylist, type RoutinePlaylist } from '@/lib/playlists';
+import { mergePlaylistCatalog, parsePlaylists, validatePlaylist, type RoutinePlaylist } from '@/lib/playlists';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 
 const KEY = '@routine-flow/playlists';
@@ -10,6 +10,7 @@ type PlaylistContextValue = {
   error: string;
   reload: () => Promise<void>;
   savePlaylist: (title: string, routineIds: string[], id?: string, skillIds?: string[]) => Promise<RoutinePlaylist>;
+  mergeImportedPlaylists: (playlists: RoutinePlaylist[]) => Promise<{ added: number; skipped: number; renamed: number; updated: number }>;
   deletePlaylist: (id: string) => Promise<void>;
   removeSkillAssignments: (skillId: string) => Promise<void>;
 };
@@ -55,6 +56,16 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
       setPlaylists(next);
       return playlist;
     }), [error, loading, runWrite, AsyncStorage]);
+  const mergeImportedPlaylists = useCallback((incoming: RoutinePlaylist[]) => runWrite(async () => {
+    if (loading || error) throw new Error('Wait for playlists to load successfully before importing.');
+    const result = mergePlaylistCatalog(current.current, incoming);
+    if (result.added || result.updated) {
+      await AsyncStorage.setItem(KEY, JSON.stringify(result.playlists));
+      current.current = result.playlists;
+      setPlaylists(result.playlists);
+    }
+    return { added: result.added, skipped: result.skipped, renamed: result.renamed, updated: result.updated };
+  }), [error, loading, runWrite, AsyncStorage]);
   const deletePlaylist = useCallback((id: string) => runWrite(async () => {
     if (loading || error) throw new Error('Wait for playlists to load successfully before deleting.');
     const next = current.current.filter(item => item.id !== id);
@@ -74,7 +85,8 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     current.current = next;
     setPlaylists(next);
   }), [error, loading, runWrite, AsyncStorage]);
-  return <PlaylistContext.Provider value={{ playlists, loading, error, reload, savePlaylist, deletePlaylist, removeSkillAssignments }}>
+  return <PlaylistContext.Provider value={{ playlists, loading, error, reload, savePlaylist, mergeImportedPlaylists,
+    deletePlaylist, removeSkillAssignments }}>
     {children}
   </PlaylistContext.Provider>;
 }

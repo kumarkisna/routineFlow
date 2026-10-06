@@ -1,4 +1,5 @@
 import type { Routine } from '@/types/routines';
+import type { RoutinePlaylist } from './playlists';
 
 export type RoutineSkill = { id: string; name: string; ratings?: SkillRating[] };
 export type SkillRating = {
@@ -158,6 +159,53 @@ export function getRoutineSkillIds(routine: Routine): string[] {
     ...(routine.skillIds ?? []),
     ...routine.steps.filter(step => !step.hidden).flatMap(step => step.skillIds ?? []),
   ])];
+}
+
+export type SkillRoutineUse = {
+  id: string;
+  title: string;
+  hidden: boolean;
+  assignedToRoutine: boolean;
+  steps: { title: string; hidden: boolean }[];
+};
+
+export type SkillPlaylistUse = {
+  id: string;
+  title: string;
+  assignedToPlaylist: boolean;
+  routines: SkillRoutineUse[];
+};
+
+export function getSkillAssociations(
+  skillId: string,
+  routines: Routine[],
+  playlists: RoutinePlaylist[],
+): { routines: SkillRoutineUse[]; playlists: SkillPlaylistUse[] } {
+  const routineUses = routines.flatMap(routine => {
+    const steps = routine.steps
+      .filter(step => step.skillIds?.includes(skillId))
+      .map(step => ({ title: step.title, hidden: Boolean(step.hidden) }));
+    const assignedToRoutine = Boolean(routine.skillIds?.includes(skillId));
+    return assignedToRoutine || steps.length
+      ? [{ id: routine.id, title: routine.title, hidden: Boolean(routine.hidden), assignedToRoutine, steps }]
+      : [];
+  });
+  const useByRoutineId = new Map(routineUses.map(use => [use.id, use]));
+  const playlistUses = playlists.flatMap(playlist => {
+    const relatedRoutines = [...new Set(playlist.routineIds)]
+      .map(id => useByRoutineId.get(id))
+      .filter((use): use is SkillRoutineUse => Boolean(use));
+    const assignedToPlaylist = Boolean(playlist.skillIds?.includes(skillId));
+    return assignedToPlaylist || relatedRoutines.length
+      ? [{
+          id: playlist.id,
+          title: playlist.title,
+          assignedToPlaylist,
+          routines: relatedRoutines,
+        }]
+      : [];
+  });
+  return { routines: routineUses, playlists: playlistUses };
 }
 
 function chronologicalRatings(skill: RoutineSkill) {

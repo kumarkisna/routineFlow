@@ -3,15 +3,18 @@ import React from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSkills } from '@/context/SkillContext';
+import { useRoutines } from '@/context/RoutineContext';
+import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
-import { MAX_SKILL_NAME } from '@/lib/skills';
-import { getSkillAverage } from '@/lib/skills';
+import { getSkillAssociations, getSkillAverage, MAX_SKILL_NAME } from '@/lib/skills';
 import { SkillRatingChart } from '@/components/SkillRatingChart';
 
 export default function SkillsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { skills, ratingWindow, loading, error, reload, createSkill, updateSkill, deleteSkill, setRatingWindow } = useSkills();
+  const { routines, loading: routinesLoading } = useRoutines();
+  const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
   const [draft, setDraft] = React.useState('');
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editingDraft, setEditingDraft] = React.useState('');
@@ -21,8 +24,12 @@ export default function SkillsScreen() {
   const [windowDraft, setWindowDraft] = React.useState(String(ratingWindow));
   const [windowSaving, setWindowSaving] = React.useState(false);
   const [windowMessage, setWindowMessage] = React.useState('');
+  const [expandedUsageId, setExpandedUsageId] = React.useState<string | null>(null);
   const lock = React.useRef(false);
   const windowLock = React.useRef(false);
+  const associations = React.useMemo(() => new Map(
+    skills.map(skill => [skill.id, getSkillAssociations(skill.id, routines, playlists)]),
+  ), [playlists, routines, skills]);
 
   React.useEffect(() => { setWindowDraft(String(ratingWindow)); }, [ratingWindow]);
 
@@ -205,6 +212,8 @@ export default function SkillsScreen() {
         renderItem={({ item }) => {
           const editing = editingId === item.id;
           const confirming = pendingDeleteId === item.id;
+          const usage = associations.get(item.id) ?? { routines: [], playlists: [] };
+          const usageExpanded = expandedUsageId === item.id;
           const average = getSkillAverage(item, ratingWindow);
           return (
             <View testID={`skill-${item.id}`} style={[styles.skillCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -275,6 +284,76 @@ export default function SkillsScreen() {
                     </Text>
                   )}
                   <SkillRatingChart skill={item} windowSize={ratingWindow} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: usageExpanded }}
+                    accessibilityLabel={`Show routines and playlists for ${item.name}`}
+                    testID={`skill-usage-toggle-${item.id}`}
+                    onPress={() => setExpandedUsageId(current => current === item.id ? null : item.id)}
+                    style={({ pressed }) => [styles.usageToggle, { borderColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <View style={styles.usageToggleText}>
+                      <Text style={[styles.usageTitle, { color: colors.foreground }]}>Routines and playlists</Text>
+                      <Text style={[styles.usageSummary, { color: colors.mutedForeground }]}>
+                        {routinesLoading || playlistsLoading
+                          ? 'Loading assignments…'
+                          : `${usage.routines.length} ${usage.routines.length === 1 ? 'routine' : 'routines'} · ${usage.playlists.length} ${usage.playlists.length === 1 ? 'playlist' : 'playlists'}`}
+                      </Text>
+                    </View>
+                    <Ionicons name={usageExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.inkSoft} />
+                  </Pressable>
+                  {usageExpanded ? (
+                    <View testID={`skill-usage-${item.id}`} style={styles.usagePanel}>
+                      <Text style={[styles.usageSection, { color: colors.foreground }]}>Routines</Text>
+                      {routinesLoading ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : usage.routines.length ? usage.routines.map(routine => (
+                        <View key={routine.id} style={[styles.usageItem, { borderColor: colors.border }]}>
+                          <Ionicons name="repeat-outline" size={16} color={colors.primary} />
+                          <View style={styles.usageItemText}>
+                            <Text style={[styles.usageItemTitle, { color: colors.foreground }]}>
+                              {routine.title}{routine.hidden ? ' · Hidden routine' : ''}
+                            </Text>
+                            {routine.assignedToRoutine ? (
+                              <Text style={[styles.usageItemDetail, { color: colors.mutedForeground }]}>Assigned to routine</Text>
+                            ) : null}
+                            {routine.steps.length ? (
+                              <Text style={[styles.usageItemDetail, { color: colors.mutedForeground }]}>
+                                Steps: {routine.steps.map(step => `${step.title}${step.hidden ? ' (hidden)' : ''}`).join(', ')}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </View>
+                      )) : (
+                        <Text style={[styles.usageEmpty, { color: colors.mutedForeground }]}>No routines use this skill.</Text>
+                      )}
+                      <Text style={[styles.usageSection, styles.playlistUsageSection, { color: colors.foreground }]}>Playlists</Text>
+                      {playlistsLoading ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : playlistsError ? (
+                        <Text accessibilityRole="alert" style={[styles.usageEmpty, { color: colors.destructive }]}>
+                          Playlists could not load. Retry from the Playlists tab to see their skill assignments.
+                        </Text>
+                      ) : usage.playlists.length ? usage.playlists.map(playlist => (
+                        <View key={playlist.id} style={[styles.usageItem, { borderColor: colors.border }]}>
+                          <Ionicons name="list-outline" size={16} color={colors.primary} />
+                          <View style={styles.usageItemText}>
+                            <Text style={[styles.usageItemTitle, { color: colors.foreground }]}>{playlist.title}</Text>
+                            {playlist.assignedToPlaylist ? (
+                              <Text style={[styles.usageItemDetail, { color: colors.mutedForeground }]}>Assigned to playlist</Text>
+                            ) : null}
+                            {playlist.routines.length ? (
+                              <Text style={[styles.usageItemDetail, { color: colors.mutedForeground }]}>
+                                Includes: {playlist.routines.map(routine => `${routine.title}${routine.hidden ? ' (hidden)' : ''}`).join(', ')}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </View>
+                      )) : (
+                        <Text style={[styles.usageEmpty, { color: colors.mutedForeground }]}>No playlists use this skill.</Text>
+                      )}
+                    </View>
+                  ) : null}
                 </>
               )}
             </View>
@@ -304,6 +383,18 @@ const styles = StyleSheet.create({
   skillIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 5 },
   skillName: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   ratingSummary: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 7 },
+  usageToggle: { minHeight: 54, marginTop: 10, paddingVertical: 9, paddingHorizontal: 10, borderWidth: 1, borderRadius: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  usageToggleText: { flex: 1 },
+  usageTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  usageSummary: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
+  usagePanel: { paddingTop: 10 },
+  usageSection: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 5 },
+  playlistUsageSection: { marginTop: 14 },
+  usageItem: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingVertical: 9, paddingHorizontal: 8, borderWidth: 1, borderRadius: 11, marginTop: 5 },
+  usageItemText: { flex: 1 },
+  usageItemTitle: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 18 },
+  usageItemDetail: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginTop: 2 },
+  usageEmpty: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17 },
   iconButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
   actionButton: { minWidth: 86, minHeight: 42, paddingHorizontal: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

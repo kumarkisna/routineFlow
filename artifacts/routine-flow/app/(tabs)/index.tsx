@@ -20,10 +20,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
+import { usePlaylists } from '@/context/PlaylistContext';
 import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
 import { remapRoutineSkillIds } from '@/lib/skills';
+import { remapPlaylistReferences } from '@/lib/playlists';
 import { readPersonExportSnapshot } from '@/lib/personCopy';
 import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializePersonBackup, type RoutineBackup } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
@@ -37,6 +39,7 @@ export default function HomeScreen() {
   const { activePerson } = usePeople();
   const insets = useSafeAreaInsets();
   const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday, renameCategory, removeCategory } = useRoutines();
+  const { mergeImportedPlaylists } = usePlaylists();
   const { mergeImportedSkills, setRatingWindow } = useSkills();
   const [showHidden, setShowHidden] = React.useState(false);
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
@@ -291,18 +294,29 @@ export default function HomeScreen() {
     const skillIdMap = await mergeImportedSkills(backup.skills ?? []);
     const remappedBackup = { ...backup, routines: remapRoutineSkillIds(backup.routines, skillIdMap) };
     const result = await importRoutines(remappedBackup, restoreHistory);
+    const playlistResult = backup.personData
+      ? await mergeImportedPlaylists(remapPlaylistReferences(
+        backup.personData.playlists, result.routineIdMap, skillIdMap,
+      ))
+      : undefined;
     if (backup.personData) await setRatingWindow(backup.personData.skillRatingWindow);
     const details = [
       `${result.added} ${result.added === 1 ? 'routine' : 'routines'} imported`,
       result.skipped ? `${result.skipped} already present` : null,
       result.renamed ? `${result.renamed} kept as a separate copy` : null,
+      playlistResult ? `${playlistResult.added} ${playlistResult.added === 1 ? 'playlist' : 'playlists'} imported` : null,
+      playlistResult?.updated ? `${playlistResult.updated} existing playlist skill assignments merged` : null,
+      playlistResult?.skipped ? `${playlistResult.skipped} playlists already present` : null,
+      playlistResult?.renamed ? `${playlistResult.renamed} conflicting playlists kept as separate copies` : null,
       backup.skills?.length ? 'Skills merged' : null,
       backup.personData ? 'Shared skill-average window restored' : null,
       restoreHistory ? `${result.progressAdded} completed steps added${result.progressKept ? ` (${result.progressKept} local entries kept)` : ''}` : null,
-      backup.personData ? 'Playlists, schedules, and selected theme are not restored by Import JSON.' : null,
+      backup.personData ? 'Schedules and selected theme are not restored by Import JSON.' : null,
     ].filter(Boolean).join(' · ');
     setTransferStatus({ message: details, error: false });
-    if (result.added || result.progressAdded) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (result.added || result.progressAdded || playlistResult?.added || playlistResult?.updated) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
   }
 
   async function confirmImport(restoreHistory: boolean) {

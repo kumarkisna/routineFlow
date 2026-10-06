@@ -3,11 +3,11 @@ name: Routine transfer safety
 description: Product decision for importing routine backups without replacing local edits
 ---
 
-Routine backup imports should be additive and repeatable. Identical routines already present are skipped; if a backed-up routine has the same ID as a changed local routine, retain both by assigning the imported copy a new ID. Do not silently overwrite the local version.
+Routine backup imports should be additive and repeatable. Identical routines already present are skipped; if a backed-up routine has the same ID as a changed local routine, retain both by assigning the imported copy a new ID. Do not silently overwrite the local version. Full-person backup playlists follow the same rule, preserving local definitions and merging missing skill assignments.
 
 **Why:** Starter routines use stable IDs across installations, so an ID collision can represent a customized routine rather than a harmless duplicate. Keeping both avoids accidental loss of either version.
 
-**How to apply:** When extending or changing the routines transfer format, preserve the non-destructive merge behavior or request an explicit user choice before introducing replacement.
+**How to apply:** When extending or changing the transfer format, preserve the non-destructive merge behavior or request an explicit user choice before introducing replacement. Remap playlist routine and skill IDs before merging.
 
 Daily completion history follows the same rule: it is optional in backups, requires an affirmative choice to import, and contributes only missing completed steps. Never replace a local completion value (including an explicit incomplete value); remap backup history to whichever local routine represents the imported routine, including a conflict copy.
 
