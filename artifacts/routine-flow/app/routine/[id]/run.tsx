@@ -598,27 +598,14 @@ function RoutinePlayer() {
             <Ionicons name="close" size={24} color={colors.foreground} />
           </Pressable>
           <View style={styles.headerCenter}>
-            {inPlaylist ? (
-              <>
-                <Text style={[styles.playlistHeaderLine, { color: colors.mutedForeground }]} numberOfLines={2}>
-                  <Text style={styles.playlistHeaderPrefix}>PLAYLIST · </Text>
-                  <Text style={[styles.playlistHeaderName, { color: colors.foreground }]}>{playlistTitle ?? 'Playlist'}</Text>
-                </Text>
-                <Text style={[styles.playlistHeaderTitle, { color: colors.foreground }]} numberOfLines={1}>
-                  {`ROUTINE ${queueCursor + 1} OF ${playlistQueue!.length}`}
-                </Text>
-                <Text style={[styles.playlistHeaderSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  Current routine: {currentRoutine.title}
-                </Text>
-              </>
-            ) : (
+            {!inPlaylist ? (
               <>
                 <Text style={[styles.headerLabel, { color: colors.mutedForeground }]}>RUNNING ROUTINE</Text>
                 <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
                   {currentRoutine.title}
                 </Text>
               </>
-            )}
+            ) : null}
           </View>
           <Pressable
             accessibilityRole="button"
@@ -641,6 +628,20 @@ function RoutinePlayer() {
         </View>
 
         <View style={[styles.timerCard, { backgroundColor: colors.hero }]}>
+          {inPlaylist ? (
+            <View style={styles.playlistContext}>
+              <Text style={[styles.playlistContextLine, { color: colors.heroForeground }]} numberOfLines={2}>
+                <Text style={styles.playlistContextPrefix}>PLAYLIST · </Text>
+                <Text style={styles.playlistContextName}>{playlistTitle ?? 'Playlist'}</Text>
+              </Text>
+              <Text style={[styles.playlistContextPosition, { color: colors.heroForeground }]} numberOfLines={1}>
+                {`ROUTINE ${queueCursor + 1} OF ${playlistQueue!.length}`}
+              </Text>
+              <Text style={[styles.playlistContextSubtitle, { color: colors.heroForeground }]} numberOfLines={2}>
+                Current routine: {currentRoutine.title}
+              </Text>
+            </View>
+          ) : null}
           <View style={[styles.timerRing, { borderColor: colors.sage }]}>
             <Text style={[styles.timerText, { color: colors.heroForeground }]}>
               {isFinished ? '00:00:00' : formatClock(remainingSeconds)}
@@ -824,11 +825,12 @@ const styles = StyleSheet.create({
   headerSpacer: { width: 42 },
   headerLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.1 },
   headerTitle: { fontFamily: 'Inter_700Bold', fontSize: 17, marginTop: 5, maxWidth: 250 },
-  playlistHeaderLine: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18, textAlign: 'center', maxWidth: 260 },
-  playlistHeaderPrefix: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.8 },
-  playlistHeaderName: { fontFamily: 'Inter_700Bold', fontSize: 14 },
-  playlistHeaderTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 11, letterSpacing: 1, lineHeight: 15, textAlign: 'center', marginTop: 2, maxWidth: 260 },
-  playlistHeaderSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 12, textAlign: 'center', marginTop: 3, maxWidth: 260 },
+  playlistContext: { width: '100%', alignItems: 'center', marginBottom: 12 },
+  playlistContextLine: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18, textAlign: 'center', maxWidth: 280 },
+  playlistContextPrefix: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 0.8, opacity: 0.72 },
+  playlistContextName: { fontFamily: 'Inter_700Bold', fontSize: 14 },
+  playlistContextPosition: { fontFamily: 'Inter_600SemiBold', fontSize: 11, letterSpacing: 1, lineHeight: 15, textAlign: 'center', marginTop: 2 },
+  playlistContextSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 12, textAlign: 'center', lineHeight: 16, marginTop: 3, opacity: 0.78, maxWidth: 280 },
   timerCard: { marginHorizontal: 20, borderRadius: 26, alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
   timerRing: { width: 164, height: 164, borderRadius: 82, borderWidth: 7, alignItems: 'center', justifyContent: 'center' },
   timerText: { fontFamily: 'Inter_700Bold', fontSize: 27, letterSpacing: 1 },
