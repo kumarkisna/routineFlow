@@ -16,6 +16,7 @@ export function makeRoutineCopy(source: Routine, existing: Routine[], createId: 
     steps: source.steps.map((step) => ({
       ...step,
       ...(step.additionalDetails ? { additionalDetails: [...step.additionalDetails] } : {}),
+      ...(step.detailSpeech ? { detailSpeech: [...step.detailSpeech] } : {}),
       id: nextId(),
     })),
     createdAt: new Date().toISOString(),

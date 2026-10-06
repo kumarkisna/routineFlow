@@ -7,7 +7,9 @@ export type RoutineStep = {
   description?: string;
   /** Additional optional instructions that can be added independently. */
   additionalDetails?: string[];
-  /** Omitted means details remain spoken for routines saved before this choice existed. */
+  /** Spoken flags align with [description, ...additionalDetails]; omitted flags default to spoken. */
+  detailSpeech?: boolean[];
+  /** Legacy per-step setting, read for routines saved before per-detail speech choices existed. */
   speakDetails?: boolean;
   /** Optional links to reusable, person-specific skills. */
   skillIds?: string[];
@@ -58,9 +60,15 @@ export function getStepDetails(step: Pick<RoutineStep, 'description' | 'addition
 }
 
 export function getSpokenStepDetails(
-  step: Pick<RoutineStep, 'description' | 'additionalDetails' | 'speakDetails'>,
+  step: Pick<RoutineStep, 'description' | 'additionalDetails' | 'detailSpeech' | 'speakDetails'>,
 ): string[] {
-  return step.speakDetails === false ? [] : getStepDetails(step);
+  const fallback = step.speakDetails !== false;
+  return [step.description, ...(step.additionalDetails ?? [])]
+    .flatMap((detail, index) => (
+      typeof detail === 'string' && detail.trim().length > 0 && (step.detailSpeech?.[index] ?? fallback)
+        ? [detail.trim()]
+        : []
+    ));
 }
 
 export function getStepSeconds(step: RoutineStep) {

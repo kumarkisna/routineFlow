@@ -58,6 +58,12 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
       (!Array.isArray(value.additionalDetails) || value.additionalDetails.some((detail) => typeof detail !== 'string'))) {
     throw new Error(`${label} has invalid details.`);
   }
+  if (value.detailSpeech !== undefined &&
+      (!Array.isArray(value.detailSpeech)
+        || value.detailSpeech.length !== 1 + (Array.isArray(value.additionalDetails) ? value.additionalDetails.length : 0)
+        || value.detailSpeech.some((speak) => typeof speak !== 'boolean'))) {
+    throw new Error(`${label} has invalid per-detail speech settings.`);
+  }
   if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
     throw new Error(`${label} has an invalid visibility setting.`);
   }
@@ -81,6 +87,7 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     title: value.title,
     ...(value.description !== undefined ? { description: value.description as string } : {}),
     ...(value.additionalDetails !== undefined ? { additionalDetails: value.additionalDetails as string[] } : {}),
+    ...(value.detailSpeech !== undefined ? { detailSpeech: [...(value.detailSpeech as boolean[])] } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden as boolean } : {}),
     ...(value.speakDetails !== undefined ? { speakDetails: value.speakDetails as boolean } : {}),
     ...(skillIds !== undefined ? { skillIds } : {}),

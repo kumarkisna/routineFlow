@@ -47,7 +47,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [stepDraft, setStepDraft] = useState('');
   const [stepDescriptionDraft, setStepDescriptionDraft] = useState('');
   const [additionalDetailsDraft, setAdditionalDetailsDraft] = useState<string[]>([]);
-  const [speakDetailsDraft, setSpeakDetailsDraft] = useState(true);
+  const [detailSpeechDraft, setDetailSpeechDraft] = useState<boolean[]>([true]);
   const [hoursDraft, setHoursDraft] = useState('0');
   const [minutesDraft, setMinutesDraft] = useState('5');
   const [secondsDraft, setSecondsDraft] = useState('0');
@@ -66,7 +66,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft('');
     setStepDescriptionDraft('');
     setAdditionalDetailsDraft([]);
-    setSpeakDetailsDraft(true);
+    setDetailSpeechDraft([true]);
     setStepSkillIds([]);
     setHoursDraft('0');
     setMinutesDraft('5');
@@ -79,7 +79,11 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft(step.title);
     setStepDescriptionDraft(step.description ?? '');
     setAdditionalDetailsDraft([...(step.additionalDetails ?? [])]);
-    setSpeakDetailsDraft(step.speakDetails !== false);
+    const legacySpeechDefault = step.speakDetails !== false;
+    setDetailSpeechDraft(
+      [step.description, ...(step.additionalDetails ?? [])]
+        .map((_, index) => step.detailSpeech?.[index] ?? legacySpeechDefault),
+    );
     setStepSkillIds([...(step.skillIds ?? [])]);
     setHoursDraft(String(Math.floor(duration / 3600)));
     setMinutesDraft(String(Math.floor((duration % 3600) / 60)));
@@ -87,10 +91,26 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setError('');
   }
 
+  function setDetailSpeech(index: number, speak: boolean) {
+    setDetailSpeechDraft((current) => {
+      const next = [...current];
+      next[index] = speak;
+      return next;
+    });
+  }
+
   function addStep() {
     const nextTitle = stepDraft.trim();
     const nextDescription = stepDescriptionDraft.trim();
-    const nextAdditionalDetails = additionalDetailsDraft.map((detail) => detail.trim()).filter(Boolean);
+    const nextAdditionalDetailsWithSpeech = additionalDetailsDraft.flatMap((detail, index) => {
+      const text = detail.trim();
+      return text ? [{ text, speak: detailSpeechDraft[index + 1] ?? true }] : [];
+    });
+    const nextAdditionalDetails = nextAdditionalDetailsWithSpeech.map((detail) => detail.text);
+    const nextDetailSpeech = [
+      detailSpeechDraft[0] ?? true,
+      ...nextAdditionalDetailsWithSpeech.map((detail) => detail.speak),
+    ];
     if (!nextTitle) {
       setError('Give this step a name.');
       return;
@@ -106,7 +126,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     if (editingStepId) {
       setSteps((current) => current.map((step) =>
         step.id === editingStepId
-          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, speakDetails: speakDetailsDraft, skillIds: [...stepSkillIds], durationSeconds }
+          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, detailSpeech: nextDetailSpeech, speakDetails: undefined, skillIds: [...stepSkillIds], durationSeconds }
           : step,
       ));
     } else {
@@ -117,7 +137,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           title: nextTitle,
           description: nextDescription,
           additionalDetails: nextAdditionalDetails,
-          speakDetails: speakDetailsDraft,
+          detailSpeech: nextDetailSpeech,
           ...(stepSkillIds.length ? { skillIds: [...stepSkillIds] } : {}),
           durationSeconds,
         },
@@ -330,62 +350,77 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             onChangeText={setStepDescriptionDraft}
             style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground }]}
           />
+          <View style={styles.detailSpeechRow}>
+            <Text style={[styles.detailSpeechLabel, { color: colors.inkSoft }]}>Speak this detail aloud</Text>
+            <Switch
+              accessibilityLabel="Speak the main step detail during the routine"
+              testID="speak-step-description"
+              disabled={saving}
+              value={detailSpeechDraft[0] ?? true}
+              onValueChange={(speak) => setDetailSpeech(0, speak)}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
           {additionalDetailsDraft.map((detail, index) => (
-            <View key={`detail-${index}`} style={styles.additionalDetailRow}>
-              <TextInput
-                accessibilityLabel={`Additional detail ${index + 1}`}
-                testID={`additional-step-detail-${index}`}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-                placeholder={`Additional detail ${index + 1}`}
-                placeholderTextColor={colors.mutedForeground}
-                value={detail}
-                onChangeText={(value) => setAdditionalDetailsDraft((current) =>
-                  current.map((item, itemIndex) => itemIndex === index ? value : item),
-                )}
-                style={[
-                  styles.stepDescriptionInput,
-                  styles.additionalDetailInput,
-                  { borderColor: colors.border, color: colors.foreground },
-                ]}
-              />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Remove additional detail ${index + 1}`}
-                testID={`remove-step-detail-${index}`}
-                onPress={() => setAdditionalDetailsDraft((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                style={({ pressed }) => [styles.removeDetailButton, pressed && styles.pressed]}
-              >
-                <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
-              </Pressable>
+            <View key={`detail-${index}`}>
+              <View style={styles.additionalDetailRow}>
+                <TextInput
+                  accessibilityLabel={`Additional detail ${index + 1}`}
+                  testID={`additional-step-detail-${index}`}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  placeholder={`Additional detail ${index + 1}`}
+                  placeholderTextColor={colors.mutedForeground}
+                  value={detail}
+                  onChangeText={(value) => setAdditionalDetailsDraft((current) =>
+                    current.map((item, itemIndex) => itemIndex === index ? value : item),
+                  )}
+                  style={[
+                    styles.stepDescriptionInput,
+                    styles.additionalDetailInput,
+                    { borderColor: colors.border, color: colors.foreground },
+                  ]}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove additional detail ${index + 1}`}
+                  testID={`remove-step-detail-${index}`}
+                  onPress={() => {
+                    setAdditionalDetailsDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                    setDetailSpeechDraft((current) => current.filter((_, speechIndex) => speechIndex !== index + 1));
+                  }}
+                  style={({ pressed }) => [styles.removeDetailButton, pressed && styles.pressed]}
+                >
+                  <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
+                </Pressable>
+              </View>
+              <View style={styles.detailSpeechRow}>
+                <Text style={[styles.detailSpeechLabel, { color: colors.inkSoft }]}>Speak this detail aloud</Text>
+                <Switch
+                  accessibilityLabel={`Speak additional detail ${index + 1} during the routine`}
+                  testID={`speak-additional-step-detail-${index}`}
+                  disabled={saving}
+                  value={detailSpeechDraft[index + 1] ?? true}
+                  onValueChange={(speak) => setDetailSpeech(index + 1, speak)}
+                  trackColor={{ true: colors.primary, false: colors.border }}
+                />
+              </View>
             </View>
           ))}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Add another step detail"
             testID="add-step-detail"
-            onPress={() => setAdditionalDetailsDraft((current) => [...current, ''])}
+            onPress={() => {
+              setAdditionalDetailsDraft((current) => [...current, '']);
+              setDetailSpeechDraft((current) => [...current, true]);
+            }}
             style={({ pressed }) => [styles.addDetailButton, pressed && styles.pressed]}
           >
             <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
             <Text style={[styles.addDetailText, { color: colors.primary }]}>Add another detail</Text>
           </Pressable>
-          <View style={[styles.speakDetailsRow, { borderTopColor: colors.border }]}>
-            <View style={styles.speakDetailsCopy}>
-              <Text style={[styles.speakDetailsTitle, { color: colors.foreground }]}>Speak these details</Text>
-              <Text style={[styles.speakDetailsHint, { color: colors.mutedForeground }]}>
-                The step name and timer are still spoken when this is off.
-              </Text>
-            </View>
-            <Switch
-              accessibilityLabel="Speak this step’s details during the routine"
-              testID="speak-step-details"
-              value={speakDetailsDraft}
-              onValueChange={setSpeakDetailsDraft}
-              trackColor={{ true: colors.primary, false: colors.border }}
-            />
-          </View>
           <SkillPicker
             label="Step skills (optional)"
             selectedIds={stepSkillIds}
@@ -548,10 +583,8 @@ const styles = StyleSheet.create({
   stepInput: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 15 },
   addStepButton: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   stepDescriptionLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginLeft: 8, marginTop: 4, marginBottom: 7 },
-  speakDetailsRow: { minHeight: 57, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderTopWidth: 1, marginTop: 8, paddingTop: 8 },
-  speakDetailsCopy: { flex: 1, paddingLeft: 7 },
-  speakDetailsTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
-  speakDetailsHint: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15, marginTop: 3 },
+  detailSpeechRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginHorizontal: 8, marginBottom: 7 },
+  detailSpeechLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   stepDescriptionInput: { minHeight: 72, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 9, marginHorizontal: 6, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
   additionalDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 7 },
   additionalDetailInput: { flex: 1, marginHorizontal: 6 },
