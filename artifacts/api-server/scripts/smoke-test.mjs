@@ -95,10 +95,29 @@ await assertStartupFails({
 await assertStartupFails({
   name: "a non-positive PORT",
   port: "0",
-  expectedMessage: 'Invalid PORT value: "0"',
+  expectedMessage:
+    'Invalid PORT value: "0". Expected a whole-number TCP port from 1 to 65535.',
+});
+await assertStartupFails({
+  name: "a fractional PORT",
+  port: "8080.5",
+  expectedMessage:
+    'Invalid PORT value: "8080.5". Expected a whole-number TCP port from 1 to 65535.',
+});
+await assertStartupFails({
+  name: "a PORT above the TCP range",
+  port: "65536",
+  expectedMessage:
+    'Invalid PORT value: "65536". Expected a whole-number TCP port from 1 to 65535.',
+});
+await assertStartupFails({
+  name: "an infinite PORT",
+  port: "Infinity",
+  expectedMessage:
+    'Invalid PORT value: "Infinity". Expected a whole-number TCP port from 1 to 65535.',
 });
 console.log(
-  "API startup configuration smoke tests passed: missing, non-numeric, and non-positive PORT",
+  "API startup configuration smoke tests passed: missing, non-numeric, non-positive, fractional, infinite, and out-of-range PORT",
 );
 
 const port = await getUnusedPort();

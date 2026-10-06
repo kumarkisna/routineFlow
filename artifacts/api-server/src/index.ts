@@ -11,8 +11,15 @@ if (!rawPort) {
 
 const port = Number(rawPort);
 
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
+if (
+  !/^\d+$/.test(rawPort) ||
+  !Number.isInteger(port) ||
+  port < 1 ||
+  port > 65535
+) {
+  throw new Error(
+    `Invalid PORT value: "${rawPort}". Expected a whole-number TCP port from 1 to 65535.`,
+  );
 }
 
 app.listen(port, (err) => {
