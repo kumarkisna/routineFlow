@@ -40,6 +40,8 @@ export default function PlaylistsScreen() {
       params: { id: ids[0], queue: JSON.stringify(ids), cursor: '0', playlistId: p.id, playlistTitle: p.title,
         playlistSkills: JSON.stringify(p.skillIds ?? []),
         playlistRateSkillsAtEnd: (p.rateSkillsAtPlaylistEnd ?? true) ? '1' : '0',
+        stepReminder: p.reminderSettings?.stepCompletion ? '1' : '0',
+        routineReminder: p.reminderSettings?.routineCompletion ? '1' : '0',
         autoStart: '1' },
     });
   }

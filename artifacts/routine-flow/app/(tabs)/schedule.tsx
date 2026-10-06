@@ -9,7 +9,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSchedules } from '@/context/ScheduleContext';
 import { useColors } from '@/hooks/useColors';
-import { playablePlaylistIds } from '@/lib/playlists';
+import { DEFAULT_PLAYLIST_REMINDER_SETTINGS, playablePlaylistIds } from '@/lib/playlists';
 import { buildSchedulePrintHtml } from '@/lib/schedulePrint';
 import { scheduledPlaylistSource, type RoutineSchedule } from '@/lib/schedules';
 import { formatAlertOffset, scheduleAlertOffsets } from '@/lib/scheduleAlerts';
@@ -54,13 +54,23 @@ export default function ScheduleScreen() {
   function source(s: RoutineSchedule) {
     if (s.targetType === 'routine') {
       const r = routines.find((x) => x.id === s.targetId);
-      if (!r) return { title: null as string | null, ids: [] as string[], skillIds: [] as string[], rateSkillsAtPlaylistEnd: false };
-      return { title: r.title, ids: r.hidden ? [] : playablePlaylistIds([r.id], routines), skillIds: [] as string[], rateSkillsAtPlaylistEnd: false };
+      if (!r) return {
+        title: null as string | null, ids: [] as string[], skillIds: [] as string[],
+        rateSkillsAtPlaylistEnd: false, reminderSettings: DEFAULT_PLAYLIST_REMINDER_SETTINGS,
+      };
+      return {
+        title: r.title, ids: r.hidden ? [] : playablePlaylistIds([r.id], routines), skillIds: [] as string[],
+        rateSkillsAtPlaylistEnd: false, reminderSettings: DEFAULT_PLAYLIST_REMINDER_SETTINGS,
+      };
     }
     const p = scheduledPlaylistSource(s, playlists);
-    if (!p) return { title: null, ids: [], skillIds: [], rateSkillsAtPlaylistEnd: false };
+    if (!p) return {
+      title: null, ids: [], skillIds: [], rateSkillsAtPlaylistEnd: false,
+      reminderSettings: DEFAULT_PLAYLIST_REMINDER_SETTINGS,
+    };
     return { title: p.title, ids: playablePlaylistIds(p.routineIds, routines), skillIds: p.skillIds ?? [],
-      rateSkillsAtPlaylistEnd: p.rateSkillsAtPlaylistEnd ?? false };
+      rateSkillsAtPlaylistEnd: p.rateSkillsAtPlaylistEnd ?? false,
+      reminderSettings: p.reminderSettings ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS };
   }
   function start(s: RoutineSchedule) {
     const src = source(s);
@@ -72,6 +82,8 @@ export default function ScheduleScreen() {
         playlistId: s.targetId, playlistTitle: src.title ?? s.targetTitle,
         playlistSkills: JSON.stringify(src.skillIds),
         playlistRateSkillsAtEnd: src.rateSkillsAtPlaylistEnd ? '1' : '0',
+         stepReminder: src.reminderSettings.stepCompletion ? '1' : '0',
+         routineReminder: src.reminderSettings.routineCompletion ? '1' : '0',
         autoStart: '1' },
     });
   }

@@ -166,6 +166,7 @@ export function buildPersonCopy(
       id: copiedId,
       routineIds: playlist.routineIds.map(id => routineIdMap.get(id)!),
       ...(playlist.skillIds ? { skillIds: mapSkillIds(playlist.skillIds) } : {}),
+      ...(playlist.reminderSettings ? { reminderSettings: { ...playlist.reminderSettings } } : {}),
     });
   }
 
@@ -185,6 +186,8 @@ export function buildPersonCopy(
         routineIds: schedule.playlistOverride.routineIds.map(id => routineIdMap.get(id)!),
         ...(schedule.playlistOverride.skillIds
           ? { skillIds: mapSkillIds(schedule.playlistOverride.skillIds) } : {}),
+        ...(schedule.playlistOverride.reminderSettings
+          ? { reminderSettings: { ...schedule.playlistOverride.reminderSettings } } : {}),
       },
     } : {}),
   }));

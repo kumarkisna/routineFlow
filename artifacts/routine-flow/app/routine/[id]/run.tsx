@@ -598,14 +598,6 @@ function RoutinePlayer() {
             <Ionicons name="close" size={24} color={colors.foreground} />
           </Pressable>
           <View style={styles.headerCenter}>
-            {!inPlaylist ? (
-              <>
-                <Text style={[styles.headerLabel, { color: colors.mutedForeground }]}>RUNNING ROUTINE</Text>
-                <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
-                  {currentRoutine.title}
-                </Text>
-              </>
-            ) : null}
           </View>
           <Pressable
             accessibilityRole="button"
@@ -641,7 +633,17 @@ function RoutinePlayer() {
                 Current routine: {currentRoutine.title}
               </Text>
             </View>
-          ) : null}
+          ) : (
+            <View style={styles.playlistContext} testID="routine-play-context">
+              <Text style={[styles.playlistContextLine, { color: colors.heroForeground }]} numberOfLines={2}>
+                <Text style={styles.playlistContextPrefix}>ROUTINE · </Text>
+                <Text style={styles.playlistContextName}>{currentRoutine.title}</Text>
+              </Text>
+              <Text style={[styles.playlistContextPosition, { color: colors.heroForeground }]} numberOfLines={1}>
+                {isFinished ? 'ROUTINE COMPLETE' : `STEP ${activeIndex + 1} OF ${currentRoutine.steps.length}`}
+              </Text>
+            </View>
+          )}
           <View style={[styles.timerRing, { borderColor: colors.sage }]}>
             <Text style={[styles.timerText, { color: colors.heroForeground }]}>
               {isFinished ? '00:00:00' : formatClock(remainingSeconds)}

@@ -220,7 +220,14 @@ test('routine copies preserve additional details without sharing their arrays', 
 
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
   const personData = {
-    playlists: [{ id: 'focus', title: 'Focus', routineIds: ['morning'], skillIds: ['skill-focus'] }],
+    playlists: [{
+      id: 'focus',
+      title: 'Focus',
+      routineIds: ['morning'],
+      skillIds: ['skill-focus'],
+      rateSkillsAtPlaylistEnd: false,
+      reminderSettings: { stepCompletion: true, routineCompletion: false },
+    }],
     schedules: [{
       id: 'morning-appointment',
       targetType: 'routine' as const,
@@ -253,7 +260,8 @@ test('person backup includes playlists, schedules, selected theme, and optional 
   assert.deepEqual(imported.personData, {
     playlists: personData.playlists.map(playlist => ({
       ...playlist,
-      rateSkillsAtPlaylistEnd: true,
+      rateSkillsAtPlaylistEnd: false,
+      reminderSettings: { stepCompletion: true, routineCompletion: false },
     })),
     schedules: personData.schedules,
     selectedThemeId: personData.selectedThemeId,

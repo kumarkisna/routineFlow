@@ -1,7 +1,8 @@
 import { usePersonStorage } from '@/context/PeopleContext';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { mergePlaylistCatalog, parsePlaylists, validatePlaylist, type RoutinePlaylist } from '@/lib/playlists';
+import { DEFAULT_PLAYLIST_REMINDER_SETTINGS, mergePlaylistCatalog, parsePlaylists, validatePlaylist, type RoutinePlaylist } from '@/lib/playlists';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
+import type { RoutineNotificationSettings } from '@/types/routines';
 
 const KEY = '@routine-flow/playlists';
 type PlaylistContextValue = {
@@ -11,6 +12,7 @@ type PlaylistContextValue = {
   reload: () => Promise<void>;
   savePlaylist: (
     title: string, routineIds: string[], id?: string, skillIds?: string[], rateSkillsAtPlaylistEnd?: boolean,
+    reminderSettings?: RoutineNotificationSettings,
   ) => Promise<RoutinePlaylist>;
   mergeImportedPlaylists: (playlists: RoutinePlaylist[]) => Promise<{
     added: number; skipped: number; renamed: number; updated: number; idMap: Record<string, string>;
@@ -48,6 +50,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     id?: string,
     skillIds?: string[],
     rateSkillsAtPlaylistEnd?: boolean,
+    reminderSettings?: RoutineNotificationSettings,
   ) =>
     runWrite(async () => {
       if (loading || error) throw new Error('Wait for playlists to load successfully before saving.');
@@ -59,6 +62,14 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
         title: title.trim(), routineIds: [...routineIds],
         ...((skillIds ?? previous?.skillIds)?.length ? { skillIds: [...(skillIds ?? previous!.skillIds!)] } : {}),
         rateSkillsAtPlaylistEnd: rateSkillsAtPlaylistEnd ?? previous?.rateSkillsAtPlaylistEnd ?? true,
+        reminderSettings: {
+          stepCompletion: reminderSettings?.stepCompletion
+            ?? previous?.reminderSettings?.stepCompletion
+            ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,
+          routineCompletion: reminderSettings?.routineCompletion
+            ?? previous?.reminderSettings?.routineCompletion
+            ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.routineCompletion,
+        },
       };
       const next = id ? current.current.map(item => item.id === id ? playlist : item)
         : [...current.current, playlist];

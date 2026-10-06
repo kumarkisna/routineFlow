@@ -31,23 +31,37 @@ test('date-only playlist versions survive parsing and malformed versions are rej
   assert.deepEqual(parseSchedules(JSON.stringify([custom])), [custom]);
   for (const playlistOverride of [null, {}, { title: '', routineIds: ['a'] },
     { title: 'Name', routineIds: [] }, { title: 'Name', routineIds: ['a', 3] },
-    { title: 'Name', routineIds: Array(101).fill('a') }, { title: 'x'.repeat(101), routineIds: ['a'] }]) {
+    { title: 'Name', routineIds: Array(101).fill('a') }, { title: 'x'.repeat(101), routineIds: ['a'] },
+    { title: 'Name', routineIds: ['a'], reminderSettings: { stepCompletion: 'yes', routineCompletion: false } }]) {
     assert.throws(() => parseSchedules(JSON.stringify([{ ...custom, playlistOverride }])));
   }
   assert.throws(() => parseSchedules(JSON.stringify([{ ...custom, targetType: 'routine' }])));
 });
 test('date-only editing owns a copied sequence and never changes the original playlist or sibling date', () => {
-  const playlist = { id: 'p', title: 'Original', routineIds: ['a', 'b', 'a'], rateSkillsAtPlaylistEnd: true };
+  const playlist = {
+    id: 'p',
+    title: 'Original',
+    routineIds: ['a', 'b', 'a'],
+    rateSkillsAtPlaylistEnd: true,
+    reminderSettings: { stepCompletion: true, routineCompletion: false },
+  };
   const scheduled: RoutineSchedule = { ...entry, targetType: 'playlist', targetId: 'p' };
   const sibling = { ...scheduled, id: 'second-date', scheduledAt: new Date(Date.parse(future) + 86400000).toISOString() };
   const ids = ['b', 'c', 'b'];
-  const custom = editScheduledPlaylist(scheduled, '  Special day  ', ids);
+  const custom = editScheduledPlaylist(scheduled, '  Special day  ', ids, undefined, playlist.reminderSettings);
   ids.push('extra');
   assert.deepEqual(scheduledPlaylistSource(custom, [playlist])?.routineIds, ['b', 'c', 'b']);
   assert.equal(scheduledPlaylistSource(custom, [playlist])?.title, 'Special day');
   assert.equal(scheduledPlaylistSource(custom, [playlist])?.rateSkillsAtPlaylistEnd, true);
+  assert.deepEqual(scheduledPlaylistSource(custom, [playlist])?.reminderSettings, playlist.reminderSettings);
   assert.deepEqual(scheduledPlaylistSource(sibling, [playlist]), playlist);
-  assert.deepEqual(playlist, { id: 'p', title: 'Original', routineIds: ['a', 'b', 'a'], rateSkillsAtPlaylistEnd: true });
+  assert.deepEqual(playlist, {
+    id: 'p',
+    title: 'Original',
+    routineIds: ['a', 'b', 'a'],
+    rateSkillsAtPlaylistEnd: true,
+    reminderSettings: { stepCompletion: true, routineCompletion: false },
+  });
   assert.equal(scheduled.playlistOverride, undefined);
   assert.equal(custom.scheduledAt, scheduled.scheduledAt);
   assert.equal(custom.id, scheduled.id);
@@ -55,6 +69,7 @@ test('date-only editing owns a copied sequence and never changes the original pl
   const resolved = scheduledPlaylistSource(custom, [playlist])!;
   resolved.routineIds.push('another');
   assert.deepEqual(custom.playlistOverride?.routineIds, ['b', 'c', 'b']);
+  assert.deepEqual(custom.playlistOverride?.reminderSettings, playlist.reminderSettings);
 });
 test('a custom date ignores later original edits or deletion; uncustomized dates still follow the source', () => {
   const original = { id: 'p', title: 'Original', routineIds: ['a'] };

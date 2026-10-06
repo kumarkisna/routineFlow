@@ -24,7 +24,13 @@ const routine = (id: string, hidden = false): Routine => ({
 
 const sourceSnapshot = (): PersonSnapshot => ({
   routines: [routine('a'), routine('b', true), routine('unused')],
-  playlists: [{ id: 'playlist', title: 'Sequence', routineIds: ['a', 'b', 'a'], skillIds: ['skill-cardio'] }],
+  playlists: [{
+    id: 'playlist',
+    title: 'Sequence',
+    routineIds: ['a', 'b', 'a'],
+    skillIds: ['skill-cardio'],
+    reminderSettings: { stepCompletion: true, routineCompletion: false },
+  }],
   skills: [
     { id: 'skill-mindfulness', name: 'Mindfulness', ratings: [{
       id: 'rating-mindfulness-1', rating: 9, ratedAt: '2035-04-01T08:00:00.000Z', routineTitle: 'Morning routine',
@@ -55,7 +61,12 @@ const sourceSnapshot = (): PersonSnapshot => ({
       notificationId: 'native-playlist',
       alertOffsetsMinutes: [15, 0],
       notifications: [{ id: 'native-alert-2', offsetMinutes: 15 }],
-      playlistOverride: { title: 'Date-only order', routineIds: ['b', 'a', 'b'], skillIds: ['skill-special'] },
+      playlistOverride: {
+        title: 'Date-only order',
+        routineIds: ['b', 'a', 'b'],
+        skillIds: ['skill-special'],
+        reminderSettings: { stepCompletion: false, routineCompletion: true },
+      },
     },
   ],
   skillRatingWindow: 3,
@@ -115,6 +126,7 @@ test('copies routine, playlist, schedule, and override dependencies with shared 
   assert.deepEqual(copiedA.skillIds, [copiedMindfulness.id]);
   assert.deepEqual(copiedA.steps[0].skillIds, ['destination-mobility']);
   assert.deepEqual(copiedPlaylist.skillIds, [copiedCardio.id]);
+  assert.deepEqual(copiedPlaylist.reminderSettings, { stepCompletion: true, routineCompletion: false });
   assert.equal(copiedRoutineSchedule.targetId, copiedB.id);
   assert.equal(copiedRoutineSchedule.scheduledAt, '2035-04-05T09:30:00.000Z');
   assert.deepEqual(copiedRoutineSchedule.alertOffsetsMinutes, [30, 0]);
@@ -124,6 +136,7 @@ test('copies routine, playlist, schedule, and override dependencies with shared 
     title: 'Date-only order',
     routineIds: [copiedB.id, copiedA.id, copiedB.id],
     skillIds: [copiedSpecial.id],
+    reminderSettings: { stepCompletion: false, routineCompletion: true },
   });
   for (const schedule of [copiedRoutineSchedule, copiedPlaylistSchedule]) {
     assert.equal(schedule.reminder, false);

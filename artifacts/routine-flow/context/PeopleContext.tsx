@@ -8,6 +8,7 @@ import { initialPeopleRegistry, parsePeopleRegistry, type PeopleRegistry } from 
 import { DEFAULT_SKILL_RATING_WINDOW } from '@/lib/skills';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
+import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
 
 type PeopleContextValue = {
   people: Person[];
@@ -152,6 +153,12 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       id: `person-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       name: trimmed,
       defaultRateSkillsAtPlaylistEnd: profile.defaultRateSkillsAtPlaylistEnd ?? true,
+      defaultPlaylistReminderSettings: {
+        stepCompletion: profile.defaultPlaylistReminderSettings?.stepCompletion
+          ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,
+        routineCompletion: profile.defaultPlaylistReminderSettings?.routineCompletion
+          ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.routineCompletion,
+      },
     };
     await AsyncStorage.multiSet([
       [personStorageKey(person.id, PERSON_DATA_KEYS.routines), '[]'],
@@ -187,6 +194,14 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       name: trimmed,
       defaultRateSkillsAtPlaylistEnd:
         profile.defaultRateSkillsAtPlaylistEnd ?? existing.defaultRateSkillsAtPlaylistEnd,
+      defaultPlaylistReminderSettings: {
+        stepCompletion: profile.defaultPlaylistReminderSettings?.stepCompletion
+          ?? existing.defaultPlaylistReminderSettings?.stepCompletion
+          ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,
+        routineCompletion: profile.defaultPlaylistReminderSettings?.routineCompletion
+          ?? existing.defaultPlaylistReminderSettings?.routineCompletion
+          ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.routineCompletion,
+      },
     };
     const next: PeopleRegistry = {
       ...previous,

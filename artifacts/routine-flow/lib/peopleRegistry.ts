@@ -1,11 +1,17 @@
 import { DEFAULT_PERSON_ID } from './personStorage';
+import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from './playlists';
 import type { Person } from '@/types/people';
 
 export type PeopleRegistry = { version: 1; people: Person[]; activePersonId: string };
 
 export const initialPeopleRegistry: PeopleRegistry = {
   version: 1,
-  people: [{ id: DEFAULT_PERSON_ID, name: 'Me', defaultRateSkillsAtPlaylistEnd: true }],
+  people: [{
+    id: DEFAULT_PERSON_ID,
+    name: 'Me',
+    defaultRateSkillsAtPlaylistEnd: true,
+    defaultPlaylistReminderSettings: { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
+  }],
   activePersonId: DEFAULT_PERSON_ID,
 };
 
@@ -17,7 +23,12 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
     || item.people.some(person => !person || typeof person.id !== 'string' || !person.id
       || typeof person.name !== 'string' || !person.name.trim()
       || (person.defaultRateSkillsAtPlaylistEnd !== undefined
-        && typeof person.defaultRateSkillsAtPlaylistEnd !== 'boolean'))
+        && typeof person.defaultRateSkillsAtPlaylistEnd !== 'boolean')
+      || (person.defaultPlaylistReminderSettings !== undefined && (
+        !person.defaultPlaylistReminderSettings
+        || typeof person.defaultPlaylistReminderSettings.stepCompletion !== 'boolean'
+        || typeof person.defaultPlaylistReminderSettings.routineCompletion !== 'boolean'
+      )))
     || new Set(item.people.map(person => person.id)).size !== item.people.length
     || !item.people.some(person => person.id === DEFAULT_PERSON_ID && person.name === 'Me')
     || !item.people.some(person => person.id === item.activePersonId)) {
@@ -29,6 +40,12 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
       id: person.id,
       name: person.name,
       defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd ?? true,
+      defaultPlaylistReminderSettings: {
+        stepCompletion: person.defaultPlaylistReminderSettings?.stepCompletion
+          ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,
+        routineCompletion: person.defaultPlaylistReminderSettings?.routineCompletion
+          ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.routineCompletion,
+      },
     })),
     activePersonId: item.activePersonId!,
   };

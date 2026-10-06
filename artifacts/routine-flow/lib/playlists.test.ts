@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylists, playablePlaylistIds,
-  remapPlaylistReferences, validatePlaylist } from './playlists';
+  remapPlaylistReferences, resolvePlaylistReminderSettings, validatePlaylist } from './playlists';
 import type { Routine } from '../types/routines';
 
 const routine = (id: string, hidden = false, hiddenStep = false): Routine => ({
@@ -22,23 +22,53 @@ test('playlist names and at least one routine are required', () => {
 test('saved playlist parsing keeps ordered identifiers and rejects corrupt storage', () => {
   const list = [{ id: 'p', title: 'Morning', routineIds: ['b', 'a', 'b'] }];
   assert.deepEqual(parsePlaylists(JSON.stringify(list)), [
-    { ...list[0], rateSkillsAtPlaylistEnd: true },
+    {
+      ...list[0],
+      rateSkillsAtPlaylistEnd: true,
+      reminderSettings: { stepCompletion: false, routineCompletion: false },
+    },
   ]);
   assert.equal(parsePlaylists(JSON.stringify(list))[0].rateSkillsAtPlaylistEnd, true);
+  assert.deepEqual(parsePlaylists(JSON.stringify(list))[0].reminderSettings, {
+    stepCompletion: false,
+    routineCompletion: false,
+  });
   assert.equal(parsePlaylists(JSON.stringify([{ ...list[0], rateSkillsAtPlaylistEnd: true }]))[0].rateSkillsAtPlaylistEnd, true);
+  assert.deepEqual(parsePlaylists(JSON.stringify([{
+    ...list[0],
+    reminderSettings: { stepCompletion: true, routineCompletion: false },
+  }]))[0].reminderSettings, { stepCompletion: true, routineCompletion: false });
+  assert.deepEqual(resolvePlaylistReminderSettings({ stepCompletion: true, routineCompletion: false }), {
+    stepCompletion: true,
+    routineCompletion: false,
+  });
+  assert.deepEqual(resolvePlaylistReminderSettings(
+    { stepCompletion: true, routineCompletion: true },
+    { stepCompletion: false, routineCompletion: true },
+  ), { stepCompletion: false, routineCompletion: true });
   assert.throws(() => parsePlaylists('{}'));
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":[12]}]'));
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":["a"],"rateSkillsAtPlaylistEnd":"yes"}]'));
+  assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":["a"],"reminderSettings":{"stepCompletion":"yes","routineCompletion":false}}]'));
 });
 
 test('playlist backup imports merge skill links and keep conflicting local playlists intact', () => {
   const existing = [
-    { id: 'focus-local', title: 'Focus', routineIds: ['morning'], skillIds: ['local-skill'] },
+    {
+      id: 'focus-local', title: 'Focus', routineIds: ['morning'], skillIds: ['local-skill'],
+      reminderSettings: { stepCompletion: false, routineCompletion: true },
+    },
     { id: 'evening', title: 'Evening', routineIds: ['wind-down'] },
   ];
   const incoming = [
-    { id: 'focus-backup', title: 'Focus', routineIds: ['morning'], skillIds: ['backup-skill'] },
-    { id: 'evening', title: 'Evening v2', routineIds: ['wind-down', 'stretch'], skillIds: ['mobility'] },
+    {
+      id: 'focus-backup', title: 'Focus', routineIds: ['morning'], skillIds: ['backup-skill'],
+      reminderSettings: { stepCompletion: true, routineCompletion: false },
+    },
+    {
+      id: 'evening', title: 'Evening v2', routineIds: ['wind-down', 'stretch'], skillIds: ['mobility'],
+      reminderSettings: { stepCompletion: true, routineCompletion: true },
+    },
   ];
   let nextId = 0;
   const first = mergePlaylistCatalog(existing, incoming, () => `copy-${++nextId}`);
@@ -67,6 +97,7 @@ test('backup playlist references follow remapped routine and skill IDs', () => {
   assert.deepEqual(remapPlaylistReferences([{
     id: 'playlist', title: 'Focus', routineIds: ['routine-old', 'local-routine'],
     skillIds: ['skill-old', 'local-skill'],
+    reminderSettings: { stepCompletion: true, routineCompletion: false },
   }], {
     'routine-old': 'routine-copy',
   }, {
@@ -74,6 +105,7 @@ test('backup playlist references follow remapped routine and skill IDs', () => {
   }), [{
     id: 'playlist', title: 'Focus', routineIds: ['routine-copy', 'local-routine'],
     skillIds: ['local-focus', 'local-skill'],
+    reminderSettings: { stepCompletion: true, routineCompletion: false },
   }]);
 });
 

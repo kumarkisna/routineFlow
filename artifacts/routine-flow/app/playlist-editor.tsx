@@ -12,9 +12,10 @@ import { useSkills } from '@/context/SkillContext';
 import { usePeople } from '@/context/PeopleContext';
 import { SkillPicker } from '@/components/SkillPicker';
 import { useColors } from '@/hooks/useColors';
-import { playablePlaylistIds } from '@/lib/playlists';
+import { playablePlaylistIds, resolvePlaylistReminderSettings } from '@/lib/playlists';
 import { scheduledPlaylistSource } from '@/lib/schedules';
 import { formatDuration, getStepSeconds } from '@/types/routines';
+import type { RoutineNotificationSettings } from '@/types/routines';
 
 export default function PlaylistEditor() {
   const { id, scheduleId } = useLocalSearchParams<{ id?: string; scheduleId?: string }>();
@@ -47,13 +48,15 @@ export default function PlaylistEditor() {
     initialTitle={src?.title ?? ''} initialIds={src?.routineIds ?? []} initialSkillIds={src?.skillIds ?? []}
     initialRateSkillsAtPlaylistEnd={src
       ? src.rateSkillsAtPlaylistEnd ?? true
-      : activePerson.defaultRateSkillsAtPlaylistEnd} />;
+      : activePerson.defaultRateSkillsAtPlaylistEnd}
+    initialReminderSettings={resolvePlaylistReminderSettings(activePerson.defaultPlaylistReminderSettings, src?.reminderSettings)} />;
 }
 
 function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds, initialSkillIds,
-  initialRateSkillsAtPlaylistEnd }: {
+  initialRateSkillsAtPlaylistEnd, initialReminderSettings }: {
   editId?: string; scheduleId?: string; hasOverride: boolean; canReset: boolean;
   initialTitle: string; initialIds: string[]; initialSkillIds: string[]; initialRateSkillsAtPlaylistEnd: boolean;
+  initialReminderSettings: RoutineNotificationSettings;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -67,6 +70,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const [ids, setIds] = React.useState<string[]>(initialIds);
   const [skillIds, setSkillIds] = React.useState<string[]>(initialSkillIds);
   const [rateSkillsAtPlaylistEnd, setRateSkillsAtPlaylistEnd] = React.useState(initialRateSkillsAtPlaylistEnd);
+  const [reminderSettings, setReminderSettings] = React.useState<RoutineNotificationSettings>({ ...initialReminderSettings });
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const lock = React.useRef(false);
@@ -97,8 +101,8 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     try {
       const availableSkills = new Set(skills.map(skill => skill.id));
       const savedSkillIds = skillIds.filter(id => availableSkills.has(id));
-      if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds);
-      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd);
+      if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds, reminderSettings);
+      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd, reminderSettings);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e) {
@@ -177,6 +181,40 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
             />
           </View>
         ) : null}
+        {!scheduleId ? (
+          <View style={[styles.reminderSettings, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.ratingSettingCopy}>
+              <Text style={[styles.ratingSettingTitle, { color: colors.foreground }]}>Reminders</Text>
+              <Text style={[styles.ratingSettingHint, { color: colors.mutedForeground }]}>
+                {editId
+                  ? 'These apply to runs started from this playlist. Changing them will not change the person defaults.'
+                  : 'Starts with the person defaults. You can change these for this playlist.'}
+              </Text>
+            </View>
+            <View style={[styles.reminderRow, { borderColor: colors.border }]}>
+              <Text style={[styles.reminderLabel, { color: colors.foreground }]}>When a step finishes</Text>
+              <Switch
+                accessibilityLabel="Remind when a step finishes"
+                testID="playlist-step-completion-reminder"
+                disabled={busy}
+                value={reminderSettings.stepCompletion}
+                onValueChange={(value) => setReminderSettings(current => ({ ...current, stepCompletion: value }))}
+                trackColor={{ true: colors.primary, false: colors.border }}
+              />
+            </View>
+            <View style={[styles.reminderRow, { borderColor: colors.border }]}>
+              <Text style={[styles.reminderLabel, { color: colors.foreground }]}>When a routine finishes</Text>
+              <Switch
+                accessibilityLabel="Remind when a routine finishes"
+                testID="playlist-routine-completion-reminder"
+                disabled={busy}
+                value={reminderSettings.routineCompletion}
+                onValueChange={(value) => setReminderSettings(current => ({ ...current, routineCompletion: value }))}
+                trackColor={{ true: colors.primary, false: colors.border }}
+              />
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.hdr}>
           <Text style={[styles.label, { color: colors.inkSoft, marginBottom: 0 }]}>Order</Text>
@@ -251,6 +289,9 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
 const styles = StyleSheet.create({
   notice: { borderRadius: 14, padding: 12, marginBottom: 14 },
   ratingSetting: { borderWidth: 1, borderRadius: 15, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  reminderSettings: { borderWidth: 1, borderRadius: 15, padding: 13, gap: 8, marginBottom: 10 },
+  reminderRow: { minHeight: 42, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 7, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  reminderLabel: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14 },
   ratingSettingCopy: { flex: 1, gap: 4 },
   ratingSettingTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   ratingSettingHint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17 },

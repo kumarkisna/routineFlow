@@ -10,6 +10,7 @@ import { Notifications } from '@/lib/localNotifications';
 import { alertDate, futureScheduleAlerts, scheduleAlertContent, scheduleAlertOffsets, validateAlertOffsets } from '@/lib/scheduleAlerts';
 import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, parseSchedules, persistScheduleChange,
   scheduledPlaylistSource, type RoutineSchedule, type ScheduleTargetType } from '@/lib/schedules';
+import type { RoutineNotificationSettings } from '@/types/routines';
 
 const KEY = '@routine-flow/schedules';
 type Draft = { targetType: ScheduleTargetType; targetId: string; scheduledAt: string; reminder: boolean; alertOffsetsMinutes?: number[] };
@@ -21,7 +22,9 @@ type ScheduleContextValue = {
   saveSchedule: (draft: Draft, id?: string) => Promise<void>;
   copySchedule: (sourceId: string, draft: Draft) => Promise<void>;
   deleteSchedule: (id: string) => Promise<void>;
-  savePlaylistForSchedule: (id: string, title: string, routineIds: string[], skillIds?: string[]) => Promise<void>;
+  savePlaylistForSchedule: (
+    id: string, title: string, routineIds: string[], skillIds?: string[], reminderSettings?: RoutineNotificationSettings,
+  ) => Promise<void>;
   resetScheduledPlaylist: (id: string) => Promise<void>;
   removeSkillAssignments: (skillId: string) => Promise<void>;
 };
@@ -141,11 +144,14 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
   const saveSchedule = useCallback((draft: Draft, id?: string) => writeSchedule(draft, id), [writeSchedule]);
   const copySchedule = useCallback((sourceId: string, draft: Draft) => writeSchedule(draft, undefined, sourceId), [writeSchedule]);
   const deleteSchedule = useCallback((id: string) => runWrite(() => commit(null, id)), [commit, runWrite]);
-  const savePlaylistForSchedule = useCallback((id: string, title: string, routineIds: string[], skillIds?: string[]) => runWrite(async () => {
+  const savePlaylistForSchedule = useCallback((
+    id: string, title: string, routineIds: string[], skillIds?: string[],
+    reminderSettings?: RoutineNotificationSettings,
+  ) => runWrite(async () => {
     if (routinesLoading) throw new Error('Wait for your routines to load.');
     const old = current.current.find(item => item.id === id);
     if (!old) throw new Error('Schedule not found.');
-    const next = editScheduledPlaylist(old, title, routineIds, skillIds);
+    const next = editScheduledPlaylist(old, title, routineIds, skillIds, reminderSettings);
     if (!playablePlaylistIds(next.playlistOverride!.routineIds, routines).length) {
       throw new Error('Add at least one available routine with visible steps.');
     }

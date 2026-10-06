@@ -8,6 +8,8 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 import { usePeople } from '@/context/PeopleContext';
 import { useColors } from '@/hooks/useColors';
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
+import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
+import type { RoutineNotificationSettings } from '@/types/routines';
 import type { Person, PersonSnapshot } from '@/types/people';
 
 const msg = (e: unknown, fb: string) => (e instanceof Error && e.message ? e.message : fb);
@@ -18,9 +20,15 @@ export default function PeopleScreen() {
   const { people, activePerson, busy, notice, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson } = usePeople();
   const [name, setName] = React.useState('');
   const [newPersonPlaylistRatingDefault, setNewPersonPlaylistRatingDefault] = React.useState(true);
+  const [newPersonReminderSettings, setNewPersonReminderSettings] = React.useState<RoutineNotificationSettings>(
+    { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
+  );
   const [editingPersonId, setEditingPersonId] = React.useState<string | null>(null);
   const [editingName, setEditingName] = React.useState('');
   const [editingPlaylistRatingDefault, setEditingPlaylistRatingDefault] = React.useState(true);
+  const [editingReminderSettings, setEditingReminderSettings] = React.useState<RoutineNotificationSettings>(
+    { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
+  );
   const [error, setError] = React.useState('');
   const [working, setWorking] = React.useState(false);
   const [sourceId, setSourceId] = React.useState<string | null>(null);
@@ -73,14 +81,20 @@ export default function PeopleScreen() {
     setEditingPersonId(person.id);
     setEditingName(person.name);
     setEditingPlaylistRatingDefault(person.defaultRateSkillsAtPlaylistEnd ?? true);
+    setEditingReminderSettings({ ...person.defaultPlaylistReminderSettings });
     setError('');
   }
 
   function submitAdd() {
     void run(async () => {
-      await addPerson({ name, defaultRateSkillsAtPlaylistEnd: newPersonPlaylistRatingDefault });
+      await addPerson({
+        name,
+        defaultRateSkillsAtPlaylistEnd: newPersonPlaylistRatingDefault,
+        defaultPlaylistReminderSettings: { ...newPersonReminderSettings },
+      });
       setName('');
       setNewPersonPlaylistRatingDefault(true);
+      setNewPersonReminderSettings({ ...DEFAULT_PLAYLIST_REMINDER_SETTINGS });
     }, 'Could not add person.');
   }
 
@@ -89,6 +103,7 @@ export default function PeopleScreen() {
       await updatePerson(personId, {
         name: editingName,
         defaultRateSkillsAtPlaylistEnd: editingPlaylistRatingDefault,
+        defaultPlaylistReminderSettings: { ...editingReminderSettings },
       });
       setEditingPersonId(null);
     }, 'Could not update person.');
@@ -228,6 +243,12 @@ export default function PeopleScreen() {
                         trackColor={{ true: colors.primary, false: colors.border }}
                       />
                     </View>
+                    <PlaylistReminderDefaults
+                      settings={editingReminderSettings}
+                      onChange={setEditingReminderSettings}
+                      disabled={disabled}
+                      testIDPrefix={`person-playlist-reminders-${p.id}`}
+                    />
                     <View style={styles.formActions}>
                       <Pressable
                         testID={`person-edit-cancel-${p.id}`}
@@ -287,6 +308,12 @@ export default function PeopleScreen() {
               trackColor={{ true: colors.primary, false: colors.border }}
             />
           </View>
+          <PlaylistReminderDefaults
+            settings={newPersonReminderSettings}
+            onChange={setNewPersonReminderSettings}
+            disabled={disabled}
+            testIDPrefix="new-person-playlist-reminders"
+          />
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
             New people start empty and become active right away. Each person keeps separate routines, playlists, schedules, and progress.
           </Text>
@@ -346,6 +373,54 @@ export default function PeopleScreen() {
   );
 }
 
+function PlaylistReminderDefaults({
+  settings,
+  onChange,
+  disabled,
+  testIDPrefix,
+}: {
+  settings: RoutineNotificationSettings;
+  onChange: (settings: RoutineNotificationSettings) => void;
+  disabled: boolean;
+  testIDPrefix: string;
+}) {
+  const colors = useColors();
+  const update = (key: keyof RoutineNotificationSettings, value: boolean) =>
+    onChange({ ...settings, [key]: value });
+  return (
+    <View style={[styles.reminderDefaults, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.reminderDefaultsCopy}>
+        <Text style={[styles.itemText, { color: colors.foreground }]}>Default playlist reminders</Text>
+        <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+          New playlists start with these choices. You can change them in playlist edit mode.
+        </Text>
+      </View>
+      <View style={[styles.reminderDefaultRow, { borderColor: colors.border }]}>
+        <Text style={[styles.reminderDefaultLabel, { color: colors.foreground }]}>When a step finishes</Text>
+        <Switch
+          testID={`${testIDPrefix}-step-completion`}
+          accessibilityLabel="Default reminder when a step finishes"
+          disabled={disabled}
+          value={settings.stepCompletion}
+          onValueChange={(value) => update('stepCompletion', value)}
+          trackColor={{ true: colors.primary, false: colors.border }}
+        />
+      </View>
+      <View style={[styles.reminderDefaultRow, { borderColor: colors.border }]}>
+        <Text style={[styles.reminderDefaultLabel, { color: colors.foreground }]}>When a routine finishes</Text>
+        <Switch
+          testID={`${testIDPrefix}-routine-completion`}
+          accessibilityLabel="Default reminder when a routine finishes"
+          disabled={disabled}
+          value={settings.routineCompletion}
+          onValueChange={(value) => update('routineCompletion', value)}
+          trackColor={{ true: colors.primary, false: colors.border }}
+        />
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -360,6 +435,10 @@ const styles = StyleSheet.create({
   input: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontFamily: 'Inter_500Medium', fontSize: 15 },
   profileEditor: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 },
   profileRatingSetting: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 12 },
+  reminderDefaults: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 8 },
+  reminderDefaultsCopy: { gap: 3, paddingBottom: 2 },
+  reminderDefaultRow: { minHeight: 44, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 7 },
+  reminderDefaultLabel: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14 },
   editButton: { minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   formActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   btnSecondary: { minHeight: 48, paddingHorizontal: 18, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

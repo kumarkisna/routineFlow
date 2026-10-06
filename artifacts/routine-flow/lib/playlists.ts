@@ -1,4 +1,18 @@
-import type { Routine } from '../types/routines';
+import type { Routine, RoutineNotificationSettings } from '../types/routines';
+
+export const DEFAULT_PLAYLIST_REMINDER_SETTINGS: RoutineNotificationSettings = {
+  stepCompletion: false,
+  routineCompletion: false,
+};
+
+export function resolvePlaylistReminderSettings(
+  personDefaults?: RoutineNotificationSettings,
+  savedSettings?: RoutineNotificationSettings,
+): RoutineNotificationSettings {
+  return {
+    ...(savedSettings ?? personDefaults ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS),
+  };
+}
 
 export type RoutinePlaylist = {
   id: string;
@@ -8,6 +22,8 @@ export type RoutinePlaylist = {
   skillIds?: string[];
   /** When enabled, defer skill ratings until the complete playlist run finishes. */
   rateSkillsAtPlaylistEnd?: boolean;
+  /** Reminder choices for runs launched from this playlist. */
+  reminderSettings?: RoutineNotificationSettings;
 };
 
 export function playablePlaylistIds(ids: string[], routines: Routine[]): string[] {
@@ -33,10 +49,19 @@ export function parsePlaylists(value: string): RoutinePlaylist[] {
       || item.skillIds.some((id: unknown) => typeof id !== 'string' || !id.trim())
       || new Set(item.skillIds).size !== item.skillIds.length))
     || (item.rateSkillsAtPlaylistEnd !== undefined && typeof item.rateSkillsAtPlaylistEnd !== 'boolean')
+    || (item.reminderSettings !== undefined && (
+      !item.reminderSettings
+      || typeof item.reminderSettings.stepCompletion !== 'boolean'
+      || typeof item.reminderSettings.routineCompletion !== 'boolean'
+    ))
   )) throw new Error('Saved playlists could not be read.');
   return parsed.map(playlist => ({
     ...playlist,
     rateSkillsAtPlaylistEnd: playlist.rateSkillsAtPlaylistEnd ?? true,
+    reminderSettings: {
+      stepCompletion: playlist.reminderSettings?.stepCompletion ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,
+      routineCompletion: playlist.reminderSettings?.routineCompletion ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.routineCompletion,
+    },
   }));
 }
 
@@ -112,6 +137,7 @@ export function remapPlaylistReferences(
     ...(playlist.skillIds !== undefined
       ? { skillIds: playlist.skillIds.map(id => skillIdMap[id] ?? id) }
       : {}),
+    ...(playlist.reminderSettings ? { reminderSettings: { ...playlist.reminderSettings } } : {}),
   }));
 }
 

@@ -1,9 +1,16 @@
 import { validatePlaylist, type RoutinePlaylist } from './playlists';
+import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from './playlists';
 import { alertDate, futureScheduleAlerts, MAX_SCHEDULE_ALERTS, scheduleNotificationRecords, validateAlertOffsets,
   type ScheduledAlertNotification } from './scheduleAlerts';
+import type { RoutineNotificationSettings } from '../types/routines';
 
 export type ScheduleTargetType = 'routine' | 'playlist';
-export type ScheduledPlaylistOverride = { title: string; routineIds: string[]; skillIds?: string[] };
+export type ScheduledPlaylistOverride = {
+  title: string;
+  routineIds: string[];
+  skillIds?: string[];
+  reminderSettings?: RoutineNotificationSettings;
+};
 export type RoutineSchedule = {
   id: string;
   targetType: ScheduleTargetType;
@@ -24,13 +31,16 @@ export function scheduledPlaylistSource(schedule: RoutineSchedule, playlists: Ro
   if (schedule.playlistOverride) {
     return { id: schedule.targetId, title: schedule.playlistOverride.title, routineIds: [...schedule.playlistOverride.routineIds],
       ...(schedule.playlistOverride.skillIds ? { skillIds: [...schedule.playlistOverride.skillIds] } : {}),
-      rateSkillsAtPlaylistEnd: savedPlaylist?.rateSkillsAtPlaylistEnd ?? true };
+      rateSkillsAtPlaylistEnd: savedPlaylist?.rateSkillsAtPlaylistEnd ?? true,
+      reminderSettings: { ...(schedule.playlistOverride.reminderSettings ?? savedPlaylist?.reminderSettings
+        ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS) } };
   }
   return savedPlaylist ?? null;
 }
 
 export function editScheduledPlaylist(
   schedule: RoutineSchedule, title: string, routineIds: string[], skillIds?: string[],
+  reminderSettings?: RoutineNotificationSettings,
 ): RoutineSchedule {
   if (schedule.targetType !== 'playlist') throw new Error('Only a scheduled playlist can have a date-only playlist edit.');
   validatePlaylist(title, routineIds);
@@ -38,7 +48,9 @@ export function editScheduledPlaylist(
     ...schedule, targetTitle: title.trim(), notificationId: undefined, notifications: undefined,
     playlistOverride: { title: title.trim(), routineIds: [...routineIds],
       ...((skillIds ?? schedule.playlistOverride?.skillIds)?.length
-        ? { skillIds: [...(skillIds ?? schedule.playlistOverride!.skillIds!)] } : {}) },
+        ? { skillIds: [...(skillIds ?? schedule.playlistOverride!.skillIds!)] } : {}),
+      ...((reminderSettings ?? schedule.playlistOverride?.reminderSettings)
+        ? { reminderSettings: { ...(reminderSettings ?? schedule.playlistOverride!.reminderSettings!) } } : {}) },
   };
 }
 
@@ -49,7 +61,9 @@ export function keepScheduledPlaylistOverride(
   if (!previous?.playlistOverride || previous.targetType !== draft.targetType || previous.targetId !== draft.targetId) return draft;
   return { ...draft, targetTitle: previous.playlistOverride.title,
     playlistOverride: { title: previous.playlistOverride.title, routineIds: [...previous.playlistOverride.routineIds],
-      ...(previous.playlistOverride.skillIds ? { skillIds: [...previous.playlistOverride.skillIds] } : {}) } };
+      ...(previous.playlistOverride.skillIds ? { skillIds: [...previous.playlistOverride.skillIds] } : {}),
+      ...(previous.playlistOverride.reminderSettings
+        ? { reminderSettings: { ...previous.playlistOverride.reminderSettings } } : {}) } };
 }
 
 /** Copy an appointment without sharing its notification or date-only playlist array. */
@@ -121,6 +135,11 @@ export function parseSchedules(value: string): RoutineSchedule[] {
       || (item.playlistOverride.skillIds !== undefined && (!Array.isArray(item.playlistOverride.skillIds)
         || item.playlistOverride.skillIds.some((id: unknown) => typeof id !== 'string' || !id.trim())
         || new Set(item.playlistOverride.skillIds).size !== item.playlistOverride.skillIds.length))
+      || (item.playlistOverride.reminderSettings !== undefined && (
+        !item.playlistOverride.reminderSettings
+        || typeof item.playlistOverride.reminderSettings.stepCompletion !== 'boolean'
+        || typeof item.playlistOverride.reminderSettings.routineCompletion !== 'boolean'
+      ))
     ))
   )) throw new Error('Saved schedules could not be read.');
   return parsed;
