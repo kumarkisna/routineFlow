@@ -30,6 +30,10 @@ function NativeTabLayout() {
         <NativeTabs.Trigger.Icon sf={{ default: 'music.note.list', selected: 'music.note.list' }} />
         <NativeTabs.Trigger.Label>Playlists</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="skills">
+        <NativeTabs.Trigger.Icon sf={{ default: 'sparkles', selected: 'sparkles' }} />
+        <NativeTabs.Trigger.Label>Skills</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="schedule">
         <NativeTabs.Trigger.Icon sf={{ default: 'clock', selected: 'clock.fill' }} />
         <NativeTabs.Trigger.Label>Schedule</NativeTabs.Trigger.Label>
@@ -113,6 +117,18 @@ function ClassicTabLayout() {
               <SymbolView name="music.note.list" tintColor={color} size={24} />
             ) : (
               <Feather name="list" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="skills"
+        options={{
+          title: 'Skills',
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="sparkles" tintColor={color} size={24} />
+            ) : (
+              <Feather name="zap" size={22} color={color} />
             ),
         }}
       />

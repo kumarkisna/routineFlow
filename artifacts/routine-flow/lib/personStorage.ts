@@ -7,6 +7,7 @@ export const PERSON_DATA_KEYS = {
   progress: '@routine-flow/progress',
   playlists: '@routine-flow/playlists',
   schedules: '@routine-flow/schedules',
+  skills: '@routine-flow/skills',
   appearance: '@routine-flow/appearance',
 } as const;
 

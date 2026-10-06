@@ -68,9 +68,9 @@ type RoutineContextValue = {
   loading: boolean;
   toggleStep: (routineId: string, stepId: string) => Promise<void>;
   completeRoutine: (routineId: string) => Promise<void>;
-  createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string) => Promise<Routine>;
+  createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
-  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string) => Promise<void>;
+  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => Promise<void>;
   renameCategory: (source: string, target: string) => Promise<void>;
   removeCategory: (source: string) => Promise<void>;
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
@@ -82,6 +82,7 @@ type RoutineContextValue = {
   deleteRoutine: (routineId: string) => Promise<void>;
   resetToday: () => Promise<void>;
   getCompletedCount: (routine: Routine) => number;
+  removeSkillAssignments: (skillId: string) => Promise<void>;
 };
 
 const RoutineContext = createContext<RoutineContextValue | null>(null);
@@ -165,12 +166,13 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createRoutine = useCallback(
-    (title: string, subtitle: string, steps: RoutineStep[], category?: string) => runRoutineWrite(async () => {
+    (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => runRoutineWrite(async () => {
       const routine: Routine = {
         id: makeId(),
         title,
         subtitle,
         ...(category ? { category } : {}),
+        ...(skillIds?.length ? { skillIds: [...skillIds] } : {}),
         icon: 'sparkles-outline',
         tone: 'sun',
         steps,
@@ -198,18 +200,44 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateRoutine = useCallback(
-    (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string) => runRoutineWrite(async () => {
+    (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => runRoutineWrite(async () => {
       if (!routines.some((routine) => routine.id === routineId)) {
         throw new Error('Routine not found');
       }
       const nextRoutines = routines.map((routine) =>
-        routine.id === routineId ? { ...routine, title, subtitle, steps, category } : routine,
+        routine.id === routineId ? {
+          ...routine, title, subtitle, steps, category,
+          ...(skillIds !== undefined ? { skillIds: [...skillIds] } : {}),
+        } : routine,
       );
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
     }),
     [routines, runRoutineWrite],
   );
+
+  const removeSkillAssignments = useCallback((skillId: string) => runRoutineWrite(async () => {
+    if (loading) throw new Error('Wait for routines to load before deleting this skill.');
+    const remove = (ids: string[] | undefined) => {
+      if (!ids?.includes(skillId)) return ids;
+      const remaining = ids.filter(id => id !== skillId);
+      return remaining.length ? remaining : undefined;
+    };
+    const nextRoutines = routines.map(routine => ({
+      ...routine,
+      ...(routine.skillIds?.includes(skillId) ? { skillIds: remove(routine.skillIds) } : {}),
+      steps: routine.steps.map(step => ({
+        ...step,
+        ...(step.skillIds?.includes(skillId) ? { skillIds: remove(step.skillIds) } : {}),
+      })),
+    }));
+    const changed = routines.some((routine, index) =>
+      nextRoutines[index].skillIds !== routine.skillIds
+      || routine.steps.some((step, stepIndex) => nextRoutines[index].steps[stepIndex].skillIds !== step.skillIds));
+    if (!changed) return;
+    await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+    setRoutines(nextRoutines);
+  }), [AsyncStorage, loading, routines, runRoutineWrite]);
 
   const renameCategory = useCallback(
     (source: string, target: string) => runRoutineWrite(async () => {
@@ -334,6 +362,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       deleteRoutine,
       resetToday,
       getCompletedCount,
+      removeSkillAssignments,
     }),
     [
       routines,
@@ -353,6 +382,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       deleteRoutine,
       resetToday,
       getCompletedCount,
+      removeSkillAssignments,
     ],
   );
 

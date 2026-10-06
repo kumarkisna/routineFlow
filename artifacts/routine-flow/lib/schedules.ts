@@ -3,7 +3,7 @@ import { alertDate, futureScheduleAlerts, MAX_SCHEDULE_ALERTS, scheduleNotificat
   type ScheduledAlertNotification } from './scheduleAlerts';
 
 export type ScheduleTargetType = 'routine' | 'playlist';
-export type ScheduledPlaylistOverride = { title: string; routineIds: string[] };
+export type ScheduledPlaylistOverride = { title: string; routineIds: string[]; skillIds?: string[] };
 export type RoutineSchedule = {
   id: string;
   targetType: ScheduleTargetType;
@@ -21,17 +21,22 @@ export type RoutineSchedule = {
 export function scheduledPlaylistSource(schedule: RoutineSchedule, playlists: RoutinePlaylist[]): RoutinePlaylist | null {
   if (schedule.targetType !== 'playlist') return null;
   if (schedule.playlistOverride) {
-    return { id: schedule.targetId, title: schedule.playlistOverride.title, routineIds: [...schedule.playlistOverride.routineIds] };
+    return { id: schedule.targetId, title: schedule.playlistOverride.title, routineIds: [...schedule.playlistOverride.routineIds],
+      ...(schedule.playlistOverride.skillIds ? { skillIds: [...schedule.playlistOverride.skillIds] } : {}) };
   }
   return playlists.find(item => item.id === schedule.targetId) ?? null;
 }
 
-export function editScheduledPlaylist(schedule: RoutineSchedule, title: string, routineIds: string[]): RoutineSchedule {
+export function editScheduledPlaylist(
+  schedule: RoutineSchedule, title: string, routineIds: string[], skillIds?: string[],
+): RoutineSchedule {
   if (schedule.targetType !== 'playlist') throw new Error('Only a scheduled playlist can have a date-only playlist edit.');
   validatePlaylist(title, routineIds);
   return {
     ...schedule, targetTitle: title.trim(), notificationId: undefined, notifications: undefined,
-    playlistOverride: { title: title.trim(), routineIds: [...routineIds] },
+    playlistOverride: { title: title.trim(), routineIds: [...routineIds],
+      ...((skillIds ?? schedule.playlistOverride?.skillIds)?.length
+        ? { skillIds: [...(skillIds ?? schedule.playlistOverride!.skillIds!)] } : {}) },
   };
 }
 
@@ -41,7 +46,8 @@ export function keepScheduledPlaylistOverride(
 ): RoutineSchedule {
   if (!previous?.playlistOverride || previous.targetType !== draft.targetType || previous.targetId !== draft.targetId) return draft;
   return { ...draft, targetTitle: previous.playlistOverride.title,
-    playlistOverride: { title: previous.playlistOverride.title, routineIds: [...previous.playlistOverride.routineIds] } };
+    playlistOverride: { title: previous.playlistOverride.title, routineIds: [...previous.playlistOverride.routineIds],
+      ...(previous.playlistOverride.skillIds ? { skillIds: [...previous.playlistOverride.skillIds] } : {}) } };
 }
 
 /** Copy an appointment without sharing its notification or date-only playlist array. */
@@ -110,6 +116,9 @@ export function parseSchedules(value: string): RoutineSchedule[] {
       || !Array.isArray(item.playlistOverride.routineIds) || item.playlistOverride.routineIds.length === 0
       || item.playlistOverride.routineIds.length > 100
       || item.playlistOverride.routineIds.some((id: unknown) => typeof id !== 'string')
+      || (item.playlistOverride.skillIds !== undefined && (!Array.isArray(item.playlistOverride.skillIds)
+        || item.playlistOverride.skillIds.some((id: unknown) => typeof id !== 'string' || !id.trim())
+        || new Set(item.playlistOverride.skillIds).size !== item.playlistOverride.skillIds.length))
     ))
   )) throw new Error('Saved schedules could not be read.');
   return parsed;

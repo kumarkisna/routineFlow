@@ -8,6 +8,8 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSchedules } from '@/context/ScheduleContext';
+import { useSkills } from '@/context/SkillContext';
+import { SkillPicker } from '@/components/SkillPicker';
 import { useColors } from '@/hooks/useColors';
 import { playablePlaylistIds } from '@/lib/playlists';
 import { scheduledPlaylistSource } from '@/lib/schedules';
@@ -40,19 +42,24 @@ export default function PlaylistEditor() {
   const origOk = !!schedule && !!playlists.find((p) => p.id === schedule.targetId) && !error;
   const src = scheduled ?? existing;
   return <Editor key={scheduleId ? `s-${scheduleId}` : id ?? 'new'} editId={existing?.id} scheduleId={scheduleId} hasOverride={hasOverride} canReset={origOk}
-    initialTitle={src?.title ?? ''} initialIds={src?.routineIds ?? []} />;
+    initialTitle={src?.title ?? ''} initialIds={src?.routineIds ?? []} initialSkillIds={src?.skillIds ?? []} />;
 }
 
-function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds }: { editId?: string; scheduleId?: string; hasOverride: boolean; canReset: boolean; initialTitle: string; initialIds: string[] }) {
+function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds, initialSkillIds }: {
+  editId?: string; scheduleId?: string; hasOverride: boolean; canReset: boolean;
+  initialTitle: string; initialIds: string[]; initialSkillIds: string[];
+}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { savePlaylist } = usePlaylists();
   const { schedules, savePlaylistForSchedule, resetScheduledPlaylist } = useSchedules();
   const appointment = scheduleId ? schedules.find(item => item.id === scheduleId) : undefined;
   const { routines } = useRoutines();
+  const { skills } = useSkills();
   const [confirmReset, setConfirmReset] = React.useState(false);
   const [title, setTitle] = React.useState(initialTitle);
   const [ids, setIds] = React.useState<string[]>(initialIds);
+  const [skillIds, setSkillIds] = React.useState<string[]>(initialSkillIds);
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const lock = React.useRef(false);
@@ -81,8 +88,10 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     setError('');
     Keyboard.dismiss();
     try {
-      if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids);
-      else await savePlaylist(title, ids, editId);
+      const availableSkills = new Set(skills.map(skill => skill.id));
+      const savedSkillIds = skillIds.filter(id => availableSkills.has(id));
+      if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds);
+      else await savePlaylist(title, ids, editId, savedSkillIds);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e) {
@@ -142,6 +151,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
           value={title} maxLength={100} editable={!busy} returnKeyType="done" onSubmitEditing={() => void save()}
           onChangeText={(t) => { setTitle(t); setError(''); }}
           style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]} />
+        <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={busy} testIDPrefix="playlist-skill" />
 
         <View style={styles.hdr}>
           <Text style={[styles.label, { color: colors.inkSoft, marginBottom: 0 }]}>Order</Text>

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { SkillTagList } from '@/components/SkillPicker';
 import { playablePlaylistIds, type RoutinePlaylist } from '@/lib/playlists';
 import { formatDuration, getStepSeconds } from '@/types/routines';
 
@@ -110,6 +111,7 @@ export default function PlaylistsScreen() {
           return (
             <View testID={`playlist-${item.id}`} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
+              <SkillTagList skillIds={item.skillIds} />
               <Text style={[styles.meta, { color: colors.inkSoft }]}>
                 {playable.length} {playable.length === 1 ? 'routine' : 'routines'} · {formatDuration(seconds(item.routineIds))}
                 {playable.length < item.routineIds.length ? ` · ${item.routineIds.length - playable.length} unavailable` : ''}

@@ -20,8 +20,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
+import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
+import { remapRoutineSkillIds } from '@/lib/skills';
 import { readPersonExportSnapshot } from '@/lib/personCopy';
 import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializePersonBackup, type RoutineBackup } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
@@ -35,6 +37,7 @@ export default function HomeScreen() {
   const { activePerson } = usePeople();
   const insets = useSafeAreaInsets();
   const { routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine, importRoutines, resetToday, renameCategory, removeCategory } = useRoutines();
+  const { mergeImportedSkills } = useSkills();
   const [showHidden, setShowHidden] = React.useState(false);
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
   const [renameDraft, setRenameDraft] = React.useState<string | null>(null);
@@ -166,6 +169,7 @@ export default function HomeScreen() {
         playlists: personData.playlists,
         schedules: personData.schedules,
         selectedThemeId: personData.selectedThemeId,
+        skills: personData.skills,
       },
       includeProgress ? personData.progress : undefined,
     );
@@ -283,11 +287,14 @@ export default function HomeScreen() {
   }
 
   async function applyImport(backup: RoutineBackup, restoreHistory: boolean) {
-    const result = await importRoutines(backup, restoreHistory);
+    const skillIdMap = await mergeImportedSkills(backup.skills ?? []);
+    const remappedBackup = { ...backup, routines: remapRoutineSkillIds(backup.routines, skillIdMap) };
+    const result = await importRoutines(remappedBackup, restoreHistory);
     const details = [
       `${result.added} ${result.added === 1 ? 'routine' : 'routines'} imported`,
       result.skipped ? `${result.skipped} already present` : null,
       result.renamed ? `${result.renamed} kept as a separate copy` : null,
+      backup.skills?.length ? 'Skills merged' : null,
       restoreHistory ? `${result.progressAdded} completed steps added${result.progressKept ? ` (${result.progressKept} local entries kept)` : ''}` : null,
       backup.personData ? 'Playlists, schedules, and selected theme are not restored by Import JSON.' : null,
     ].filter(Boolean).join(' · ');

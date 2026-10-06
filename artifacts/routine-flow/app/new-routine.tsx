@@ -13,6 +13,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useRoutines } from '@/context/RoutineContext';
+import { useSkills } from '@/context/SkillContext';
+import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
 import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
 import { formatDuration, getStepDetails, getStepSeconds } from '@/types/routines';
@@ -37,6 +39,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { routines, createRoutine, updateRoutine } = useRoutines();
+  const { skills } = useSkills();
   const [title, setTitle] = useState(editingRoutine?.title ?? '');
   const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
   const [category, setCategory] = useState(editingRoutine?.category ?? '');
@@ -47,6 +50,8 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [minutesDraft, setMinutesDraft] = useState('5');
   const [secondsDraft, setSecondsDraft] = useState('0');
   const [steps, setSteps] = useState<RoutineStep[]>(editingRoutine?.steps ?? []);
+  const [skillIds, setSkillIds] = useState<string[]>(editingRoutine?.skillIds ?? []);
+  const [stepSkillIds, setStepSkillIds] = useState<string[]>([]);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -59,6 +64,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft('');
     setStepDescriptionDraft('');
     setAdditionalDetailsDraft([]);
+    setStepSkillIds([]);
     setHoursDraft('0');
     setMinutesDraft('5');
     setSecondsDraft('0');
@@ -70,6 +76,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft(step.title);
     setStepDescriptionDraft(step.description ?? '');
     setAdditionalDetailsDraft([...(step.additionalDetails ?? [])]);
+    setStepSkillIds([...(step.skillIds ?? [])]);
     setHoursDraft(String(Math.floor(duration / 3600)));
     setMinutesDraft(String(Math.floor((duration % 3600) / 60)));
     setSecondsDraft(String(duration % 60));
@@ -95,7 +102,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     if (editingStepId) {
       setSteps((current) => current.map((step) =>
         step.id === editingStepId
-          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, durationSeconds }
+          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, skillIds: [...stepSkillIds], durationSeconds }
           : step,
       ));
     } else {
@@ -106,6 +113,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           title: nextTitle,
           description: nextDescription,
           additionalDetails: nextAdditionalDetails,
+          ...(stepSkillIds.length ? { skillIds: [...stepSkillIds] } : {}),
           durationSeconds,
         },
       ]);
@@ -152,11 +160,17 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setSaving(true);
     try {
       const savedCategory = normalizeCategory(category, existingCategories);
+      const availableSkills = new Set(skills.map(skill => skill.id));
+      const savedSkillIds = skillIds.filter(id => availableSkills.has(id));
+      const savedSteps = steps.map(step => ({
+        ...step,
+        ...(step.skillIds ? { skillIds: step.skillIds.filter(id => availableSkills.has(id)) } : {}),
+      }));
       if (editingRoutine) {
-        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', steps, savedCategory);
+        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds);
         router.back();
       } else {
-        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', steps, savedCategory);
+        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds);
         router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -228,6 +242,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           onChangeText={setSubtitle}
           style={[styles.input, styles.descriptionInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
         />
+        <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={saving} testIDPrefix="routine-skill" />
         <Text style={[styles.categoryLabel, { color: colors.inkSoft }]}>Category (optional)</Text>
         <TextInput
           accessibilityLabel="Routine category"
@@ -351,6 +366,13 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
             <Text style={[styles.addDetailText, { color: colors.primary }]}>Add another detail</Text>
           </Pressable>
+          <SkillPicker
+            label="Step skills (optional)"
+            selectedIds={stepSkillIds}
+            onChange={setStepSkillIds}
+            disabled={saving}
+            testIDPrefix="step-skill"
+          />
           <View style={styles.durationComposer}>
             <Text style={[styles.durationLabel, { color: colors.mutedForeground }]}>Timer</Text>
             <View style={styles.timeInputs}>
@@ -409,6 +431,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                   {getStepDetails(step).join(' · ')}
                 </Text>
               ) : null}
+              <SkillTagList skillIds={step.skillIds} />
               <Text style={[styles.stepDuration, { color: colors.mutedForeground }]}>
                 {formatDuration(getStepSeconds(step))}
               </Text>

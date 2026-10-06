@@ -176,6 +176,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       [personStorageKey(person.id, PERSON_DATA_KEYS.progress), '{}'],
       [personStorageKey(person.id, PERSON_DATA_KEYS.playlists), '[]'],
       [personStorageKey(person.id, PERSON_DATA_KEYS.schedules), '[]'],
+      [personStorageKey(person.id, PERSON_DATA_KEYS.skills), '[]'],
       [personStorageKey(person.id, PERSON_DATA_KEYS.appearance), DEFAULT_THEME_ID],
     ]);
     const next: Registry = { version: 1, people: [...previous.people, person], activePersonId: person.id };
@@ -230,6 +231,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
         [personStorageKey(destinationId, PERSON_DATA_KEYS.routines), JSON.stringify(result.snapshot.routines)],
         [personStorageKey(destinationId, PERSON_DATA_KEYS.playlists), JSON.stringify(result.snapshot.playlists)],
         [personStorageKey(destinationId, PERSON_DATA_KEYS.schedules), JSON.stringify(result.snapshot.schedules)],
+        [personStorageKey(destinationId, PERSON_DATA_KEYS.skills), JSON.stringify(result.snapshot.skills)],
       ]);
     } catch {
       router.replace('/');

@@ -3,10 +3,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_THEME_ID, findAppTheme } from './appThemes';
 import { parsePlaylists } from './playlists';
 import { PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from './personStorage';
-import { parseRoutinesFile, repairStoredRoutineDurations } from './routineTransfer';
+import { parseRoutinesFile, repairStoredRoutineDurations, ROUTINE_BACKUP_VERSION } from './routineTransfer';
 import { parseSchedules } from './schedules';
+import { parseSkills, skillNameKey } from './skills';
 import type { PersonCopySelection, PersonCopySummary, PersonSnapshot } from '@/types/people';
 import type { CompletionMap, Routine } from '@/types/routines';
+import type { RoutineSkill } from './skills';
 
 export type PersonExportSnapshot = PersonSnapshot & {
   progress: CompletionMap;
@@ -25,7 +27,7 @@ function makeId(usedIds: Set<string>): string {
 }
 
 /**
- * Copy selected routines, playlists, and schedules into another person's snapshot.
+ * Copy selected routines, playlists, schedules, and the skills they reference.
  * References are remapped as one batch, and schedule reminders are deliberately
  * disabled so copying never creates native notifications.
  */
@@ -41,6 +43,7 @@ export function buildPersonCopy(
   const sourceRoutines = new Map(source.routines.map(item => [item.id, item]));
   const sourcePlaylists = new Map(source.playlists.map(item => [item.id, item]));
   const sourceSchedules = new Map(source.schedules.map(item => [item.id, item]));
+  const sourceSkills = new Map((source.skills ?? []).map(item => [item.id, item]));
 
   const routinesToCopy = new Set<string>();
   const playlistsToCopy = new Set<string>();
@@ -89,14 +92,51 @@ export function buildPersonCopy(
     }
   }
 
+  const skillsToCopy = new Set<string>();
+  const addSkillDependencies = (ids: string[] | undefined, owner: string) => {
+    for (const id of ids ?? []) {
+      if (!sourceSkills.has(id)) throw new Error(`Cannot copy: ${owner} references missing skill "${id}".`);
+      skillsToCopy.add(id);
+    }
+  };
+  for (const id of routinesToCopy) {
+    const routine = sourceRoutines.get(id)!;
+    addSkillDependencies(routine.skillIds, `Routine "${id}"`);
+    for (const step of routine.steps) addSkillDependencies(step.skillIds, `Routine "${id}" step "${step.id}"`);
+  }
+  for (const id of playlistsToCopy) {
+    addSkillDependencies(sourcePlaylists.get(id)?.skillIds, `Playlist "${id}"`);
+  }
+  for (const schedule of schedulesToCopy) {
+    addSkillDependencies(schedule.playlistOverride?.skillIds, `Schedule "${schedule.id}" playlist override`);
+  }
+
   const usedIds = new Set<string>();
   for (const item of [
     ...source.routines, ...source.playlists, ...source.schedules,
     ...destination.routines, ...destination.playlists, ...destination.schedules,
   ]) usedIds.add(item.id);
+  for (const skill of [...(source.skills ?? []), ...(destination.skills ?? [])]) usedIds.add(skill.id);
   for (const routine of [...source.routines, ...destination.routines]) {
     for (const step of routine.steps) usedIds.add(step.id);
   }
+
+  const destinationSkills = [...(destination.skills ?? [])];
+  const skillIdMap = new Map<string, string>();
+  for (const sourceSkillId of skillsToCopy) {
+    const sourceSkill = sourceSkills.get(sourceSkillId)!;
+    const existing = destinationSkills.find(skill => skillNameKey(skill.name) === skillNameKey(sourceSkill.name));
+    if (existing) {
+      skillIdMap.set(sourceSkillId, existing.id);
+      continue;
+    }
+    const copiedId = makeId(usedIds);
+    skillIdMap.set(sourceSkillId, copiedId);
+    const copied = { ...sourceSkill, id: copiedId };
+    destinationSkills.push(copied);
+  }
+  const mapSkillIds = (ids: string[] | undefined) => ids?.map(id => skillIdMap.get(id)!);
+
   const routineIdMap = new Map<string, string>();
   const copiedRoutines: Routine[] = [];
   for (const routineId of routinesToCopy) {
@@ -106,7 +146,12 @@ export function buildPersonCopy(
     copiedRoutines.push({
       ...routine,
       id: copiedId,
-      steps: routine.steps.map(step => ({ ...step, id: makeId(usedIds) })),
+      ...(routine.skillIds ? { skillIds: mapSkillIds(routine.skillIds) } : {}),
+      steps: routine.steps.map(step => ({
+        ...step,
+        id: makeId(usedIds),
+        ...(step.skillIds ? { skillIds: mapSkillIds(step.skillIds) } : {}),
+      })),
     });
   }
 
@@ -120,6 +165,7 @@ export function buildPersonCopy(
       ...playlist,
       id: copiedId,
       routineIds: playlist.routineIds.map(id => routineIdMap.get(id)!),
+      ...(playlist.skillIds ? { skillIds: mapSkillIds(playlist.skillIds) } : {}),
     });
   }
 
@@ -137,6 +183,8 @@ export function buildPersonCopy(
       playlistOverride: {
         ...schedule.playlistOverride,
         routineIds: schedule.playlistOverride.routineIds.map(id => routineIdMap.get(id)!),
+        ...(schedule.playlistOverride.skillIds
+          ? { skillIds: mapSkillIds(schedule.playlistOverride.skillIds) } : {}),
       },
     } : {}),
   }));
@@ -146,6 +194,7 @@ export function buildPersonCopy(
       routines: [...destination.routines, ...copiedRoutines],
       playlists: [...destination.playlists, ...copiedPlaylists],
       schedules: [...destination.schedules, ...copiedSchedules],
+      skills: [...destinationSkills],
     },
     summary: {
       routines: copiedRoutines.length,
@@ -157,10 +206,11 @@ export function buildPersonCopy(
 
 /** Read only the selected person's content; progress is intentionally excluded. */
 export async function readPersonSnapshot(personId: string): Promise<PersonSnapshot> {
-  const [routineValue, playlistValue, scheduleValue] = await Promise.all([
+  const [routineValue, playlistValue, scheduleValue, skillValue] = await Promise.all([
     AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.routines)),
     AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.playlists)),
     AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.schedules)),
+    AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.skills)),
   ]);
   let routines: Routine[] = [];
   if (routineValue !== null) {
@@ -168,7 +218,7 @@ export async function readPersonSnapshot(personId: string): Promise<PersonSnapsh
     // Routine storage is a plain array, whereas the transfer parser validates the
     // same routine records inside its versioned backup format.
     const contents = Array.isArray(parsed)
-      ? JSON.stringify({ format: 'routine-flow-routines', version: 5, routines: parsed })
+      ? JSON.stringify({ format: 'routine-flow-routines', version: ROUTINE_BACKUP_VERSION, routines: parsed })
       : routineValue;
     routines = parseRoutinesFile(contents).routines;
   }
@@ -176,6 +226,7 @@ export async function readPersonSnapshot(personId: string): Promise<PersonSnapsh
     routines,
     playlists: playlistValue === null ? [] : parsePlaylists(playlistValue),
     schedules: scheduleValue === null ? [] : parseSchedules(scheduleValue),
+    skills: skillValue === null ? [] : parseSkills(skillValue),
   };
 }
 
@@ -190,7 +241,7 @@ export async function readPersonExportSnapshot(personId: string): Promise<Person
     ? {}
     : parseRoutinesFile(JSON.stringify({
       format: 'routine-flow-routines',
-      version: 5,
+      version: ROUTINE_BACKUP_VERSION,
       routines: snapshot.routines,
       progress: JSON.parse(progressValue),
     })).progress ?? {};

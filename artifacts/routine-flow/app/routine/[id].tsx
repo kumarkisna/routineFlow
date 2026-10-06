@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
+import { SkillTagList } from '@/components/SkillPicker';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { formatDuration, getStepDetails, getStepSeconds, isCompleted } from '@/types/routines';
@@ -203,6 +204,7 @@ export default function RoutineDetailScreen() {
           {currentRoutine.category ? (
             <Text style={[styles.heroCategory, { color: colors.heroForeground }]}>{currentRoutine.category}</Text>
           ) : null}
+          <SkillTagList skillIds={currentRoutine.skillIds} dark />
           {copyError ? <Text accessibilityRole="alert" style={[styles.copyError, { color: colors.heroForeground }]}>{copyError}</Text> : null}
           {confirmingDelete ? (
             <View style={[styles.deletePrompt, { backgroundColor: colors.card }]}>
@@ -336,6 +338,7 @@ export default function RoutineDetailScreen() {
                         linkColor={colors.primary}
                       />
                     ) : null}
+                    <SkillTagList skillIds={step.skillIds} />
                     <Text style={[styles.duration, { color: colors.mutedForeground }]}>
                       {step.hidden ? 'Hidden · skipped in timer' : formatDuration(getStepSeconds(step))}
                     </Text>

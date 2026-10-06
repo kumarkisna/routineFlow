@@ -3,18 +3,25 @@ import { MAX_CATEGORY_LENGTH, categoryKey } from '@/lib/routineCategories';
 import { detachedHistoryId, progressRoutineIds, splitProgressKey } from '@/lib/historyIdentity';
 import { parsePlaylists, type RoutinePlaylist } from './playlists';
 import { parseSchedules, type RoutineSchedule } from './schedules';
+import { parseSkills, type RoutineSkill } from './skills';
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
-const FILE_VERSION = 5;
+export const ROUTINE_BACKUP_VERSION = 6;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
 
 export type PersonBackupData = {
   playlists: RoutinePlaylist[];
   schedules: RoutineSchedule[];
   selectedThemeId: string;
+  skills: RoutineSkill[];
 };
-export type RoutineBackup = { routines: Routine[]; progress?: CompletionMap; personData?: PersonBackupData };
+export type RoutineBackup = {
+  routines: Routine[];
+  progress?: CompletionMap;
+  personData?: Omit<PersonBackupData, 'skills'>;
+  skills?: RoutineSkill[];
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -26,6 +33,16 @@ function isId(value: unknown): value is string {
 
 function isText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function parseSkillIds(value: unknown, label: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 200
+    || value.some(id => !isId(id) || id.length > 160)
+    || new Set(value).size !== value.length) {
+    throw new Error(`${label} has invalid skill assignments.`);
+  }
+  return [...value] as string[];
 }
 
 function parseStep(value: unknown, routineIndex: number, stepIndex: number): RoutineStep {
@@ -46,6 +63,7 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
   if (value.speakDetails !== undefined && typeof value.speakDetails !== 'boolean') {
     throw new Error(`${label} has an invalid spoken-details setting.`);
   }
+  const skillIds = parseSkillIds(value.skillIds, label);
   if (value.duration !== undefined && typeof value.duration !== 'string') {
     throw new Error(`${label} has an invalid legacy duration.`);
   }
@@ -64,6 +82,7 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     ...(value.additionalDetails !== undefined ? { additionalDetails: value.additionalDetails as string[] } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden as boolean } : {}),
     ...(value.speakDetails !== undefined ? { speakDetails: value.speakDetails as boolean } : {}),
+    ...(skillIds !== undefined ? { skillIds } : {}),
     durationSeconds: hasSeconds ? seconds : legacyMinutes * 60,
     ...(value.duration !== undefined ? { duration: value.duration as string } : {}),
   };
@@ -86,6 +105,7 @@ function parseRoutine(value: unknown, index: number): Routine {
     throw new Error(`${label} has an invalid category.`);
   }
   const steps = value.steps.map((step, stepIndex) => parseStep(step, index, stepIndex));
+  const skillIds = parseSkillIds(value.skillIds, label);
   if (new Set(steps.map((step) => step.id)).size !== steps.length) {
     throw new Error(`${label} contains duplicate step IDs.`);
   }
@@ -94,6 +114,7 @@ function parseRoutine(value: unknown, index: number): Routine {
     title: value.title,
     subtitle: value.subtitle,
     ...(value.category !== undefined ? { category: (value.category as string).trim() } : {}),
+    ...(skillIds !== undefined ? { skillIds } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden } : {}),
     icon: value.icon,
     tone: value.tone as RoutineTone,
@@ -126,7 +147,7 @@ function parseProgress(value: unknown, routines: Routine[], version: number): Co
     result[day] = {};
     for (const [key, completed] of Object.entries(entries)) {
       const parsed = splitProgressKey(key);
-      // V4 restores removed steps; V5 also retains history of deleted routines.
+      // V4 restores removed steps; V5 and later also retain history of deleted routines.
       const historicalStep = parsed && version >= 4 &&
         (version >= 5 || routineIds.has(parsed.routineId));
       if (!(allowed.has(key) || historicalStep) || !isValidCompletion(completed) || ++count > 100_000) {
@@ -140,7 +161,7 @@ function parseProgress(value: unknown, routines: Routine[], version: number): Co
   return result;
 }
 
-function createRoutineBackup(routines: Routine[], progress?: CompletionMap) {
+function createRoutineBackup(routines: Routine[], progress?: CompletionMap, skills: RoutineSkill[] = []) {
   const history: CompletionMap = {};
   if (progress) {
     for (const [day, entries] of Object.entries(progress)) {
@@ -153,18 +174,19 @@ function createRoutineBackup(routines: Routine[], progress?: CompletionMap) {
   }
   return {
     format: FILE_FORMAT,
-    version: FILE_VERSION,
+    version: ROUTINE_BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     routines,
+    skills: parseSkills(JSON.stringify(skills)),
     ...(progress ? { progress: history } : {}),
   };
 }
 
-export function serializeRoutines(routines: Routine[], progress?: CompletionMap): string {
-  return JSON.stringify(createRoutineBackup(routines, progress), null, 2);
+export function serializeRoutines(routines: Routine[], progress?: CompletionMap, skills: RoutineSkill[] = []): string {
+  return JSON.stringify(createRoutineBackup(routines, progress, skills), null, 2);
 }
 
-function parsePersonBackupData(value: unknown): PersonBackupData {
+function parsePersonBackupData(value: unknown): Omit<PersonBackupData, 'skills'> {
   if (!isRecord(value) || !Array.isArray(value.playlists) || !Array.isArray(value.schedules) || !isText(value.selectedThemeId)) {
     throw new Error('The full person backup has invalid playlists, schedules, or selected theme data.');
   }
@@ -180,9 +202,10 @@ export function serializePersonBackup(
   personData: PersonBackupData,
   progress?: CompletionMap,
 ): string {
+  const { skills, ...otherData } = personData;
   return JSON.stringify({
-    ...createRoutineBackup(routines, progress),
-    personData: parsePersonBackupData(personData),
+    ...createRoutineBackup(routines, progress, skills),
+    personData: parsePersonBackupData(otherData),
   }, null, 2);
 }
 
@@ -196,7 +219,8 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
   } catch {
     throw new Error('This is not a valid JSON file.');
   }
-  if (!isRecord(value) || value.format !== FILE_FORMAT || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== FILE_VERSION) ||
+  if (!isRecord(value) || value.format !== FILE_FORMAT || typeof value.version !== 'number'
+      || !Number.isInteger(value.version) || value.version < 1 || value.version > ROUTINE_BACKUP_VERSION ||
       !Array.isArray(value.routines) || value.routines.length > 1000) {
     throw new Error('Choose a routines JSON file exported from Routine Flow.');
   }
@@ -205,11 +229,13 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
     throw new Error('The file contains duplicate routine IDs.');
   }
   const personData = value.personData === undefined ? undefined : parsePersonBackupData(value.personData);
+  const skills = value.skills === undefined ? undefined : parseSkills(JSON.stringify(value.skills));
   if (value.version === 1 && value.progress !== undefined) {
     throw new Error('This older backup cannot contain daily progress.');
   }
   return {
     routines,
+    ...(skills !== undefined ? { skills } : {}),
     ...(value.progress !== undefined ? { progress: parseProgress(value.progress, routines, value.version as number) } : {}),
     ...(personData ? { personData } : {}),
   };
@@ -263,7 +289,7 @@ export function repairStoredRoutineDurations(contents: string): { serialized: st
     throw new Error('No invalid routine durations were found. No changes were made.');
   }
 
-  parseRoutinesFile(JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, routines }));
+  parseRoutinesFile(JSON.stringify({ format: FILE_FORMAT, version: ROUTINE_BACKUP_VERSION, routines }));
   return { serialized: JSON.stringify(routines), repairedSteps };
 }
 
@@ -276,12 +302,14 @@ function routineSignature(routine: Routine): string {
     routine.tone,
     routine.createdAt,
     routine.hidden ?? false,
+    routine.skillIds ?? [],
     routine.steps.map((step) => [
       step.id,
       step.title,
       step.description ?? '',
       getStepSeconds(step),
       step.hidden ?? false,
+      step.skillIds ?? [],
     ]),
   ]);
 }

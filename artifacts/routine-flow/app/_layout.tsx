@@ -1,5 +1,6 @@
 import { PlaylistProvider } from '@/context/PlaylistContext';
 import { ScheduleProvider } from '@/context/ScheduleContext';
+import { SkillProvider, useSkills } from '@/context/SkillContext';
 import { AppearanceProvider } from '@/context/AppearanceContext';
 import { ScheduleNotificationLink } from '@/components/ScheduleNotificationLink';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -50,7 +51,8 @@ function PersonReadyNav() {
   const routines = useRoutines();
   const playlists = usePlaylists();
   const schedules = useSchedules();
-  if (appearance.loading || routines.loading || playlists.loading || schedules.loading) {
+  const skills = useSkills();
+  if (appearance.loading || routines.loading || playlists.loading || schedules.loading || skills.loading) {
     return <StartupLoading detail="Loading saved routines and settings" />;
   }
   return <RootLayoutNav />;
@@ -101,7 +103,9 @@ function PersonApp({ waitingForFonts, fontsLoaded, fontFailed }: { waitingForFon
                 <RoutineProvider>
                   <PlaylistProvider>
                     <ScheduleProvider>
-                      <PersonReadyNav />
+                      <SkillProvider>
+                        <PersonReadyNav />
+                      </SkillProvider>
                     </ScheduleProvider>
                   </PlaylistProvider>
                 </RoutineProvider>

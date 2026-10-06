@@ -9,6 +9,8 @@ export type RoutineStep = {
   additionalDetails?: string[];
   /** Omitted means details remain spoken for routines saved before this choice existed. */
   speakDetails?: boolean;
+  /** Optional links to reusable, person-specific skills. */
+  skillIds?: string[];
   /** Hidden steps are omitted from the timer and daily progress. */
   hidden?: boolean;
   durationSeconds: number;
@@ -22,6 +24,8 @@ export type Routine = {
   subtitle: string;
   /** Optional so routines saved before categories remain valid. */
   category?: string;
+  /** Optional links to reusable, person-specific skills. */
+  skillIds?: string[];
   /** Hidden routines remain saved but are omitted from the main list and progress. */
   hidden?: boolean;
   icon: string;

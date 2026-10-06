@@ -11,6 +11,7 @@ type PlaylistContextValue = {
   reload: () => Promise<void>;
   savePlaylist: (title: string, routineIds: string[], id?: string) => Promise<RoutinePlaylist>;
   deletePlaylist: (id: string) => Promise<void>;
+  removeSkillAssignments: (skillId: string) => Promise<void>;
 };
 const PlaylistContext = createContext<PlaylistContextValue | null>(null);
 
@@ -36,14 +37,16 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     }
   }, [AsyncStorage]);
   useEffect(() => { void reload(); }, [reload]);
-  const savePlaylist = useCallback((title: string, routineIds: string[], id?: string) =>
+  const savePlaylist = useCallback((title: string, routineIds: string[], id?: string, skillIds?: string[]) =>
     runWrite(async () => {
       if (loading || error) throw new Error('Wait for playlists to load successfully before saving.');
       validatePlaylist(title, routineIds);
       if (id && !current.current.some(item => item.id === id)) throw new Error('Playlist not found.');
+      const previous = id ? current.current.find(item => item.id === id) : undefined;
       const playlist: RoutinePlaylist = {
         id: id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         title: title.trim(), routineIds: [...routineIds],
+        ...((skillIds ?? previous?.skillIds)?.length ? { skillIds: [...(skillIds ?? previous!.skillIds!)] } : {}),
       };
       const next = id ? current.current.map(item => item.id === id ? playlist : item)
         : [...current.current, playlist];
@@ -59,7 +62,19 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     current.current = next;
     setPlaylists(next);
   }), [error, loading, runWrite, AsyncStorage]);
-  return <PlaylistContext.Provider value={{ playlists, loading, error, reload, savePlaylist, deletePlaylist }}>
+  const removeSkillAssignments = useCallback((skillId: string) => runWrite(async () => {
+    if (loading || error) throw new Error('Wait for playlists to load before deleting this skill.');
+    const next = current.current.map(item => {
+      if (!item.skillIds?.includes(skillId)) return item;
+      const skillIds = item.skillIds.filter(id => id !== skillId);
+      return { ...item, ...(skillIds.length ? { skillIds } : { skillIds: undefined }) };
+    });
+    if (next.every((item, index) => item === current.current[index])) return;
+    await AsyncStorage.setItem(KEY, JSON.stringify(next));
+    current.current = next;
+    setPlaylists(next);
+  }), [error, loading, runWrite, AsyncStorage]);
+  return <PlaylistContext.Provider value={{ playlists, loading, error, reload, savePlaylist, deletePlaylist, removeSkillAssignments }}>
     {children}
   </PlaylistContext.Provider>;
 }

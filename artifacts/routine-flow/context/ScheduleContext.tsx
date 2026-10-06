@@ -21,8 +21,9 @@ type ScheduleContextValue = {
   saveSchedule: (draft: Draft, id?: string) => Promise<void>;
   copySchedule: (sourceId: string, draft: Draft) => Promise<void>;
   deleteSchedule: (id: string) => Promise<void>;
-  savePlaylistForSchedule: (id: string, title: string, routineIds: string[]) => Promise<void>;
+  savePlaylistForSchedule: (id: string, title: string, routineIds: string[], skillIds?: string[]) => Promise<void>;
   resetScheduledPlaylist: (id: string) => Promise<void>;
+  removeSkillAssignments: (skillId: string) => Promise<void>;
 };
 const ScheduleContext = createContext<ScheduleContextValue | null>(null);
 
@@ -140,16 +141,34 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
   const saveSchedule = useCallback((draft: Draft, id?: string) => writeSchedule(draft, id), [writeSchedule]);
   const copySchedule = useCallback((sourceId: string, draft: Draft) => writeSchedule(draft, undefined, sourceId), [writeSchedule]);
   const deleteSchedule = useCallback((id: string) => runWrite(() => commit(null, id)), [commit, runWrite]);
-  const savePlaylistForSchedule = useCallback((id: string, title: string, routineIds: string[]) => runWrite(async () => {
+  const savePlaylistForSchedule = useCallback((id: string, title: string, routineIds: string[], skillIds?: string[]) => runWrite(async () => {
     if (routinesLoading) throw new Error('Wait for your routines to load.');
     const old = current.current.find(item => item.id === id);
     if (!old) throw new Error('Schedule not found.');
-    const next = editScheduledPlaylist(old, title, routineIds);
+    const next = editScheduledPlaylist(old, title, routineIds, skillIds);
     if (!playablePlaylistIds(next.playlistOverride!.routineIds, routines).length) {
       throw new Error('Add at least one available routine with visible steps.');
     }
     await commit(next, id);
   }), [routinesLoading, routines, commit, runWrite]);
+  const removeSkillAssignments = useCallback((skillId: string) => runWrite(async () => {
+    if (loading || error || unsafe.current) throw new Error('Schedules are not ready to change. Restart the app if a previous save could not be confirmed.');
+    const next = current.current.map(item => {
+      if (!item.playlistOverride?.skillIds?.includes(skillId)) return item;
+      const skillIds = item.playlistOverride.skillIds.filter(id => id !== skillId);
+      return {
+        ...item,
+        playlistOverride: {
+          ...item.playlistOverride,
+          ...(skillIds.length ? { skillIds } : { skillIds: undefined }),
+        },
+      };
+    });
+    if (next.every((item, index) => item === current.current[index])) return;
+    await AsyncStorage.setItem(KEY, JSON.stringify(next));
+    current.current = next;
+    setSchedules(next);
+  }), [loading, error, AsyncStorage, runWrite]);
   const resetScheduledPlaylist = useCallback((id: string) => runWrite(async () => {
     if (playlistsLoading || routinesLoading || playlistsError) throw new Error('Wait for your saved playlists and routines to load.');
     const old = current.current.find(item => item.id === id);
@@ -161,7 +180,7 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
     await commit({ ...old, targetTitle: source.title, playlistOverride: undefined, notificationId: undefined }, id);
   }), [playlistsLoading, routinesLoading, playlistsError, playlists, routines, commit, runWrite]);
   return <ScheduleContext.Provider value={{ schedules, loading, error, reload, saveSchedule, copySchedule, deleteSchedule,
-    savePlaylistForSchedule, resetScheduledPlaylist }}>
+    savePlaylistForSchedule, resetScheduledPlaylist, removeSkillAssignments }}>
     {children}
   </ScheduleContext.Provider>;
 }
