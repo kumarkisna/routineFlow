@@ -31,11 +31,11 @@ import {
   updateRunKeepalive,
 } from '@/lib/runKeepalive';
 import { buildRunReminderRequests, requestRunReminderPermission } from '@/lib/runReminders';
-import { createSkillRatingRun, getPlaylistSkillIds, getRoutineSkillIds, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
+import { buildStepAnnouncement } from '@/lib/routineSpeech';
+import { createSkillRatingRun, getPlaylistSkillIds, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
 import {
   formatDuration,
   getStepDetails,
-  getSpokenStepDetails,
   getStepSeconds,
   type Routine,
   type RoutineNotificationSettings,
@@ -52,47 +52,6 @@ function formatClock(totalSeconds: number) {
   const minutes = Math.floor((safeSeconds % 3600) / 60);
   const seconds = safeSeconds % 60;
   return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
-}
-
-function describeDuration(totalSeconds: number) {
-  const safeSeconds = Math.max(0, Math.round(totalSeconds));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const seconds = safeSeconds % 60;
-  const parts: string[] = [];
-  if (hours > 0) parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
-  if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
-  if (seconds > 0 || parts.length === 0) {
-    parts.push(`${seconds} ${seconds === 1 ? 'second' : 'seconds'}`);
-  }
-  return parts.join(' and ');
-}
-
-function skillNames(ids: string[] | undefined, skills: RoutineSkill[]) {
-  return [...new Set(ids ?? [])]
-    .map(id => skills.find(skill => skill.id === id)?.name)
-    .filter((name): name is string => Boolean(name));
-}
-
-function stepAnnouncement(
-  routine: Routine,
-  index: number,
-  skills: RoutineSkill[],
-  playlist?: { title: string; skillIds: string[] },
-) {
-  const step = routine.steps[index];
-  const details = getSpokenStepDetails(step);
-  const intro: string[] = [];
-  if (index === 0 && playlist) {
-    const names = skillNames(playlist.skillIds, skills);
-    if (names.length) intro.push(`Playlist ${playlist.title}. Skills: ${names.join(', ')}.`);
-  }
-  if (index === 0) {
-    const names = skillNames(routine.skillIds, skills);
-    if (names.length) intro.push(`Routine ${routine.title}. Skills: ${names.join(', ')}.`);
-  }
-  const names = skillNames(step.skillIds, skills);
-  return `${intro.length ? `${intro.join(' ')} ` : ''}Step ${index + 1}. ${step.title}.${names.length ? ` Skills: ${names.join(', ')}.` : ''} ${details.length ? `${details.join('. ')}. ` : ''}You have ${describeDuration(getStepSeconds(step))}.`;
 }
 
 function parseSkillIdsParam(value: string | string[] | undefined): string[] {
@@ -454,7 +413,7 @@ function RoutinePlayer() {
         if (token !== announcementTokenRef.current || !isAnnouncingRef.current) return;
         try {
           const playlistIsStarting = inPlaylist && playlistQueue && queueCursor === nextPlaylistCursor(playlistQueue, -1, routines);
-          Speech.speak(stepAnnouncement(
+          Speech.speak(buildStepAnnouncement(
             routine,
             index,
             skills,
