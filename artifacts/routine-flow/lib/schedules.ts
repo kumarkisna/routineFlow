@@ -20,11 +20,13 @@ export type RoutineSchedule = {
 /** A customized appointment owns its sequence; ordinary appointments follow the saved playlist. */
 export function scheduledPlaylistSource(schedule: RoutineSchedule, playlists: RoutinePlaylist[]): RoutinePlaylist | null {
   if (schedule.targetType !== 'playlist') return null;
+  const savedPlaylist = playlists.find(item => item.id === schedule.targetId);
   if (schedule.playlistOverride) {
     return { id: schedule.targetId, title: schedule.playlistOverride.title, routineIds: [...schedule.playlistOverride.routineIds],
-      ...(schedule.playlistOverride.skillIds ? { skillIds: [...schedule.playlistOverride.skillIds] } : {}) };
+      ...(schedule.playlistOverride.skillIds ? { skillIds: [...schedule.playlistOverride.skillIds] } : {}),
+      rateSkillsAtPlaylistEnd: savedPlaylist?.rateSkillsAtPlaylistEnd ?? true };
   }
-  return playlists.find(item => item.id === schedule.targetId) ?? null;
+  return savedPlaylist ?? null;
 }
 
 export function editScheduledPlaylist(

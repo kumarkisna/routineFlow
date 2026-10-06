@@ -10,6 +10,7 @@ export function SkillRatingPrompt({
   visible,
   skillIds,
   routineTitle,
+  contextLabel,
   run,
   onSkip,
   onSaved,
@@ -17,6 +18,8 @@ export function SkillRatingPrompt({
   visible: boolean;
   skillIds: string[];
   routineTitle: string;
+  /** Optional display context, such as a playlist name; ratings still attach to routineTitle in history. */
+  contextLabel?: string;
   run?: SkillRatingRun;
   onSkip: () => void;
   onSaved: () => void;
@@ -88,7 +91,7 @@ export function SkillRatingPrompt({
             </View>
             <View style={styles.headerText}>
               <Text style={[styles.title, { color: colors.foreground }]}>Rate the skills you used</Text>
-              <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={2}>{routineTitle}</Text>
+              <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={2}>{contextLabel ?? routineTitle}</Text>
             </View>
           </View>
           <Text style={[styles.note, { color: colors.mutedForeground }]}>Choose a score from 1 to 10 for any skill. Add an optional note to remember what went well or what to work on.</Text>

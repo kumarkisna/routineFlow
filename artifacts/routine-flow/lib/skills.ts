@@ -188,6 +188,17 @@ export function getRoutineSkillIds(routine: Routine): string[] {
   ])];
 }
 
+export function getPlaylistSkillIds(routineIds: string[], routines: Routine[], playlistSkillIds: string[] = []): string[] {
+  const routinesById = new Map(routines.map(routine => [routine.id, routine] as const));
+  return [...new Set([
+    ...routineIds.flatMap(id => {
+      const routine = routinesById.get(id);
+      return routine ? getRoutineSkillIds(routine) : [];
+    }),
+    ...playlistSkillIds,
+  ])];
+}
+
 export type SkillRoutineUse = {
   id: string;
   title: string;

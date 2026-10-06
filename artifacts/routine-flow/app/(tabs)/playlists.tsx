@@ -38,7 +38,9 @@ export default function PlaylistsScreen() {
     router.push({
       pathname: '/routine/[id]/run',
       params: { id: ids[0], queue: JSON.stringify(ids), cursor: '0', playlistId: p.id, playlistTitle: p.title,
-        playlistSkills: JSON.stringify(p.skillIds ?? []), autoStart: '1' },
+        playlistSkills: JSON.stringify(p.skillIds ?? []),
+        playlistRateSkillsAtEnd: (p.rateSkillsAtPlaylistEnd ?? true) ? '1' : '0',
+        autoStart: '1' },
     });
   }
   async function remove(id: string) {

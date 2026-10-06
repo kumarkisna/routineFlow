@@ -6,6 +6,8 @@ export type RoutinePlaylist = {
   routineIds: string[];
   /** Optional links to reusable, person-specific skills. */
   skillIds?: string[];
+  /** When enabled, defer skill ratings until the complete playlist run finishes. */
+  rateSkillsAtPlaylistEnd?: boolean;
 };
 
 export function playablePlaylistIds(ids: string[], routines: Routine[]): string[] {
@@ -30,8 +32,12 @@ export function parsePlaylists(value: string): RoutinePlaylist[] {
     || (item.skillIds !== undefined && (!Array.isArray(item.skillIds)
       || item.skillIds.some((id: unknown) => typeof id !== 'string' || !id.trim())
       || new Set(item.skillIds).size !== item.skillIds.length))
+    || (item.rateSkillsAtPlaylistEnd !== undefined && typeof item.rateSkillsAtPlaylistEnd !== 'boolean')
   )) throw new Error('Saved playlists could not be read.');
-  return parsed;
+  return parsed.map(playlist => ({
+    ...playlist,
+    rateSkillsAtPlaylistEnd: playlist.rateSkillsAtPlaylistEnd ?? true,
+  }));
 }
 
 export function mergePlaylistCatalog(

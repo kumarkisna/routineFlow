@@ -22,8 +22,8 @@ import { useSkills } from '@/context/SkillContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { Notifications } from '@/lib/localNotifications';
-import { nextPlaylistCursor, parsePlaylistQueue } from '@/lib/playlists';
-import { createSkillRatingRun, getRoutineSkillIds, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
+import { nextPlaylistCursor, parsePlaylistQueue, playablePlaylistIds } from '@/lib/playlists';
+import { createSkillRatingRun, getPlaylistSkillIds, getRoutineSkillIds, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
 import {
   formatDuration,
   getStepDetails,
@@ -101,20 +101,23 @@ function parseSkillIdsParam(value: string | string[] | undefined): string[] {
 }
 
 export default function RoutineRunScreen() {
-  const { id, cursor = '0', queue, playlistId } =
-    useLocalSearchParams<{ id: string; cursor?: string; queue?: string; playlistId?: string }>();
+  const { id, cursor = '0', queue, playlistId, playlistRateSkillsAtEnd } =
+    useLocalSearchParams<{ id: string; cursor?: string; queue?: string; playlistId?: string; playlistRateSkillsAtEnd?: string }>();
   // A new routine (including a repeated routine) needs fresh timer/speech state.
-  return <RoutinePlayer key={`${id}:${cursor}:${queue ?? ''}:${playlistId ?? ''}`} />;
+  return <RoutinePlayer key={`${id}:${cursor}:${queue ?? ''}:${playlistId ?? ''}:${playlistRateSkillsAtEnd ?? '1'}`} />;
 }
 
 function RoutinePlayer() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { id, queue, cursor = '0', playlistId, playlistTitle, playlistSkills: playlistSkillsParam, autoStart, voice, stepReminder, routineReminder } =
+  const { id, queue, cursor = '0', playlistId, playlistTitle, playlistSkills: playlistSkillsParam,
+    playlistRateSkillsAtEnd, autoStart, voice, stepReminder, routineReminder } =
     useLocalSearchParams<{ id: string; queue?: string; cursor?: string; playlistId?: string; playlistTitle?: string;
-      playlistSkills?: string; autoStart?: string; voice?: string; stepReminder?: string; routineReminder?: string }>();
+      playlistSkills?: string; playlistRateSkillsAtEnd?: string; autoStart?: string; voice?: string;
+      stepReminder?: string; routineReminder?: string }>();
   const playlistQueue = useMemo(() => parsePlaylistQueue(queue), [queue]);
   const playlistSkillIds = useMemo(() => parseSkillIdsParam(playlistSkillsParam), [playlistSkillsParam]);
+  const rateSkillsAtPlaylistEnd = playlistRateSkillsAtEnd !== '0';
   const queueCursor = Number(cursor);
   const inPlaylist = !!playlistQueue && Number.isInteger(queueCursor)
     && queueCursor >= 0 && playlistQueue[queueCursor] === id;
@@ -279,13 +282,14 @@ function RoutinePlayer() {
         ...(playlistId ? { playlistId } : {}),
         playlistTitle: playlistTitle ?? 'Playlist',
         playlistSkills: JSON.stringify(playlistSkillIds),
+        playlistRateSkillsAtEnd: rateSkillsAtPlaylistEnd ? '1' : '0',
         autoStart: '1',
         voice: voiceEnabled ? '1' : '0',
         stepReminder: notificationSettingsRef.current.stepCompletion ? '1' : '0',
         routineReminder: notificationSettingsRef.current.routineCompletion ? '1' : '0',
       },
     });
-  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, voiceEnabled]);
+  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled]);
 
   const closeRatingPrompt = useCallback(() => {
     const nextCursor = pendingPlaylistCursor;
@@ -384,10 +388,17 @@ function RoutinePlayer() {
       setSavingCompletion(false);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const next = inPlaylist && playlistQueue ? nextPlaylistCursor(playlistQueue, queueCursor, routines) : -1;
-      const involvedSkillIds = [...new Set([
-        ...getRoutineSkillIds(routine),
-        ...(inPlaylist ? playlistSkillIds : []),
-      ])];
+      const deferUntilPlaylistEnd = inPlaylist && rateSkillsAtPlaylistEnd;
+      if (deferUntilPlaylistEnd && next !== -1) {
+        advancePlaylist(next);
+        return;
+      }
+      const involvedSkillIds = deferUntilPlaylistEnd && playlistQueue
+        ? getPlaylistSkillIds(playablePlaylistIds(playlistQueue, routines), routines, playlistSkillIds)
+        : [...new Set([
+          ...getRoutineSkillIds(routine),
+          ...(inPlaylist ? playlistSkillIds : []),
+        ])];
       if (next !== -1) setPendingPlaylistCursor(next);
       if (involvedSkillIds.length) {
         setRatingRun(ratingRun);
@@ -402,7 +413,8 @@ function RoutinePlayer() {
       setCompletionError('Your completion could not be saved. Retry to continue.');
     });
   }, [cancelNotifications, completeRoutine, routine, stopAnnouncement, inPlaylist,
-    playlistQueue, queueCursor, routines, playlistSkillIds, playlistId, playlistTitle, advancePlaylist]);
+    playlistQueue, queueCursor, routines, playlistSkillIds, playlistId, playlistTitle,
+    rateSkillsAtPlaylistEnd, advancePlaylist]);
 
   const reconcileTimer = useCallback(
     (now: number) => {
@@ -514,7 +526,9 @@ function RoutinePlayer() {
           pathname: '/routine/[id]/run',
           params: { id: playlistQueue[first], queue: JSON.stringify(playlistQueue),
               cursor: String(first), playlistTitle: playlistTitle ?? 'Playlist',
-              playlistSkills: JSON.stringify(playlistSkillIds), autoStart: '1',
+              playlistSkills: JSON.stringify(playlistSkillIds),
+              playlistRateSkillsAtEnd: rateSkillsAtPlaylistEnd ? '1' : '0',
+              autoStart: '1',
             voice: voiceEnabled ? '1' : '0',
             stepReminder: notificationSettingsRef.current.stepCompletion ? '1' : '0',
             routineReminder: notificationSettingsRef.current.routineCompletion ? '1' : '0' },
@@ -778,6 +792,9 @@ function RoutinePlayer() {
         visible={showRatingPrompt}
         skillIds={ratingSkillIds}
         routineTitle={currentRoutine.title}
+        contextLabel={inPlaylist && rateSkillsAtPlaylistEnd
+          ? `Playlist: ${playlistTitle ?? 'Playlist'}`
+          : undefined}
         run={ratingRun ?? undefined}
         onSkip={closeRatingPrompt}
         onSaved={closeRatingPrompt}

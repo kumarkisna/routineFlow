@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { Routine } from '../types/routines';
 import {
   DEFAULT_SKILL_RATING_WINDOW,
+  getPlaylistSkillIds,
   getRoutineSkillIds,
   getSkillAssociations,
   getSkillAverage,
@@ -109,6 +111,29 @@ test('a completed routine rates unique skills from visible steps only', () => {
     ],
   });
   assert.deepEqual(skillIds, ['routine-skill', 'step-skill']);
+});
+
+test('playlist-end ratings include unique skills from every routine and playlist assignments', () => {
+  const routines: Routine[] = [
+    {
+      id: 'first', title: 'First', subtitle: '', icon: 'sun', tone: 'sage', createdAt: '',
+      skillIds: ['direct', 'shared'],
+      steps: [
+        { id: 'visible', title: 'Visible', durationSeconds: 1, skillIds: ['shared', 'first-step'] },
+        { id: 'hidden', title: 'Hidden', durationSeconds: 1, hidden: true, skillIds: ['hidden-skill'] },
+      ],
+    },
+    {
+      id: 'second', title: 'Second', subtitle: '', icon: 'sun', tone: 'sage', createdAt: '',
+      skillIds: ['second-direct'],
+      steps: [{ id: 'step', title: 'Step', durationSeconds: 1, skillIds: ['second-step'] }],
+    },
+  ];
+  assert.deepEqual(getPlaylistSkillIds(
+    ['first', 'missing', 'second', 'first'],
+    routines,
+    ['playlist-skill', 'shared'],
+  ), ['direct', 'shared', 'first-step', 'second-direct', 'second-step', 'playlist-skill']);
 });
 
 test('skill usage includes direct and step assignments, plus playlists containing linked routines', () => {

@@ -37,7 +37,7 @@ test('date-only playlist versions survive parsing and malformed versions are rej
   assert.throws(() => parseSchedules(JSON.stringify([{ ...custom, targetType: 'routine' }])));
 });
 test('date-only editing owns a copied sequence and never changes the original playlist or sibling date', () => {
-  const playlist = { id: 'p', title: 'Original', routineIds: ['a', 'b', 'a'] };
+  const playlist = { id: 'p', title: 'Original', routineIds: ['a', 'b', 'a'], rateSkillsAtPlaylistEnd: true };
   const scheduled: RoutineSchedule = { ...entry, targetType: 'playlist', targetId: 'p' };
   const sibling = { ...scheduled, id: 'second-date', scheduledAt: new Date(Date.parse(future) + 86400000).toISOString() };
   const ids = ['b', 'c', 'b'];
@@ -45,6 +45,7 @@ test('date-only editing owns a copied sequence and never changes the original pl
   ids.push('extra');
   assert.deepEqual(scheduledPlaylistSource(custom, [playlist])?.routineIds, ['b', 'c', 'b']);
   assert.equal(scheduledPlaylistSource(custom, [playlist])?.title, 'Special day');
+  assert.equal(scheduledPlaylistSource(custom, [playlist])?.rateSkillsAtPlaylistEnd, true);
   assert.deepEqual(scheduledPlaylistSource(sibling, [playlist]), playlist);
   assert.deepEqual(playlist, { id: 'p', title: 'Original', routineIds: ['a', 'b', 'a'] });
   assert.equal(scheduled.playlistOverride, undefined);
@@ -64,6 +65,7 @@ test('a custom date ignores later original edits or deletion; uncustomized dates
   assert.deepEqual(scheduledPlaylistSource(custom, [original])?.routineIds, ['b', 'b']);
   assert.deepEqual(scheduledPlaylistSource(scheduled, [original]), original);
   assert.equal(scheduledPlaylistSource(custom, [])?.title, 'Custom');
+  assert.equal(scheduledPlaylistSource(custom, [])?.rateSkillsAtPlaylistEnd, true);
   assert.equal(scheduledPlaylistSource(scheduled, []), null);
 });
 test('rescheduling preserves a date-only version; changing the source discards it', () => {

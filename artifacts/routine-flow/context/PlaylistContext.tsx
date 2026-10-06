@@ -9,7 +9,9 @@ type PlaylistContextValue = {
   loading: boolean;
   error: string;
   reload: () => Promise<void>;
-  savePlaylist: (title: string, routineIds: string[], id?: string, skillIds?: string[]) => Promise<RoutinePlaylist>;
+  savePlaylist: (
+    title: string, routineIds: string[], id?: string, skillIds?: string[], rateSkillsAtPlaylistEnd?: boolean,
+  ) => Promise<RoutinePlaylist>;
   mergeImportedPlaylists: (playlists: RoutinePlaylist[]) => Promise<{
     added: number; skipped: number; renamed: number; updated: number; idMap: Record<string, string>;
   }>;
@@ -40,7 +42,13 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     }
   }, [AsyncStorage]);
   useEffect(() => { void reload(); }, [reload]);
-  const savePlaylist = useCallback((title: string, routineIds: string[], id?: string, skillIds?: string[]) =>
+  const savePlaylist = useCallback((
+    title: string,
+    routineIds: string[],
+    id?: string,
+    skillIds?: string[],
+    rateSkillsAtPlaylistEnd?: boolean,
+  ) =>
     runWrite(async () => {
       if (loading || error) throw new Error('Wait for playlists to load successfully before saving.');
       validatePlaylist(title, routineIds);
@@ -50,6 +58,7 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
         id: id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         title: title.trim(), routineIds: [...routineIds],
         ...((skillIds ?? previous?.skillIds)?.length ? { skillIds: [...(skillIds ?? previous!.skillIds!)] } : {}),
+        rateSkillsAtPlaylistEnd: rateSkillsAtPlaylistEnd ?? previous?.rateSkillsAtPlaylistEnd ?? true,
       };
       const next = id ? current.current.map(item => item.id === id ? playlist : item)
         : [...current.current, playlist];

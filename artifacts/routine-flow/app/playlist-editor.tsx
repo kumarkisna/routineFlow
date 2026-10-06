@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
-import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { usePlaylists } from '@/context/PlaylistContext';
@@ -42,12 +42,14 @@ export default function PlaylistEditor() {
   const origOk = !!schedule && !!playlists.find((p) => p.id === schedule.targetId) && !error;
   const src = scheduled ?? existing;
   return <Editor key={scheduleId ? `s-${scheduleId}` : id ?? 'new'} editId={existing?.id} scheduleId={scheduleId} hasOverride={hasOverride} canReset={origOk}
-    initialTitle={src?.title ?? ''} initialIds={src?.routineIds ?? []} initialSkillIds={src?.skillIds ?? []} />;
+    initialTitle={src?.title ?? ''} initialIds={src?.routineIds ?? []} initialSkillIds={src?.skillIds ?? []}
+    initialRateSkillsAtPlaylistEnd={src?.rateSkillsAtPlaylistEnd ?? true} />;
 }
 
-function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds, initialSkillIds }: {
+function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds, initialSkillIds,
+  initialRateSkillsAtPlaylistEnd }: {
   editId?: string; scheduleId?: string; hasOverride: boolean; canReset: boolean;
-  initialTitle: string; initialIds: string[]; initialSkillIds: string[];
+  initialTitle: string; initialIds: string[]; initialSkillIds: string[]; initialRateSkillsAtPlaylistEnd: boolean;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -60,6 +62,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const [title, setTitle] = React.useState(initialTitle);
   const [ids, setIds] = React.useState<string[]>(initialIds);
   const [skillIds, setSkillIds] = React.useState<string[]>(initialSkillIds);
+  const [rateSkillsAtPlaylistEnd, setRateSkillsAtPlaylistEnd] = React.useState(initialRateSkillsAtPlaylistEnd);
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const lock = React.useRef(false);
@@ -91,7 +94,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
       const availableSkills = new Set(skills.map(skill => skill.id));
       const savedSkillIds = skillIds.filter(id => availableSkills.has(id));
       if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds);
-      else await savePlaylist(title, ids, editId, savedSkillIds);
+      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e) {
@@ -152,6 +155,24 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
           onChangeText={(t) => { setTitle(t); setError(''); }}
           style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]} />
         <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={busy} testIDPrefix="playlist-skill" />
+        {!scheduleId ? (
+          <View style={[styles.ratingSetting, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.ratingSettingCopy}>
+              <Text style={[styles.ratingSettingTitle, { color: colors.foreground }]}>Rate skills after the full playlist</Text>
+              <Text style={[styles.ratingSettingHint, { color: colors.mutedForeground }]}>
+                When on, ask once after the last routine instead of after each routine. You can skip the prompt.
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="Ask for skill ratings after the full playlist"
+              testID="playlist-rate-skills-at-end"
+              disabled={busy}
+              value={rateSkillsAtPlaylistEnd}
+              onValueChange={setRateSkillsAtPlaylistEnd}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+        ) : null}
 
         <View style={styles.hdr}>
           <Text style={[styles.label, { color: colors.inkSoft, marginBottom: 0 }]}>Order</Text>
@@ -225,6 +246,10 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
 
 const styles = StyleSheet.create({
   notice: { borderRadius: 14, padding: 12, marginBottom: 14 },
+  ratingSetting: { borderWidth: 1, borderRadius: 15, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  ratingSettingCopy: { flex: 1, gap: 4 },
+  ratingSettingTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  ratingSettingHint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17 },
   rbtn: { flex: 1, minHeight: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
   screen: { flex: 1 },
   missing: { alignItems: 'center', justifyContent: 'center', gap: 12 },

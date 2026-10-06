@@ -22,8 +22,11 @@ test('playlist names and at least one routine are required', () => {
 test('saved playlist parsing keeps ordered identifiers and rejects corrupt storage', () => {
   const list = [{ id: 'p', title: 'Morning', routineIds: ['b', 'a', 'b'] }];
   assert.deepEqual(parsePlaylists(JSON.stringify(list)), list);
+  assert.equal(parsePlaylists(JSON.stringify(list))[0].rateSkillsAtPlaylistEnd, true);
+  assert.equal(parsePlaylists(JSON.stringify([{ ...list[0], rateSkillsAtPlaylistEnd: true }]))[0].rateSkillsAtPlaylistEnd, true);
   assert.throws(() => parsePlaylists('{}'));
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":[12]}]'));
+  assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":["a"],"rateSkillsAtPlaylistEnd":"yes"}]'));
 });
 
 test('playlist backup imports merge skill links and keep conflicting local playlists intact', () => {
