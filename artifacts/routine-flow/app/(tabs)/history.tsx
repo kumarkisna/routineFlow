@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as Speech from 'expo-speech';
 import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,6 +14,7 @@ import {
   recordedHistoryDays, routineHistoryOptions, type HistoryFilter, type SkillRatingEvent,
 } from '@/lib/progressHistory';
 import { buildSkillRatingReportHtml, formatSkillRatingDateTime } from '@/lib/skillRatingReport';
+import { buildSkillRatingSpeechText } from '@/lib/skillRatingSpeech';
 
 export default function HistoryScreen() {
   const colors = useColors();
@@ -26,7 +28,11 @@ export default function HistoryScreen() {
   const [selectedPlaylistId, setSelectedPlaylistId] = React.useState('');
   const [exportingRunId, setExportingRunId] = React.useState<string | null>(null);
   const [exportError, setExportError] = React.useState<{ runId: string; message: string } | null>(null);
+  const [speakingEventKey, setSpeakingEventKey] = React.useState<string | null>(null);
+  const [speechError, setSpeechError] = React.useState<{ eventKey: string; message: string } | null>(null);
   const exportLock = React.useRef(false);
+  const speechSessionRef = React.useRef(0);
+  const speechEventKeyRef = React.useRef<string | null>(null);
   const today = localDayKey(new Date());
   const routineOptions = routineHistoryOptions(progress, routines);
   const playlistOptions = playlistHistoryOptions(progress, playlists);
@@ -45,7 +51,72 @@ export default function HistoryScreen() {
   const total = groups.reduce((sum, group) => sum + group.steps.length, 0);
   const isLoading = loading || skillsLoading || playlistsLoading;
 
+  React.useEffect(() => () => {
+    speechSessionRef.current += 1;
+    speechEventKeyRef.current = null;
+    void Speech.stop().catch(() => undefined);
+  }, []);
+
+  function stopSkillSpeech() {
+    const stoppedEventKey = speechEventKeyRef.current;
+    const session = ++speechSessionRef.current;
+    speechEventKeyRef.current = null;
+    setSpeakingEventKey(null);
+    if (!stoppedEventKey) return;
+    void Speech.stop().catch(() => {
+      if (speechSessionRef.current === session) {
+        setSpeechError({ eventKey: stoppedEventKey, message: 'Could not stop speech playback.' });
+      }
+    });
+  }
+
+  async function speakSkillRatings(routineTitle: string, event: SkillRatingEvent, eventKey: string) {
+    if (speechEventKeyRef.current === eventKey) {
+      stopSkillSpeech();
+      return;
+    }
+
+    const session = ++speechSessionRef.current;
+    speechEventKeyRef.current = eventKey;
+    setSpeakingEventKey(eventKey);
+    setSpeechError(null);
+    try {
+      const text = buildSkillRatingSpeechText(routineTitle, event);
+      await Speech.stop();
+      if (speechSessionRef.current !== session) return;
+      Speech.speak(text, {
+        rate: 0.95,
+        onDone: () => {
+          if (speechSessionRef.current === session) {
+            speechEventKeyRef.current = null;
+            setSpeakingEventKey(null);
+          }
+        },
+        onStopped: () => {
+          if (speechSessionRef.current === session) {
+            speechEventKeyRef.current = null;
+            setSpeakingEventKey(null);
+          }
+        },
+        onError: () => {
+          if (speechSessionRef.current === session) {
+            speechEventKeyRef.current = null;
+            setSpeakingEventKey(null);
+            setSpeechError({ eventKey, message: 'Could not speak these skill ratings.' });
+          }
+        },
+      });
+    } catch {
+      if (speechSessionRef.current === session) {
+        speechEventKeyRef.current = null;
+        setSpeakingEventKey(null);
+        setSpeechError({ eventKey, message: 'Could not speak these skill ratings.' });
+      }
+    }
+  }
+
   function chooseFilter(kind: 'all' | 'routine' | 'playlist') {
+    stopSkillSpeech();
     setFilterKind(kind);
     setSelectedDay(null);
     if (kind === 'routine' && routineOptions[0]) setSelectedRoutineId(routineOptions[0].id);
@@ -152,7 +223,7 @@ export default function HistoryScreen() {
                     accessibilityState={{ selected }}
                     accessibilityLabel={`${item.title}${item.archived ? ', removed routine history' : ''}`}
                     testID={`history-routine-${item.id}`}
-                    onPress={() => { setSelectedRoutineId(item.id); setSelectedDay(null); }}
+                     onPress={() => { stopSkillSpeech(); setSelectedRoutineId(item.id); setSelectedDay(null); }}
                     style={({ pressed }) => [
                       styles.filterItemButton,
                       { backgroundColor: selected ? colors.sageSoft : colors.card,
@@ -179,7 +250,7 @@ export default function HistoryScreen() {
                     accessibilityState={{ selected }}
                     accessibilityLabel={`${item.title}${item.archived ? ', removed playlist history' : ''}`}
                     testID={`history-playlist-${item.id}`}
-                    onPress={() => { setSelectedPlaylistId(item.id); setSelectedDay(null); }}
+                     onPress={() => { stopSkillSpeech(); setSelectedPlaylistId(item.id); setSelectedDay(null); }}
                     style={({ pressed }) => [
                       styles.filterItemButton,
                       { backgroundColor: selected ? colors.sageSoft : colors.card,
@@ -225,7 +296,7 @@ export default function HistoryScreen() {
                 accessibilityState={{ disabled: activeIndex === days.length - 1 }}
                 testID="history-older-day"
                 disabled={activeIndex === days.length - 1}
-                onPress={() => setSelectedDay(days[activeIndex + 1])}
+                onPress={() => { stopSkillSpeech(); setSelectedDay(days[activeIndex + 1]); }}
                 style={({ pressed }) => [styles.dayButton, { borderColor: colors.sage }, pressed && styles.pressed]}
               >
                 <Ionicons name="chevron-back" size={17} color={colors.heroForeground} />
@@ -238,7 +309,7 @@ export default function HistoryScreen() {
                 accessibilityState={{ disabled: activeIndex === 0 }}
                 testID="history-newer-day"
                 disabled={activeIndex === 0}
-                onPress={() => setSelectedDay(days[activeIndex - 1])}
+                onPress={() => { stopSkillSpeech(); setSelectedDay(days[activeIndex - 1]); }}
                 style={({ pressed }) => [styles.dayButton, { borderColor: colors.sage }, pressed && styles.pressed]}
               >
                 <Text style={[styles.dayButtonText, { color: colors.heroForeground }]}>Newer</Text>
@@ -277,8 +348,11 @@ export default function HistoryScreen() {
           {group.skillRatings?.length ? (
                 <View style={[styles.skillNotes, { borderTopColor: colors.border }]}>
                   <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Skill ratings &amp; reflections</Text>
-                  {groupSkillRatingEvents(group.skillRatings).map((event, eventIndex) => (
-                    <View key={event.id} style={[styles.skillEvent, { borderColor: colors.border }]}>
+                  {groupSkillRatingEvents(group.skillRatings).map((event, eventIndex) => {
+                    const eventKey = `${group.id}:${event.id}`;
+                    const isSpeaking = speakingEventKey === eventKey;
+                    return (
+                    <View key={eventKey} style={[styles.skillEvent, { borderColor: colors.border }]}>
                       <View style={styles.skillEventHeader}>
                         <View style={styles.skillEventCopy}>
                           <Text style={[styles.skillEventTitle, { color: colors.foreground }]}>
@@ -288,26 +362,51 @@ export default function HistoryScreen() {
                             {event.isRunTime ? 'Completed' : 'Recorded'} · {formatSkillRatingDateTime(event.dateTime)}
                           </Text>
                         </View>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`Export ${group.title} skill ratings as a PDF`}
-                          accessibilityState={{ disabled: exportingRunId !== null }}
-                          disabled={exportingRunId !== null}
-                          testID={`history-skill-pdf-${event.id}`}
-                          onPress={() => void exportSkillRatings(group.title, event)}
-                          style={({ pressed }) => [
-                            styles.pdfButton,
-                            { backgroundColor: colors.secondary },
-                            pressed && styles.pressed,
-                          ]}
-                        >
-                          {exportingRunId === event.id
-                            ? <ActivityIndicator size="small" color={colors.inkSoft} />
-                            : <Ionicons name="document-text-outline" size={16} color={colors.inkSoft} />}
-                          <Text style={[styles.pdfButtonText, { color: colors.inkSoft }]}>
-                            {exportingRunId === event.id ? 'Preparing…' : 'Export PDF'}
-                          </Text>
-                        </Pressable>
+                        <View style={styles.skillEventActions}>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={isSpeaking
+                              ? `Stop speaking ${group.title} skill ratings and reflections`
+                              : `Speak ${group.title} skill ratings and reflections`}
+                            accessibilityState={{ selected: isSpeaking }}
+                            testID={`history-skill-speech-${event.id}`}
+                            onPress={() => void speakSkillRatings(group.title, event, eventKey)}
+                            style={({ pressed }) => [
+                              styles.speechButton,
+                              { backgroundColor: colors.sageSoft },
+                              pressed && styles.pressed,
+                            ]}
+                          >
+                            <Ionicons
+                              name={isSpeaking ? 'stop-circle-outline' : 'volume-high-outline'}
+                              size={16}
+                              color={colors.success}
+                            />
+                            <Text style={[styles.speechButtonText, { color: colors.success }]}>
+                              {isSpeaking ? 'Stop' : 'Speak'}
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`Export ${group.title} skill ratings as a PDF`}
+                            accessibilityState={{ disabled: exportingRunId !== null }}
+                            disabled={exportingRunId !== null}
+                            testID={`history-skill-pdf-${event.id}`}
+                            onPress={() => void exportSkillRatings(group.title, event)}
+                            style={({ pressed }) => [
+                              styles.pdfButton,
+                              { backgroundColor: colors.secondary },
+                              pressed && styles.pressed,
+                            ]}
+                          >
+                            {exportingRunId === event.id
+                              ? <ActivityIndicator size="small" color={colors.inkSoft} />
+                              : <Ionicons name="document-text-outline" size={16} color={colors.inkSoft} />}
+                            <Text style={[styles.pdfButtonText, { color: colors.inkSoft }]}>
+                              {exportingRunId === event.id ? 'Preparing…' : 'Export PDF'}
+                            </Text>
+                          </Pressable>
+                        </View>
                       </View>
                       {event.ratings.map((entry, index) => (
                         <View key={entry.id} style={[styles.skillNote, { backgroundColor: colors.background }]}>
@@ -326,8 +425,13 @@ export default function HistoryScreen() {
                           {exportError.message}
                         </Text>
                       ) : null}
+                      {speechError?.eventKey === eventKey ? (
+                        <Text accessibilityRole="alert" style={[styles.pdfError, { color: colors.destructive }]}>
+                          {speechError.message}
+                        </Text>
+                      ) : null}
                     </View>
-                  ))}
+                  ); })}
                 </View>
               ) : null}
             </View>
