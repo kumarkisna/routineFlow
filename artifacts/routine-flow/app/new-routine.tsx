@@ -18,6 +18,7 @@ import { useSkills } from '@/context/SkillContext';
 import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
 import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
+import { moveRoutineStep } from '@/lib/routineStepOrdering';
 import {
   addAdditionalStepDetail,
   buildStepDetailFields,
@@ -144,11 +145,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   function moveStep(index: number, direction: -1 | 1) {
     const destination = index + direction;
     if (destination < 0 || destination >= steps.length) return;
-    setSteps((current) => {
-      const reordered = [...current];
-      [reordered[index], reordered[destination]] = [reordered[destination], reordered[index]];
-      return reordered;
-    });
+    setSteps((current) => moveRoutineStep(current, index, direction));
     void Haptics.selectionAsync();
   }
 

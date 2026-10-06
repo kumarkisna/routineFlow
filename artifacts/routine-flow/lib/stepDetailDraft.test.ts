@@ -9,6 +9,7 @@ import {
   setStepDetailSpeech,
   updateAdditionalStepDetail,
 } from './stepDetailDraft';
+import { moveRoutineStep } from './routineStepOrdering';
 
 test('detail speech settings stay with their text through add, remove, save, and reopen', () => {
   const originalStep: RoutineStep = {
@@ -46,4 +47,44 @@ test('detail speech settings stay with their text through add, remove, save, and
     'Stay enabled',
     'New last detail',
   ]);
+});
+
+test('step speech choices stay with their details when the routine is reordered and reopened', () => {
+  const steps: RoutineStep[] = [
+    {
+      id: 'breathing',
+      title: 'Breathing',
+      description: 'Count each breath',
+      additionalDetails: ['Notice the pause'],
+      detailSpeech: [true, false],
+      durationSeconds: 45,
+    },
+    {
+      id: 'planning',
+      title: 'Planning',
+      description: 'Choose a priority',
+      additionalDetails: ['Write one next action'],
+      detailSpeech: [false, true],
+      durationSeconds: 60,
+    },
+  ];
+
+  const savedRoutine = JSON.parse(JSON.stringify({
+    id: 'morning-reset',
+    steps: moveRoutineStep(steps, 1, -1),
+  })) as { id: string; steps: RoutineStep[] };
+  const reopenedSteps = savedRoutine.steps;
+
+  assert.deepEqual(reopenedSteps.map(step => step.id), ['planning', 'breathing']);
+  assert.equal(reopenedSteps[0].description, 'Choose a priority');
+  assert.equal(reopenedSteps[1].description, 'Count each breath');
+  assert.deepEqual(
+    Object.fromEntries(reopenedSteps.map(step => [step.id, createStepDetailDraft(step).detailSpeech])),
+    { planning: [false, true], breathing: [true, false] },
+  );
+  assert.deepEqual(getSpokenStepDetails(reopenedSteps[0]), ['Write one next action']);
+  assert.deepEqual(getSpokenStepDetails(reopenedSteps[1]), ['Count each breath']);
+  assert.equal(moveRoutineStep(reopenedSteps, 0, -1), reopenedSteps);
+  assert.equal(moveRoutineStep(reopenedSteps, 1, 1), reopenedSteps);
+  assert.equal(moveRoutineStep(reopenedSteps, 2, -1), reopenedSteps);
 });
