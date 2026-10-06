@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSkills } from '@/context/SkillContext';
 import { useRoutines } from '@/context/RoutineContext';
@@ -16,6 +17,7 @@ function formatRatingTimestamp(value: string) {
 }
 
 export default function SkillsScreen() {
+  const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { skills, ratingWindow, loading, error, reload, createSkill, updateSkill, deleteSkill, setRatingWindow } = useSkills();
@@ -371,7 +373,15 @@ export default function SkillsScreen() {
                       {routinesLoading ? (
                         <ActivityIndicator size="small" color={colors.primary} />
                       ) : usage.routines.length ? usage.routines.map(routine => (
-                        <View key={routine.id} style={[styles.usageItem, { borderColor: colors.border }]}>
+                        <Pressable
+                          key={routine.id}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Open routine ${routine.title}${routine.hidden ? ', hidden' : ''}`}
+                          accessibilityHint="Opens routine details."
+                          testID={`skill-routine-${item.id}-${routine.id}`}
+                          onPress={() => router.push({ pathname: '/routine/[id]', params: { id: routine.id } })}
+                          style={({ pressed }) => [styles.usageItem, { borderColor: colors.border }, pressed && styles.pressed]}
+                        >
                           <Ionicons name="repeat-outline" size={16} color={colors.primary} />
                           <View style={styles.usageItemText}>
                             <Text style={[styles.usageItemTitle, { color: colors.foreground }]}>
@@ -380,13 +390,19 @@ export default function SkillsScreen() {
                             {routine.assignedToRoutine ? (
                               <Text style={[styles.usageItemDetail, { color: colors.mutedForeground }]}>Assigned to routine</Text>
                             ) : null}
-                            {routine.steps.length ? (
+                            {routine.steps.some(step => !step.hidden) ? (
                               <Text style={[styles.usageItemDetail, { color: colors.mutedForeground }]}>
-                                Steps: {routine.steps.map(step => `${step.title}${step.hidden ? ' (hidden)' : ''}`).join(', ')}
+                                Steps: {routine.steps.filter(step => !step.hidden).map(step => step.title).join(', ')}
+                              </Text>
+                            ) : null}
+                            {routine.steps.some(step => step.hidden) ? (
+                              <Text style={[styles.usageItemDetail, { color: colors.mutedForeground }]}>
+                                Hidden, inactive steps: {routine.steps.filter(step => step.hidden).map(step => step.title).join(', ')}
                               </Text>
                             ) : null}
                           </View>
-                        </View>
+                          <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+                        </Pressable>
                       )) : (
                         <Text style={[styles.usageEmpty, { color: colors.mutedForeground }]}>No routines use this skill.</Text>
                       )}
@@ -398,7 +414,15 @@ export default function SkillsScreen() {
                           Playlists could not load. Retry from the Playlists tab to see their skill assignments.
                         </Text>
                       ) : usage.playlists.length ? usage.playlists.map(playlist => (
-                        <View key={playlist.id} style={[styles.usageItem, { borderColor: colors.border }]}>
+                        <Pressable
+                          key={playlist.id}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Open playlist ${playlist.title}`}
+                          accessibilityHint="Opens playlist details and editing."
+                          testID={`skill-playlist-${item.id}-${playlist.id}`}
+                          onPress={() => router.push({ pathname: '/playlist-editor', params: { id: playlist.id } })}
+                          style={({ pressed }) => [styles.usageItem, { borderColor: colors.border }, pressed && styles.pressed]}
+                        >
                           <Ionicons name="list-outline" size={16} color={colors.primary} />
                           <View style={styles.usageItemText}>
                             <Text style={[styles.usageItemTitle, { color: colors.foreground }]}>{playlist.title}</Text>
@@ -411,7 +435,8 @@ export default function SkillsScreen() {
                               </Text>
                             ) : null}
                           </View>
-                        </View>
+                          <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+                        </Pressable>
                       )) : (
                         <Text style={[styles.usageEmpty, { color: colors.mutedForeground }]}>No playlists use this skill.</Text>
                       )}
