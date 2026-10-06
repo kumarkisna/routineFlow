@@ -79,3 +79,43 @@ test('multi-skill announcements use renamed names in assignment order without re
   assert.deepEqual(multiRoutine.steps[0].skillIds, ['skill-mobility', 'skill-focus', 'skill-mobility']);
   assert.deepEqual(multiPlaylist.skillIds, ['skill-planning', 'skill-focus', 'skill-planning']);
 });
+
+test('muted details are omitted while the renamed assigned skill and enabled details remain in order', () => {
+  const routineWithOneMutedDetail: Routine = {
+    ...routine,
+    steps: [
+      {
+        ...routine.steps[0],
+        description: 'Main instruction',
+        additionalDetails: ['First extra', 'Muted extra', 'Last extra'],
+        detailSpeech: [true, true, false, true],
+      },
+      routine.steps[1],
+    ],
+  };
+
+  assert.equal(
+    buildStepAnnouncement(routineWithOneMutedDetail, 0, renamedSkills),
+    'Routine Morning reset. Skills: Sustained focus. Step 1. Drink a glass of water. Skills: Sustained focus. Main instruction. First extra. Last extra. You have 1 minute.',
+  );
+});
+
+test('assigned skill names remain spoken when all step details are muted', () => {
+  const routineWithMutedDetails: Routine = {
+    ...routine,
+    steps: [
+      {
+        ...routine.steps[0],
+        description: 'Muted main instruction',
+        additionalDetails: ['Muted extra'],
+        detailSpeech: [false, false],
+      },
+      routine.steps[1],
+    ],
+  };
+
+  assert.equal(
+    buildStepAnnouncement(routineWithMutedDetails, 0, renamedSkills),
+    'Routine Morning reset. Skills: Sustained focus. Step 1. Drink a glass of water. Skills: Sustained focus. You have 1 minute.',
+  );
+});
