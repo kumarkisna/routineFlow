@@ -25,9 +25,9 @@ export default function PlaylistContext() {
       <header className="rp-header">
         <button className="rp-icon-button" type="button" aria-label="Close timer">×</button>
         <div className="rp-header-copy">
-          <div className="rp-header-label">Playlist · Routine 2 of 2</div>
-          <div className="rp-playlist-title">Test</div>
-          <div className="rp-playlist-subtitle">Current routine: <strong>After noon</strong></div>
+          <div className="rp-playlist-line"><span className="rp-playlist-prefix">PLAYLIST · </span><strong className="rp-playlist-name">Test</strong></div>
+          <div className="rp-playlist-position">ROUTINE 1 OF 2</div>
+          <div className="rp-playlist-subtitle">Current routine: <strong>Morning Reset</strong></div>
         </div>
         <button className="rp-icon-button" type="button" aria-label="Mute step voice">
           <SpeakerIcon />

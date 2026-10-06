@@ -92,11 +92,32 @@ body {
   text-align: center;
 }
 
-.rp-playlist-title {
-  margin-top: 3px;
-  font-size: 16px;
+.rp-playlist-line {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.rp-playlist-prefix {
+  color: var(--rp-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .8px;
+}
+
+.rp-playlist-name {
+  color: var(--rp-foreground);
+  font-size: 14px;
   font-weight: 700;
-  line-height: 20px;
+}
+
+.rp-playlist-position {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  line-height: 15px;
   overflow-wrap: anywhere;
 }
 
