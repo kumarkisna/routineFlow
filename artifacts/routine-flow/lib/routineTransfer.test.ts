@@ -251,7 +251,10 @@ test('person backup includes playlists, schedules, selected theme, and optional 
 
   assert.deepEqual(imported.routines, [routineWithSkills]);
   assert.deepEqual(imported.personData, {
-    playlists: personData.playlists,
+    playlists: personData.playlists.map(playlist => ({
+      ...playlist,
+      rateSkillsAtPlaylistEnd: true,
+    })),
     schedules: personData.schedules,
     selectedThemeId: personData.selectedThemeId,
     skillRatingWindow: personData.skillRatingWindow,

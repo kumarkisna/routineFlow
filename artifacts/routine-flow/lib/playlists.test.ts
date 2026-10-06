@@ -21,7 +21,9 @@ test('playlist names and at least one routine are required', () => {
 });
 test('saved playlist parsing keeps ordered identifiers and rejects corrupt storage', () => {
   const list = [{ id: 'p', title: 'Morning', routineIds: ['b', 'a', 'b'] }];
-  assert.deepEqual(parsePlaylists(JSON.stringify(list)), list);
+  assert.deepEqual(parsePlaylists(JSON.stringify(list)), [
+    { ...list[0], rateSkillsAtPlaylistEnd: true },
+  ]);
   assert.equal(parsePlaylists(JSON.stringify(list))[0].rateSkillsAtPlaylistEnd, true);
   assert.equal(parsePlaylists(JSON.stringify([{ ...list[0], rateSkillsAtPlaylistEnd: true }]))[0].rateSkillsAtPlaylistEnd, true);
   assert.throws(() => parsePlaylists('{}'));

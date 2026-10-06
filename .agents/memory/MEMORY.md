@@ -11,7 +11,7 @@
 - [Browser persistence fixtures](browser-persistence-fixtures.md) — initialization scripts run again after reload; seed storage only when empty when testing persistence.
 - [Expo web checkbox assertions](expo-web-checkboxes.md) — native accessibility checked state may not reach the DOM; verify actual exported content in transfer tests.
 - [Routine write overlap](routine-write-overlap.md) — reject overlapping routine saves until mutations use fresh state, or one successful edit may silently erase another.
-- [Playlist playback and history](playlist-playback.md) — preserve active launch order; playlist history includes only explicitly tagged completions from that playlist.
+- [Playlist playback and history](playlist-playback.md) — preserve launch order, default to playlist-end ratings, and filter history by explicit playlist-run tags.
 - [Routine scheduling](routine-scheduling.md) — manual-start reminders use fixed instants; date-only playlist versions stay isolated from originals and other appointments.
 - [Expo appearance API](expo-appearance.md) — newer React Native uses an explicit unspecified scheme to restore system appearance; do not cast older null-based examples.
 - [Expo SDK 57 checks](expo-sdk-57.md) — legacy splash configuration is invalid, and early Hermes V1 builds have a documented memory regression.

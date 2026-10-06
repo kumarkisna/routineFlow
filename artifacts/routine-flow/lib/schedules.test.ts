@@ -47,7 +47,7 @@ test('date-only editing owns a copied sequence and never changes the original pl
   assert.equal(scheduledPlaylistSource(custom, [playlist])?.title, 'Special day');
   assert.equal(scheduledPlaylistSource(custom, [playlist])?.rateSkillsAtPlaylistEnd, true);
   assert.deepEqual(scheduledPlaylistSource(sibling, [playlist]), playlist);
-  assert.deepEqual(playlist, { id: 'p', title: 'Original', routineIds: ['a', 'b', 'a'] });
+  assert.deepEqual(playlist, { id: 'p', title: 'Original', routineIds: ['a', 'b', 'a'], rateSkillsAtPlaylistEnd: true });
   assert.equal(scheduled.playlistOverride, undefined);
   assert.equal(custom.scheduledAt, scheduled.scheduledAt);
   assert.equal(custom.id, scheduled.id);
