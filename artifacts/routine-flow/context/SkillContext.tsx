@@ -12,6 +12,7 @@ import {
   normalizeSkillName,
   parseSkillRatingWindow,
   parseSkills,
+  renameSkillInCatalog,
   removeSkillFromCatalog,
   validateSkillName,
   MAX_SKILL_NOTE_LENGTH,
@@ -98,7 +99,7 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
     const existing = current.current.find(skill => skill.id === id);
     if (!existing) throw new Error('Skill not found.');
     const normalized = validateSkillName(name, current.current, id);
-    const next = current.current.map(skill => skill.id === id ? { ...skill, name: normalized } : skill);
+    const next = renameSkillInCatalog(current.current, id, normalized);
     await storage.setItem(KEY, JSON.stringify(next));
     current.current = next;
     setSkills(next);

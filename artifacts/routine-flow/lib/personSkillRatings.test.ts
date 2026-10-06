@@ -6,6 +6,7 @@ import {
   getSkillRatingPoints,
   parseSkillRatingWindow,
   parseSkills,
+  renameSkillInCatalog,
   removeSkillFromCatalog,
   type RoutineSkill,
   type SkillRating,
@@ -162,4 +163,75 @@ test('deleting a skill from one person leaves the other person’s history and a
     parseSkillRatingWindow(await meStorage.getItem(PERSON_DATA_KEYS.skillRatingWindow)),
     profiles.me.window,
   );
+});
+
+test('renaming a skill in one profile leaves the other profile and both histories intact', async () => {
+  const values = new Map<string, string>();
+  const backend = {
+    getItem: async (key: string) => values.get(key) ?? null,
+    setItem: async (key: string, value: string) => { values.set(key, value); },
+    removeItem: async (key: string) => { values.delete(key); },
+  };
+  const profiles: Record<string, { skill: RoutineSkill; window: number }> = {
+    me: {
+      skill: {
+        id: 'me-focus',
+        name: 'Focus',
+        ratings: [
+          rating('me-rating-1', 5, '01', 'Me: take the first step.'),
+          rating('me-rating-2', 7, '02', 'Me: stay consistent.'),
+        ],
+      },
+      window: 2,
+    },
+    'person-alex': {
+      skill: {
+        id: 'alex-focus',
+        name: 'Focus',
+        ratings: [rating('alex-rating', 9, '03', 'Alex: keep this rhythm.')],
+      },
+      window: 1,
+    },
+  };
+
+  for (const [personId, profile] of Object.entries(profiles)) {
+    const storage = createPersonStorage(personId, backend);
+    await Promise.all([
+      storage.setItem(PERSON_DATA_KEYS.skills, JSON.stringify([profile.skill])),
+      storage.setItem(PERSON_DATA_KEYS.skillRatingWindow, String(profile.window)),
+    ]);
+  }
+
+  const meStorage = createPersonStorage('me', backend);
+  const meSkillsJson = await meStorage.getItem(PERSON_DATA_KEYS.skills);
+  assert.ok(meSkillsJson);
+  await meStorage.setItem(
+    PERSON_DATA_KEYS.skills,
+    JSON.stringify(renameSkillInCatalog(parseSkills(meSkillsJson), 'me-focus', 'Sustained focus')),
+  );
+
+  const alexStorage = createPersonStorage('person-alex', backend);
+  const [alexSkillsJson, alexWindowValue] = await Promise.all([
+    alexStorage.getItem(PERSON_DATA_KEYS.skills),
+    alexStorage.getItem(PERSON_DATA_KEYS.skillRatingWindow),
+  ]);
+  assert.ok(alexSkillsJson);
+  const [alexSkill] = parseSkills(alexSkillsJson);
+  assert.deepEqual(alexSkill, profiles['person-alex'].skill);
+  assert.deepEqual(getSkillAverage(alexSkill, parseSkillRatingWindow(alexWindowValue)), {
+    average: 9,
+    count: 1,
+  });
+
+  const switchedBackSkillsJson = await meStorage.getItem(PERSON_DATA_KEYS.skills);
+  assert.ok(switchedBackSkillsJson);
+  const [renamedSkill] = parseSkills(switchedBackSkillsJson);
+  assert.equal(renamedSkill.name, 'Sustained focus');
+  assert.deepEqual(renamedSkill.ratings, profiles.me.skill.ratings);
+  assert.deepEqual(renamedSkill.ratings?.map(item => item.note), [
+    'Me: take the first step.',
+    'Me: stay consistent.',
+  ]);
+  assert.equal(parseSkillRatingWindow(await meStorage.getItem(PERSON_DATA_KEYS.skillRatingWindow)), 2);
+  assert.deepEqual(getSkillAverage(renamedSkill, 2), { average: 6, count: 2 });
 });

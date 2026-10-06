@@ -63,6 +63,10 @@ export function removeSkillFromCatalog(skills: RoutineSkill[], skillId: string):
   return skills.filter(skill => skill.id !== skillId);
 }
 
+export function renameSkillInCatalog(skills: RoutineSkill[], skillId: string, name: string): RoutineSkill[] {
+  return skills.map(skill => skill.id === skillId ? { ...skill, name } : skill);
+}
+
 export function parseSkills(value: string): RoutineSkill[] {
   let parsed: unknown;
   try {
