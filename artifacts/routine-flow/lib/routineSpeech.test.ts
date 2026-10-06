@@ -42,3 +42,40 @@ test('playlist-start speech uses the current renamed playlist, routine, and step
   );
   assert.deepEqual(playlist.skillIds, ['skill-focus']);
 });
+
+test('multi-skill announcements use renamed names in assignment order without repeating IDs', () => {
+  const multiRoutine: Routine = {
+    ...routine,
+    skillIds: ['skill-focus', 'skill-planning', 'skill-focus'],
+    steps: [
+      { ...routine.steps[0], skillIds: ['skill-mobility', 'skill-focus', 'skill-mobility'] },
+      { ...routine.steps[1], skillIds: ['skill-planning', 'skill-mobility', 'skill-planning'] },
+    ],
+  };
+  const multiPlaylist = {
+    ...playlist,
+    skillIds: ['skill-planning', 'skill-focus', 'skill-planning'],
+  };
+  const catalog = renameSkillInCatalog([
+    { id: 'skill-planning', name: 'Planning' },
+    { id: 'skill-focus', name: 'Focus' },
+    { id: 'skill-mobility', name: 'Mobility' },
+  ], 'skill-focus', 'Sustained focus');
+
+  assert.equal(
+    buildStepAnnouncement(multiRoutine, 0, catalog),
+    'Routine Morning reset. Skills: Sustained focus, Planning. Step 1. Drink a glass of water. Skills: Mobility, Sustained focus. You have 1 minute.',
+  );
+  assert.equal(
+    buildStepAnnouncement(multiRoutine, 1, catalog),
+    'Step 2. Stretch. Skills: Planning, Mobility. You have 30 seconds.',
+  );
+  assert.equal(
+    buildStepAnnouncement(multiRoutine, 0, catalog, multiPlaylist),
+    'Playlist Start the day. Skills: Planning, Sustained focus. Routine Morning reset. Skills: Sustained focus, Planning. Step 1. Drink a glass of water. Skills: Mobility, Sustained focus. You have 1 minute.',
+  );
+
+  assert.deepEqual(multiRoutine.skillIds, ['skill-focus', 'skill-planning', 'skill-focus']);
+  assert.deepEqual(multiRoutine.steps[0].skillIds, ['skill-mobility', 'skill-focus', 'skill-mobility']);
+  assert.deepEqual(multiPlaylist.skillIds, ['skill-planning', 'skill-focus', 'skill-planning']);
+});
