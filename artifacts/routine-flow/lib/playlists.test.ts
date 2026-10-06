@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylists, playablePlaylistIds,
+import { createPlaylistRunLaunch, mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylists, playablePlaylistIds,
   remapPlaylistReferences, resolvePlaylistReminderSettings, validatePlaylist } from './playlists';
 import type { Routine } from '../types/routines';
+import { getNextRoutineStepIndex, getPlayableRoutine, getRoutinePlaybackStep, getRoutinePlaybackStepSeconds } from './routinePlayback';
+import { buildStepAnnouncement } from './routineSpeech';
+import { moveRoutineStep } from './routineStepOrdering';
 
 const routine = (id: string, hidden = false, hiddenStep = false): Routine => ({
   id, title: id, subtitle: '', icon: 'sunny-outline', tone: 'coral',
@@ -12,6 +15,91 @@ test('playlist runs retain order and repeats, excluding missing or inactive rout
   assert.deepEqual(playablePlaylistIds(['b', 'gone', 'a', 'hidden', 'empty', 'b'],
     [routine('a'), routine('b'), routine('hidden', true), routine('empty', false, true)]),
   ['b', 'a', 'b']);
+});
+test('playlist playback uses a routine’s saved step order before advancing once to the next routine', () => {
+  const originalFirstRoutine = {
+    ...routine('first'),
+    title: 'Morning reset',
+    steps: [
+      { id: 'warm-up', title: 'Warm up', description: 'Roll your shoulders', durationSeconds: 19 },
+      { id: 'optional', title: 'Optional stretch', durationSeconds: 13, hidden: true },
+      { id: 'drink-water', title: 'Drink water', description: 'Take a few sips', durationSeconds: 27 },
+    ],
+  };
+  const reorderedSteps = moveRoutineStep(
+    moveRoutineStep(originalFirstRoutine.steps, 2, -1),
+    1,
+    -1,
+  );
+  const savedFirstRoutine = JSON.parse(JSON.stringify({
+    ...originalFirstRoutine,
+    steps: reorderedSteps,
+  })) as Routine;
+  const followingRoutine = {
+    ...routine('next'),
+    title: 'Next routine',
+    steps: [{ id: 'next-step', title: 'Close out', durationSeconds: 11 }],
+  };
+  const routines = [savedFirstRoutine, followingRoutine];
+  const playlist = {
+    id: 'playlist-morning',
+    title: 'Morning playlist',
+    routineIds: ['first', 'next'],
+    skillIds: ['focus'],
+    rateSkillsAtPlaylistEnd: true,
+    reminderSettings: { stepCompletion: false, routineCompletion: false },
+  };
+  const launch = createPlaylistRunLaunch(playlist, routines);
+  assert.ok(launch);
+  assert.deepEqual(launch.ids, ['first', 'next']);
+  assert.equal(launch.params.id, 'first');
+  assert.equal(launch.params.cursor, '0');
+  assert.equal(launch.params.autoStart, '1');
+  const queue = parsePlaylistQueue(launch.params.queue);
+  assert.ok(queue);
+  assert.deepEqual(queue, ['first', 'next']);
+
+  const firstPlayback = getPlayableRoutine(routines.find(item => item.id === launch.params.id)!);
+  assert.deepEqual(firstPlayback.steps.map(step => step.id), ['drink-water', 'warm-up']);
+  assert.deepEqual(
+    firstPlayback.steps.map((_, index) => getRoutinePlaybackStepSeconds(firstPlayback, index)),
+    [27, 19],
+  );
+  assert.deepEqual(
+    firstPlayback.steps.map((_, index) => buildStepAnnouncement(firstPlayback, index, [])),
+    [
+      'Step 1. Drink water. Take a few sips. You have 27 seconds.',
+      'Step 2. Warm up. Roll your shoulders. You have 19 seconds.',
+    ],
+  );
+
+  const events: string[] = [];
+  let cursor = Number(launch.params.cursor);
+  while (cursor >= 0) {
+    const currentRoutineId = queue[cursor];
+    const currentRoutine = routines.find(item => item.id === currentRoutineId);
+    assert.ok(currentRoutine);
+    const visibleRoutine = getPlayableRoutine(currentRoutine);
+    let stepIndex: number | null = 0;
+    while (stepIndex !== null) {
+      events.push(`step:${currentRoutineId}:${getRoutinePlaybackStep(visibleRoutine, stepIndex).id}`);
+      stepIndex = getNextRoutineStepIndex(visibleRoutine, stepIndex);
+    }
+    events.push(`complete:${currentRoutineId}`);
+    const nextCursor = nextPlaylistCursor(queue, cursor, routines);
+    if (nextCursor !== -1) events.push(`advance:${queue[nextCursor]}`);
+    cursor = nextCursor;
+  }
+
+  assert.deepEqual(events, [
+    'step:first:drink-water',
+    'step:first:warm-up',
+    'complete:first',
+    'advance:next',
+    'step:next:next-step',
+    'complete:next',
+  ]);
+  assert.equal(events.filter(event => event.startsWith('advance:')).length, 1);
 });
 test('playlist names and at least one routine are required', () => {
   assert.throws(() => validatePlaylist(' ', ['a']));

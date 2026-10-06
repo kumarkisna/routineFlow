@@ -33,6 +33,44 @@ export function playablePlaylistIds(ids: string[], routines: Routine[]): string[
   return ids.filter(id => available.has(id));
 }
 
+export function createPlaylistRunLaunch(
+  playlist: RoutinePlaylist,
+  routines: Routine[],
+): {
+  ids: string[];
+  params: {
+    id: string;
+    queue: string;
+    cursor: '0';
+    playlistId: string;
+    playlistTitle: string;
+    playlistSkills: string;
+    playlistRateSkillsAtEnd: '0' | '1';
+    stepReminder: '0' | '1';
+    routineReminder: '0' | '1';
+    autoStart: '1';
+  };
+} | null {
+  const ids = playablePlaylistIds(playlist.routineIds, routines);
+  if (!ids.length) return null;
+
+  return {
+    ids,
+    params: {
+      id: ids[0],
+      queue: JSON.stringify(ids),
+      cursor: '0',
+      playlistId: playlist.id,
+      playlistTitle: playlist.title,
+      playlistSkills: JSON.stringify(playlist.skillIds ?? []),
+      playlistRateSkillsAtEnd: (playlist.rateSkillsAtPlaylistEnd ?? true) ? '1' : '0',
+      stepReminder: playlist.reminderSettings?.stepCompletion ? '1' : '0',
+      routineReminder: playlist.reminderSettings?.routineCompletion ? '1' : '0',
+      autoStart: '1',
+    },
+  };
+}
+
 export function validatePlaylist(title: string, ids: string[]) {
   if (!title.trim()) throw new Error('Give your playlist a name.');
   if (title.trim().length > 100) throw new Error('Use a playlist name of 100 characters or fewer.');

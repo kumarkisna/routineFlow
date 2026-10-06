@@ -7,7 +7,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { SkillTagList } from '@/components/SkillPicker';
-import { playablePlaylistIds, type RoutinePlaylist } from '@/lib/playlists';
+import { createPlaylistRunLaunch, playablePlaylistIds, type RoutinePlaylist } from '@/lib/playlists';
 import { formatDuration, getStepSeconds } from '@/types/routines';
 
 export default function PlaylistsScreen() {
@@ -31,18 +31,13 @@ export default function PlaylistsScreen() {
     return r && !r.hidden ? r.title : 'Unavailable routine';
   }
   function start(p: RoutinePlaylist) {
-    const ids = playablePlaylistIds(p.routineIds, routines);
-    if (!ids.length) return;
-    const skipped = p.routineIds.length - ids.length;
+    const launch = createPlaylistRunLaunch(p, routines);
+    if (!launch) return;
+    const skipped = p.routineIds.length - launch.ids.length;
     setMessage(skipped ? `${skipped} hidden or missing ${skipped === 1 ? 'routine was' : 'routines were'} skipped in “${p.title}”.` : '');
     router.push({
       pathname: '/routine/[id]/run',
-      params: { id: ids[0], queue: JSON.stringify(ids), cursor: '0', playlistId: p.id, playlistTitle: p.title,
-        playlistSkills: JSON.stringify(p.skillIds ?? []),
-        playlistRateSkillsAtEnd: (p.rateSkillsAtPlaylistEnd ?? true) ? '1' : '0',
-        stepReminder: p.reminderSettings?.stepCompletion ? '1' : '0',
-        routineReminder: p.reminderSettings?.routineCompletion ? '1' : '0',
-        autoStart: '1' },
+      params: launch.params,
     });
   }
   async function remove(id: string) {
