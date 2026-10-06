@@ -171,6 +171,18 @@ test('multiple step details survive backup round-trips while old single details 
   assert.deepEqual(getSpokenStepDetails(withMultipleDetails.steps[0]), []);
   assert.deepEqual(parseRoutinesFile(serializeRoutines([withMultipleDetails])).routines, [withMultipleDetails]);
 
+  const selectivelySpoken: Routine = {
+    ...withMultipleDetails,
+    steps: withMultipleDetails.steps.map((step) => ({
+      ...step,
+      detailSpeech: [false, true, false],
+    })),
+  };
+  assert.deepEqual(getSpokenStepDetails(selectivelySpoken.steps[0]), [
+    'Then follow the second instruction.',
+  ]);
+  assert.deepEqual(parseRoutinesFile(serializeRoutines([selectivelySpoken])).routines, [selectivelySpoken]);
+
   const invalid = JSON.parse(serializeRoutines([withMultipleDetails])) as {
     routines: Array<{ steps: Array<Record<string, unknown>> }>;
   };
@@ -182,12 +194,19 @@ test('multiple step details survive backup round-trips while old single details 
   };
   invalidSpeechSetting.routines[0].steps[0].speakDetails = 'no';
   assert.throws(() => parseRoutinesFile(JSON.stringify(invalidSpeechSetting)), /invalid spoken-details setting/);
+
+  const invalidDetailSpeech = JSON.parse(serializeRoutines([selectivelySpoken])) as {
+    routines: Array<{ steps: Array<Record<string, unknown>> }>;
+  };
+  invalidDetailSpeech.routines[0].steps[0].detailSpeech = [false, 'yes', false];
+  assert.throws(() => parseRoutinesFile(JSON.stringify(invalidDetailSpeech)), /invalid per-detail speech settings/);
 });
 
 test('routine copies preserve additional details without sharing their arrays', () => {
   const source = routine();
   source.steps[0].additionalDetails = ['Use the saved checklist.'];
   source.steps[0].speakDetails = false;
+  source.steps[0].detailSpeech = [true, false];
   let nextId = 0;
 
   const copied = makeRoutineCopy(source, [], () => `copy-${nextId++}`);
@@ -195,6 +214,8 @@ test('routine copies preserve additional details without sharing their arrays', 
   assert.deepEqual(copied.steps[0].additionalDetails, ['Use the saved checklist.']);
   assert.notEqual(copied.steps[0].additionalDetails, source.steps[0].additionalDetails);
   assert.equal(copied.steps[0].speakDetails, false);
+  assert.deepEqual(copied.steps[0].detailSpeech, [true, false]);
+  assert.notEqual(copied.steps[0].detailSpeech, source.steps[0].detailSpeech);
 });
 
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {

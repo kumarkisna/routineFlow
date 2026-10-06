@@ -351,7 +351,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground }]}
           />
           <View style={styles.detailSpeechRow}>
-            <Text style={[styles.detailSpeechLabel, { color: colors.inkSoft }]}>Speak this detail aloud</Text>
+            <Text style={[styles.detailSpeechLabel, { color: colors.inkSoft }]}>Speak main detail aloud</Text>
             <Switch
               accessibilityLabel="Speak the main step detail during the routine"
               testID="speak-step-description"
@@ -396,7 +396,9 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 </Pressable>
               </View>
               <View style={styles.detailSpeechRow}>
-                <Text style={[styles.detailSpeechLabel, { color: colors.inkSoft }]}>Speak this detail aloud</Text>
+                <Text style={[styles.detailSpeechLabel, { color: colors.inkSoft }]}>
+                  {`Speak additional detail ${index + 1} aloud`}
+                </Text>
                 <Switch
                   accessibilityLabel={`Speak additional detail ${index + 1} during the routine`}
                   testID={`speak-additional-step-detail-${index}`}
