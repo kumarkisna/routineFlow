@@ -93,6 +93,7 @@ function PersonNotice() {
 
 function PersonApp({ waitingForFonts, fontsLoaded, fontFailed }: { waitingForFonts: boolean; fontsLoaded: boolean; fontFailed: boolean }) {
   const { activePerson, revision } = usePeople();
+  // The person key remounts all person-scoped data providers below on profile changes.
   return (
     <AppearanceProvider key={`${activePerson.id}:${revision}`}>
       <ErrorBoundary>

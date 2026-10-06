@@ -19,6 +19,12 @@ export function personStorageKey(personId: string, key: string) {
 
 const pendingWrites = new Map<string, Set<Promise<unknown>>>();
 
+type PersonStorageBackend = {
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
+};
+
 function trackWrite<T>(personId: string, operation: Promise<T>): Promise<T> {
   const pending = pendingWrites.get(personId) ?? new Set<Promise<unknown>>();
   pendingWrites.set(personId, pending);
@@ -33,12 +39,12 @@ export async function waitForPersonWrites(personId: string) {
   }
 }
 
-export function createPersonStorage(personId: string) {
+export function createPersonStorage(personId: string, backend: PersonStorageBackend = AsyncStorage) {
   return {
-    getItem: (key: string) => AsyncStorage.getItem(personStorageKey(personId, key)),
+    getItem: (key: string) => backend.getItem(personStorageKey(personId, key)),
     setItem: (key: string, value: string) =>
-      trackWrite(personId, AsyncStorage.setItem(personStorageKey(personId, key), value)),
+      trackWrite(personId, backend.setItem(personStorageKey(personId, key), value)),
     removeItem: (key: string) =>
-      trackWrite(personId, AsyncStorage.removeItem(personStorageKey(personId, key))),
+      trackWrite(personId, backend.removeItem(personStorageKey(personId, key))),
   };
 }
