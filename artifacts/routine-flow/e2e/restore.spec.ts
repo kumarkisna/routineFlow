@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
-import { existsSync } from 'node:fs';
+import { expect, test, type Page } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
+import type { CompletionMap } from '../types/routines';
 
 const baseURL = process.env.RESTORE_TEST_BASE_URL
   ?? (process.env.REPLIT_EXPO_DEV_DOMAIN ? `https://${process.env.REPLIT_EXPO_DEV_DOMAIN}` : undefined);
@@ -102,5 +103,159 @@ for (const [label, includeProgress] of [
     expect(stored.progress[day]['morning-reset:morning-water']).toBe(false);
     expect(stored.progress[day][`${restored!.id}:morning-water`]).toBe(includeProgress ? true : undefined);
     expect(stored.progress[day]['travel-reset:unpack']).toBe(includeProgress ? true : undefined);
+  });
+}
+
+async function importBackup(page: Page, contents: string, includeProgress: boolean) {
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('import-routines').click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: 'deleted-routine-history.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(contents),
+  });
+  await expect(page.getByText('This backup includes daily progress.')).toBeVisible();
+  await page.getByTestId(includeProgress ? 'import-with-progress' : 'import-without-progress').click();
+  await expect(page.getByText(/0 routines imported/)).toBeVisible();
+  await expect(page.getByText('This backup includes daily progress.')).toHaveCount(0);
+}
+
+async function storedBackup(page: Page) {
+  return page.evaluate(() => ({
+    routines: JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]') as typeof original[],
+    progress: JSON.parse(localStorage.getItem('@routine-flow/progress') ?? '{}') as CompletionMap,
+  }));
+}
+
+async function expectRemovedHistory(page: Page) {
+  await page.goto('/history');
+  await expect(page.getByText('Past days', { exact: true })).toBeVisible();
+  await expect(page.getByText('3 steps completed', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 of 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('Deleted morning', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('Old water', { exact: true })).toBeVisible();
+  await expect(page.getByText('Removed step (legacy)', { exact: true })).toBeVisible();
+  await expect(page.getByText('Removed routine (legacy routine)', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('Removed step (old)', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 completed · No longer in your routines', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('1 completed · No longer in your routines', { exact: true })).toHaveCount(1);
+  await expect(page.getByText(customized.title, { exact: true })).toHaveCount(0);
+}
+
+for (const [label, includeProgress] of [
+  ['accepted', true],
+  ['declined', false],
+] as const) {
+  test(`deleted-routine history ${label} stays separate from live progress after restore and reload`, async ({ page }) => {
+    if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+    test.setTimeout(90_000);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date();
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const pastDay = yesterday.toISOString().slice(0, 10);
+    const labeled = { routineTitle: 'Deleted morning', stepTitle: 'Old water' };
+    const liveProgress: CompletionMap = {
+      [today]: { 'morning-reset:morning-water': false },
+    };
+    const backup = JSON.stringify({
+      format: 'routine-flow-routines',
+      version: 5,
+      exportedAt: new Date().toISOString(),
+      routines: [],
+      progress: {
+        [pastDay]: {
+          'morning-reset:morning-water': labeled,
+          'morning-reset:legacy': true,
+          'legacy routine:old': true,
+          'morning-reset:incomplete': false,
+        },
+        // Even a same-day completion with the exact live routine/step IDs must
+        // stay archived rather than mark the unrelated live step complete.
+        [today]: { 'morning-reset:morning-water': labeled },
+      },
+    });
+    const expectedProgress: CompletionMap = includeProgress ? {
+      [today]: {
+        ...liveProgress[today],
+        'history:morning-reset:morning-water': labeled,
+      },
+      [pastDay]: {
+        'history:morning-reset:morning-water': labeled,
+        'history:morning-reset:legacy': true,
+        'history:legacy%20routine:old': true,
+      },
+    } : liveProgress;
+
+    // Init scripts also run on reload; never overwrite the restored provider
+    // state with the seed while verifying persistence.
+    await page.addInitScript(({ routine, progress }) => {
+      if (localStorage.getItem('@routine-flow/routines') === null) {
+        localStorage.setItem('@routine-flow/routines', JSON.stringify([routine]));
+        localStorage.setItem('@routine-flow/progress', JSON.stringify(progress));
+      }
+    }, { routine: customized, progress: liveProgress });
+    await page.goto('/');
+    await expect(page.getByLabel('Open My own reset')).toBeVisible();
+    await importBackup(page, backup, includeProgress);
+    if (includeProgress) {
+      await expect(page.getByText(/4 completed steps added/)).toBeVisible();
+    }
+
+    await page.reload();
+    await expect(page.getByLabel('Open My own reset')).toBeVisible();
+    await expect(page.getByText('Choose a routine and get started.', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Open Morning Reset')).toHaveCount(0);
+    expect(await storedBackup(page)).toEqual({ routines: [customized], progress: expectedProgress });
+
+    if (!includeProgress) {
+      await page.goto('/history');
+      await page.reload();
+      await expect(page.getByText('No past progress yet', { exact: true })).toBeVisible();
+      await expect(page.getByText('Deleted morning', { exact: true })).toHaveCount(0);
+      await expect(page.getByText(/No longer in your routines/)).toHaveCount(0);
+      expect(await storedBackup(page)).toEqual({ routines: [customized], progress: liveProgress });
+      return;
+    }
+
+    await expectRemovedHistory(page);
+
+    // Repeating the history-only import must reuse the detached identities.
+    await page.goto('/');
+    await expect(page.getByLabel('Open My own reset')).toBeVisible();
+    await importBackup(page, backup, true);
+    await expect(page.getByText(/0 completed steps added \(4 local entries kept\)/)).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Choose a routine and get started.', { exact: true })).toBeVisible();
+    expect(await storedBackup(page)).toEqual({ routines: [customized], progress: expectedProgress });
+    await expectRemovedHistory(page);
+
+    // Download the actual exported file, then feed it back through the picker.
+    // Already-archived IDs must not acquire another "history:" prefix or group.
+    await page.goto('/');
+    await expect(page.getByLabel('Open My own reset')).toBeVisible();
+    await page.getByTestId('include-daily-progress').click();
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByTestId('export-routines').click();
+    const download = await downloadPromise;
+    const path = await download.path();
+    expect(path).not.toBeNull();
+    const exportedContents = readFileSync(path!, 'utf8');
+    const exported = JSON.parse(exportedContents);
+    expect(exported.version).toBe(5);
+    expect(exported.routines).toEqual([customized]);
+    // Export omits incomplete entries, but retains both archive value formats.
+    expect(exported.progress).toEqual({
+      [today]: { 'history:morning-reset:morning-water': labeled },
+      [pastDay]: expectedProgress[pastDay],
+    });
+    await importBackup(page, exportedContents, true);
+    await expect(page.getByText(/1 already present · 0 completed steps added \(4 local entries kept\)/)).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel('Open My own reset')).toBeVisible();
+    await expect(page.getByText('Choose a routine and get started.', { exact: true })).toBeVisible();
+    expect(await storedBackup(page)).toEqual({ routines: [customized], progress: expectedProgress });
+    await expectRemovedHistory(page);
   });
 }
