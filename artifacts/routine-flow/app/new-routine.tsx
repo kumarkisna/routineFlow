@@ -18,6 +18,16 @@ import { useSkills } from '@/context/SkillContext';
 import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
 import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
+import {
+  addAdditionalStepDetail,
+  buildStepDetailFields,
+  createEmptyStepDetailDraft,
+  createStepDetailDraft,
+  removeAdditionalStepDetail,
+  setStepDetailSpeech as setDraftDetailSpeech,
+  updateAdditionalStepDetail,
+  type StepDetailDraft,
+} from '@/lib/stepDetailDraft';
 import { formatDuration, getStepDetails, getStepSeconds } from '@/types/routines';
 import type { Routine, RoutineStep } from '@/types/routines';
 
@@ -45,9 +55,10 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
   const [category, setCategory] = useState(editingRoutine?.category ?? '');
   const [stepDraft, setStepDraft] = useState('');
-  const [stepDescriptionDraft, setStepDescriptionDraft] = useState('');
-  const [additionalDetailsDraft, setAdditionalDetailsDraft] = useState<string[]>([]);
-  const [detailSpeechDraft, setDetailSpeechDraft] = useState<boolean[]>([true]);
+  const [stepDetailDraft, setStepDetailDraft] = useState<StepDetailDraft>(createEmptyStepDetailDraft);
+  const stepDescriptionDraft = stepDetailDraft.description;
+  const additionalDetailsDraft = stepDetailDraft.additionalDetails;
+  const detailSpeechDraft = stepDetailDraft.detailSpeech;
   const [hoursDraft, setHoursDraft] = useState('0');
   const [minutesDraft, setMinutesDraft] = useState('5');
   const [secondsDraft, setSecondsDraft] = useState('0');
@@ -64,9 +75,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   function clearStepDraft() {
     setEditingStepId(null);
     setStepDraft('');
-    setStepDescriptionDraft('');
-    setAdditionalDetailsDraft([]);
-    setDetailSpeechDraft([true]);
+    setStepDetailDraft(createEmptyStepDetailDraft());
     setStepSkillIds([]);
     setHoursDraft('0');
     setMinutesDraft('5');
@@ -77,13 +86,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     const duration = getStepSeconds(step);
     setEditingStepId(step.id);
     setStepDraft(step.title);
-    setStepDescriptionDraft(step.description ?? '');
-    setAdditionalDetailsDraft([...(step.additionalDetails ?? [])]);
-    const legacySpeechDefault = step.speakDetails !== false;
-    setDetailSpeechDraft(
-      [step.description, ...(step.additionalDetails ?? [])]
-        .map((_, index) => step.detailSpeech?.[index] ?? legacySpeechDefault),
-    );
+    setStepDetailDraft(createStepDetailDraft(step));
     setStepSkillIds([...(step.skillIds ?? [])]);
     setHoursDraft(String(Math.floor(duration / 3600)));
     setMinutesDraft(String(Math.floor((duration % 3600) / 60)));
@@ -92,25 +95,15 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   }
 
   function setDetailSpeech(index: number, speak: boolean) {
-    setDetailSpeechDraft((current) => {
-      const next = [...current];
-      next[index] = speak;
-      return next;
-    });
+    setStepDetailDraft(current => setDraftDetailSpeech(current, index, speak));
   }
 
   function addStep() {
     const nextTitle = stepDraft.trim();
-    const nextDescription = stepDescriptionDraft.trim();
-    const nextAdditionalDetailsWithSpeech = additionalDetailsDraft.flatMap((detail, index) => {
-      const text = detail.trim();
-      return text ? [{ text, speak: detailSpeechDraft[index + 1] ?? true }] : [];
-    });
-    const nextAdditionalDetails = nextAdditionalDetailsWithSpeech.map((detail) => detail.text);
-    const nextDetailSpeech = [
-      detailSpeechDraft[0] ?? true,
-      ...nextAdditionalDetailsWithSpeech.map((detail) => detail.speak),
-    ];
+    const detailFields = buildStepDetailFields(stepDetailDraft);
+    const nextDescription = detailFields.description;
+    const nextAdditionalDetails = detailFields.additionalDetails;
+    const nextDetailSpeech = detailFields.detailSpeech;
     if (!nextTitle) {
       setError('Give this step a name.');
       return;
@@ -347,7 +340,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             placeholder="Add instructions or a helpful note"
             placeholderTextColor={colors.mutedForeground}
             value={stepDescriptionDraft}
-            onChangeText={setStepDescriptionDraft}
+            onChangeText={(description) => setStepDetailDraft((current) => ({ ...current, description }))}
             style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground }]}
           />
           <View style={styles.detailSpeechRow}>
@@ -373,8 +366,8 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                   placeholder={`Additional detail ${index + 1}`}
                   placeholderTextColor={colors.mutedForeground}
                   value={detail}
-                  onChangeText={(value) => setAdditionalDetailsDraft((current) =>
-                    current.map((item, itemIndex) => itemIndex === index ? value : item),
+                  onChangeText={(value) => setStepDetailDraft((current) =>
+                    updateAdditionalStepDetail(current, index, value),
                   )}
                   style={[
                     styles.stepDescriptionInput,
@@ -386,10 +379,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                   accessibilityRole="button"
                   accessibilityLabel={`Remove additional detail ${index + 1}`}
                   testID={`remove-step-detail-${index}`}
-                  onPress={() => {
-                    setAdditionalDetailsDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                    setDetailSpeechDraft((current) => current.filter((_, speechIndex) => speechIndex !== index + 1));
-                  }}
+                  onPress={() => setStepDetailDraft((current) => removeAdditionalStepDetail(current, index))}
                   style={({ pressed }) => [styles.removeDetailButton, pressed && styles.pressed]}
                 >
                   <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
@@ -414,10 +404,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             accessibilityRole="button"
             accessibilityLabel="Add another step detail"
             testID="add-step-detail"
-            onPress={() => {
-              setAdditionalDetailsDraft((current) => [...current, '']);
-              setDetailSpeechDraft((current) => [...current, true]);
-            }}
+            onPress={() => setStepDetailDraft((current) => addAdditionalStepDetail(current))}
             style={({ pressed }) => [styles.addDetailButton, pressed && styles.pressed]}
           >
             <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
