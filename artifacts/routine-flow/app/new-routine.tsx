@@ -6,6 +6,7 @@ import {
   Keyboard,
   Pressable,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -46,6 +47,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [stepDraft, setStepDraft] = useState('');
   const [stepDescriptionDraft, setStepDescriptionDraft] = useState('');
   const [additionalDetailsDraft, setAdditionalDetailsDraft] = useState<string[]>([]);
+  const [speakDetailsDraft, setSpeakDetailsDraft] = useState(true);
   const [hoursDraft, setHoursDraft] = useState('0');
   const [minutesDraft, setMinutesDraft] = useState('5');
   const [secondsDraft, setSecondsDraft] = useState('0');
@@ -64,6 +66,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft('');
     setStepDescriptionDraft('');
     setAdditionalDetailsDraft([]);
+    setSpeakDetailsDraft(true);
     setStepSkillIds([]);
     setHoursDraft('0');
     setMinutesDraft('5');
@@ -76,6 +79,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft(step.title);
     setStepDescriptionDraft(step.description ?? '');
     setAdditionalDetailsDraft([...(step.additionalDetails ?? [])]);
+    setSpeakDetailsDraft(step.speakDetails !== false);
     setStepSkillIds([...(step.skillIds ?? [])]);
     setHoursDraft(String(Math.floor(duration / 3600)));
     setMinutesDraft(String(Math.floor((duration % 3600) / 60)));
@@ -102,7 +106,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     if (editingStepId) {
       setSteps((current) => current.map((step) =>
         step.id === editingStepId
-          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, skillIds: [...stepSkillIds], durationSeconds }
+          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, speakDetails: speakDetailsDraft, skillIds: [...stepSkillIds], durationSeconds }
           : step,
       ));
     } else {
@@ -113,6 +117,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           title: nextTitle,
           description: nextDescription,
           additionalDetails: nextAdditionalDetails,
+          speakDetails: speakDetailsDraft,
           ...(stepSkillIds.length ? { skillIds: [...stepSkillIds] } : {}),
           durationSeconds,
         },
@@ -366,6 +371,21 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
             <Text style={[styles.addDetailText, { color: colors.primary }]}>Add another detail</Text>
           </Pressable>
+          <View style={[styles.speakDetailsRow, { borderTopColor: colors.border }]}>
+            <View style={styles.speakDetailsCopy}>
+              <Text style={[styles.speakDetailsTitle, { color: colors.foreground }]}>Speak these details</Text>
+              <Text style={[styles.speakDetailsHint, { color: colors.mutedForeground }]}>
+                The step name and timer are still spoken when this is off.
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel="Speak this step’s details during the routine"
+              testID="speak-step-details"
+              value={speakDetailsDraft}
+              onValueChange={setSpeakDetailsDraft}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
           <SkillPicker
             label="Step skills (optional)"
             selectedIds={stepSkillIds}
@@ -528,6 +548,10 @@ const styles = StyleSheet.create({
   stepInput: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 15 },
   addStepButton: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   stepDescriptionLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginLeft: 8, marginTop: 4, marginBottom: 7 },
+  speakDetailsRow: { minHeight: 57, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderTopWidth: 1, marginTop: 8, paddingTop: 8 },
+  speakDetailsCopy: { flex: 1, paddingLeft: 7 },
+  speakDetailsTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  speakDetailsHint: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15, marginTop: 3 },
   stepDescriptionInput: { minHeight: 72, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 9, marginHorizontal: 6, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
   additionalDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 7 },
   additionalDetailInput: { flex: 1, marginHorizontal: 6 },

@@ -147,6 +147,13 @@ test('multiple step details survive backup round-trips while old single details 
   assert.deepEqual(parseRoutinesFile(serializeRoutines([legacy])).routines, [legacy]);
   assert.deepEqual(getSpokenStepDetails(legacy.steps[0]), getStepDetails(legacy.steps[0]));
 
+  const explicitlySpoken: Routine = {
+    ...legacy,
+    steps: legacy.steps.map((step) => ({ ...step, speakDetails: true })),
+  };
+  assert.deepEqual(getSpokenStepDetails(explicitlySpoken.steps[0]), getStepDetails(explicitlySpoken.steps[0]));
+  assert.deepEqual(parseRoutinesFile(serializeRoutines([explicitlySpoken])).routines, [explicitlySpoken]);
+
   const withMultipleDetails: Routine = {
     ...legacy,
     steps: legacy.steps.map((step) => ({
