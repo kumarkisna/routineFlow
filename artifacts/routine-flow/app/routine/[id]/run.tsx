@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   AppState,
+  Linking,
   type AppStateStatus,
   Pressable,
   Platform,
@@ -23,6 +24,7 @@ import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { Notifications } from '@/lib/localNotifications';
 import { nextPlaylistCursor, parsePlaylistQueue, playablePlaylistIds } from '@/lib/playlists';
+import { buildRunReminderRequests, requestRunReminderPermission } from '@/lib/runReminders';
 import { createSkillRatingRun, getPlaylistSkillIds, getRoutineSkillIds, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
 import {
   formatDuration,
@@ -101,10 +103,11 @@ function parseSkillIdsParam(value: string | string[] | undefined): string[] {
 }
 
 export default function RoutineRunScreen() {
-  const { id, cursor = '0', queue, playlistId, playlistRateSkillsAtEnd } =
-    useLocalSearchParams<{ id: string; cursor?: string; queue?: string; playlistId?: string; playlistRateSkillsAtEnd?: string }>();
+  const { id, cursor = '0', queue, playlistId, playlistRateSkillsAtEnd, stepReminder, routineReminder } =
+    useLocalSearchParams<{ id: string; cursor?: string; queue?: string; playlistId?: string;
+      playlistRateSkillsAtEnd?: string; stepReminder?: string; routineReminder?: string }>();
   // A new routine (including a repeated routine) needs fresh timer/speech state.
-  return <RoutinePlayer key={`${id}:${cursor}:${queue ?? ''}:${playlistId ?? ''}:${playlistRateSkillsAtEnd ?? '1'}`} />;
+  return <RoutinePlayer key={`${id}:${cursor}:${queue ?? ''}:${playlistId ?? ''}:${playlistRateSkillsAtEnd ?? '1'}:${stepReminder ?? '0'}:${routineReminder ?? '0'}`} />;
 }
 
 function RoutinePlayer() {
@@ -137,6 +140,7 @@ function RoutinePlayer() {
   const [isFinished, setIsFinished] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(voice !== '0');
   const [voiceError, setVoiceError] = useState('');
+  const [notificationError, setNotificationError] = useState('');
   const [completionError, setCompletionError] = useState('');
   const [savingCompletion, setSavingCompletion] = useState(false);
   const [ratingSkillIds, setRatingSkillIds] = useState<string[]>([]);
@@ -164,6 +168,9 @@ function RoutinePlayer() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const scheduledStepNotificationIdsRef = useRef<string[]>([]);
   const scheduledRoutineNotificationIdsRef = useRef<string[]>([]);
+  const notificationScheduleRevisionRef = useRef(0);
+  const notificationPermissionAlertShownRef = useRef(false);
+  const notificationPermissionDeniedRef = useRef(false);
 
   useEffect(() => {
     if (!loading && !isRunningRef.current && !isAnnouncingRef.current && !isFinishedRef.current && activeIndexRef.current === 0) {
@@ -180,7 +187,62 @@ function RoutinePlayer() {
     [],
   );
 
-  const cancelNotifications = useCallback(async (includeRoutineCompletion = true) => {
+  const showNotificationPermissionHelp = useCallback((canAskAgain: boolean) => {
+    if (!mountedRef.current) return;
+    setNotificationError('Allow notifications in your device settings to receive reminders.');
+    if (notificationPermissionAlertShownRef.current) return;
+    notificationPermissionAlertShownRef.current = true;
+    Alert.alert(
+      'Notifications are off',
+      canAskAgain
+        ? 'Allow notifications to receive reminders when a step or routine finishes.'
+        : 'Notifications are blocked for this app. Allow them in your device settings to receive reminders.',
+      [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open Settings', onPress: () => { void Linking.openSettings().catch(() => undefined); } },
+      ],
+    );
+  }, []);
+
+  const ensureRunReminderPermission = useCallback(async (force = false, retry = false) => {
+    const settings = notificationSettingsRef.current;
+    if (!force && !settings.stepCompletion && !settings.routineCompletion) return true;
+    if (Platform.OS === 'web') {
+      if (mountedRef.current) {
+        setNotificationError('Phone alerts require the Routine Flow app and cannot run in this web preview.');
+      }
+      return false;
+    }
+    if (retry) {
+      notificationPermissionDeniedRef.current = false;
+      notificationPermissionAlertShownRef.current = false;
+    }
+    if (notificationPermissionDeniedRef.current) return false;
+    try {
+      const permission = await requestRunReminderPermission(Notifications);
+      if (!permission.granted) {
+        notificationPermissionDeniedRef.current = true;
+        showNotificationPermissionHelp(permission.canAskAgain !== false);
+        return false;
+      }
+      notificationPermissionDeniedRef.current = false;
+      notificationPermissionAlertShownRef.current = false;
+      if (mountedRef.current) setNotificationError('');
+      return true;
+    } catch {
+      if (mountedRef.current) {
+        setNotificationError('This device could not check notification access.');
+        Alert.alert('Notifications unavailable', 'This device could not enable routine reminders.');
+      }
+      return false;
+    }
+  }, [showNotificationPermissionHelp]);
+
+  const cancelNotifications = useCallback(async (
+    includeRoutineCompletion = true,
+    invalidatePendingSchedules = true,
+  ) => {
+    if (invalidatePendingSchedules) notificationScheduleRevisionRef.current += 1;
     const ids = [
       ...scheduledStepNotificationIdsRef.current,
       ...(includeRoutineCompletion ? scheduledRoutineNotificationIdsRef.current : []),
@@ -197,68 +259,77 @@ function RoutinePlayer() {
   }, []);
 
   const scheduleNotifications = useCallback(async () => {
-    if (
-      Platform.OS === 'web' ||
-      !routine ||
-      !isRunningRef.current ||
-      isFinishedRef.current ||
-      (!notificationSettingsRef.current.stepCompletion &&
-        !notificationSettingsRef.current.routineCompletion)
-    ) {
+    const settings = notificationSettingsRef.current;
+    if (Platform.OS === 'web') {
+      if ((settings.stepCompletion || settings.routineCompletion) && mountedRef.current) {
+        setNotificationError('Phone alerts require the Routine Flow app and cannot run in this web preview.');
+      }
+      return;
+    }
+    if (!routine || !isRunningRef.current || isFinishedRef.current
+      || (!settings.stepCompletion && !settings.routineCompletion)) {
+      await cancelNotifications();
       return;
     }
 
-    await cancelNotifications();
+    const stepEndAt = stepEndsAtRef.current;
+    if (!stepEndAt) {
+      await cancelNotifications();
+      return;
+    }
+    const scheduleRevision = ++notificationScheduleRevisionRef.current;
+    await cancelNotifications(true, false);
     const stepNotificationIds: string[] = [];
     const routineNotificationIds: string[] = [];
-    const settings = notificationSettingsRef.current;
-    const now = Date.now();
-    const stepEndAt = stepEndsAtRef.current;
-    if (!stepEndAt) return;
-
-    const index = activeIndexRef.current;
-    if (stepEndAt > now) {
-      if (settings.stepCompletion) {
+    try {
+      const hasPermission = await ensureRunReminderPermission();
+      if (
+        scheduleRevision !== notificationScheduleRevisionRef.current ||
+        stepEndsAtRef.current !== stepEndAt ||
+        !isRunningRef.current
+      ) return;
+      if (!hasPermission) return;
+      const requests = buildRunReminderRequests({
+        routineTitle: routine.title,
+        steps: routine.steps,
+        activeIndex: activeIndexRef.current,
+        stepEndsAt: stepEndAt,
+        now: Date.now(),
+        settings,
+      });
+      for (const request of requests) {
         const notificationId = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'Step complete',
-            body:
-              index === routine.steps.length - 1
-                ? `${routine.title} is complete.`
-                : `${routine.steps[index].title} is complete.`,
-          },
+          content: { title: request.title, body: request.body },
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: new Date(stepEndAt),
+            date: request.date,
           },
         });
-        stepNotificationIds.push(notificationId);
+        if (request.kind === 'step') stepNotificationIds.push(notificationId);
+        else routineNotificationIds.push(notificationId);
       }
 
-      if (index === routine.steps.length - 1 && settings.routineCompletion) {
-        const notificationId = await Notifications.scheduleNotificationAsync({
-          content: {
-            title: 'Routine complete',
-            body: `${routine.title} is complete.`,
-          },
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.DATE,
-            date: new Date(stepEndAt),
-          },
-        });
-        routineNotificationIds.push(notificationId);
+      if (
+        scheduleRevision !== notificationScheduleRevisionRef.current ||
+        stepEndsAtRef.current !== stepEndAt ||
+        !isRunningRef.current
+      ) {
+        await Promise.all([...stepNotificationIds, ...routineNotificationIds].map(
+          (notificationId) => Notifications.cancelScheduledNotificationAsync(notificationId).catch(() => undefined),
+        ));
+        return;
       }
-    }
-
-    if (stepEndsAtRef.current !== stepEndAt || !isRunningRef.current) {
+      scheduledStepNotificationIdsRef.current = stepNotificationIds;
+      scheduledRoutineNotificationIdsRef.current = routineNotificationIds;
+    } catch {
       await Promise.all([...stepNotificationIds, ...routineNotificationIds].map(
-        (notificationId) => Notifications.cancelScheduledNotificationAsync(notificationId),
+        (notificationId) => Notifications.cancelScheduledNotificationAsync(notificationId).catch(() => undefined),
       ));
-      return;
+      if (mountedRef.current) {
+        setNotificationError('Could not schedule reminders. Check notification access and try again.');
+      }
     }
-    scheduledStepNotificationIdsRef.current = stepNotificationIds;
-    scheduledRoutineNotificationIdsRef.current = routineNotificationIds;
-  }, [cancelNotifications, routine]);
+  }, [cancelNotifications, ensureRunReminderPermission, routine]);
 
   const stopAnnouncement = useCallback(() => {
     announcementTokenRef.current += 1;
@@ -450,11 +521,14 @@ function RoutinePlayer() {
       const previousState = appStateRef.current;
       appStateRef.current = nextState;
       if (nextState === 'active' && previousState !== 'active') {
+        notificationPermissionDeniedRef.current = false;
+        notificationPermissionAlertShownRef.current = false;
         reconcileTimer(Date.now());
+        if (isRunningRef.current) void scheduleNotifications();
       }
     });
     return () => subscription.remove();
-  }, [reconcileTimer]);
+  }, [reconcileTimer, scheduleNotifications]);
 
   useEffect(
     () => () => {
@@ -468,8 +542,11 @@ function RoutinePlayer() {
   useEffect(() => {
     if (autoStart !== '1' || loading || !routine?.steps.length || autoStartedRef.current) return;
     autoStartedRef.current = true;
-    prepareStep(0, true);
-  }, [autoStart, loading, routine, prepareStep]);
+    void (async () => {
+      await ensureRunReminderPermission();
+      if (mountedRef.current) prepareStep(0, true);
+    })();
+  }, [autoStart, loading, routine, prepareStep, ensureRunReminderPermission]);
 
   if (loading || !routine || routine.steps.length === 0) {
     return (
@@ -491,7 +568,7 @@ function RoutinePlayer() {
   const elapsedSteps = isFinished ? currentRoutine.steps.length : activeIndex;
   const progress = currentRoutine.steps.length ? elapsedSteps / currentRoutine.steps.length : 0;
 
-  function startOrPause() {
+  async function startOrPause() {
     if (isFinished) return;
     if (isRunningRef.current) {
       const now = Date.now();
@@ -513,6 +590,8 @@ function RoutinePlayer() {
     } else if (isAnnouncingRef.current) {
       stopAnnouncement();
     } else {
+      await ensureRunReminderPermission();
+      if (!mountedRef.current || isFinishedRef.current) return;
       prepareStep(activeIndexRef.current, true, remainingMillisecondsRef.current);
     }
     void Haptics.selectionAsync();
@@ -559,20 +638,13 @@ function RoutinePlayer() {
   ) {
     if (enabled) {
       if (Platform.OS === 'web') {
+        setNotificationError('Reminders need notification permission from the Routine Flow phone app.');
         Alert.alert('Notifications unavailable', 'Enable notifications on your phone to use reminders.');
         return;
       }
-      try {
-        let permission = await Notifications.getPermissionsAsync();
-        if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
-        if (!permission.granted) {
-          Alert.alert('Notifications are off', 'Allow notifications in Settings to receive routine reminders.');
-          return;
-        }
-      } catch {
-        Alert.alert('Notifications unavailable', 'This device could not enable routine reminders.');
-        return;
-      }
+      if (!await ensureRunReminderPermission(true, true)) return;
+    } else {
+      setNotificationError('');
     }
 
     const nextSettings = { ...notificationSettingsRef.current, [setting]: enabled };
@@ -732,7 +804,7 @@ function RoutinePlayer() {
               <View style={styles.notificationCopy}>
                 <Text style={[styles.notificationTitle, { color: colors.foreground }]}>Reminders</Text>
                 <Text style={[styles.notificationDescription, { color: colors.mutedForeground }]}>
-                  Get a reminder even when your phone is locked.
+                  Alerts are scheduled for the current step or routine while the timer runs.
                 </Text>
               </View>
             </View>
@@ -758,6 +830,11 @@ function RoutinePlayer() {
                 thumbColor={notificationSettings.routineCompletion ? colors.success : colors.card}
               />
             </View>
+            {notificationError ? (
+              <Text accessibilityRole="alert" style={[styles.notificationDescription, { color: colors.destructive }]}>
+                {notificationError}
+              </Text>
+            ) : null}
           </View>
 
           <View style={styles.stepsHeader}>

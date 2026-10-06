@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
 import { SkillTagList } from '@/components/SkillPicker';
 import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
+import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { createSkillRatingRun, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
@@ -23,6 +24,7 @@ export default function RoutineDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { activePerson } = usePeople();
   const { routines, loading, progress, getCompletedCount, toggleStep, completeRoutine, updateRoutine, copyRoutine, setStepHidden, deleteRoutine } = useRoutines();
   const [reorderBusy, setReorderBusy] = React.useState(false);
   const [copyBusy, setCopyBusy] = React.useState(false);
@@ -408,7 +410,14 @@ export default function RoutineDetailScreen() {
           <Pressable
             accessibilityLabel="Run routine timer"
             disabled={visibleSteps.length === 0}
-            onPress={() => router.push({ pathname: '/routine/[id]/run', params: { id: currentRoutine.id } })}
+            onPress={() => router.push({
+              pathname: '/routine/[id]/run',
+              params: {
+                id: currentRoutine.id,
+                stepReminder: activePerson.defaultPlaylistReminderSettings.stepCompletion ? '1' : '0',
+                routineReminder: activePerson.defaultPlaylistReminderSettings.routineCompletion ? '1' : '0',
+              },
+            })}
             style={({ pressed }) => [
               styles.runButton,
               { backgroundColor: visibleSteps.length ? colors.primary : colors.secondary },

@@ -56,11 +56,11 @@ export default function ScheduleScreen() {
       const r = routines.find((x) => x.id === s.targetId);
       if (!r) return {
         title: null as string | null, ids: [] as string[], skillIds: [] as string[],
-        rateSkillsAtPlaylistEnd: false, reminderSettings: DEFAULT_PLAYLIST_REMINDER_SETTINGS,
+        rateSkillsAtPlaylistEnd: false, reminderSettings: activePerson.defaultPlaylistReminderSettings,
       };
       return {
         title: r.title, ids: r.hidden ? [] : playablePlaylistIds([r.id], routines), skillIds: [] as string[],
-        rateSkillsAtPlaylistEnd: false, reminderSettings: DEFAULT_PLAYLIST_REMINDER_SETTINGS,
+        rateSkillsAtPlaylistEnd: false, reminderSettings: activePerson.defaultPlaylistReminderSettings,
       };
     }
     const p = scheduledPlaylistSource(s, playlists);
@@ -75,7 +75,15 @@ export default function ScheduleScreen() {
   function start(s: RoutineSchedule) {
     const src = source(s);
     if (!src.ids.length) return;
-    if (s.targetType === 'routine') router.push({ pathname: '/routine/[id]/run', params: { id: src.ids[0], autoStart: '1' } });
+    if (s.targetType === 'routine') router.push({
+      pathname: '/routine/[id]/run',
+      params: {
+        id: src.ids[0],
+        stepReminder: src.reminderSettings.stepCompletion ? '1' : '0',
+        routineReminder: src.reminderSettings.routineCompletion ? '1' : '0',
+        autoStart: '1',
+      },
+    });
     else router.push({
       pathname: '/routine/[id]/run',
       params: { id: src.ids[0], queue: JSON.stringify(src.ids), cursor: '0',

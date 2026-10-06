@@ -390,9 +390,9 @@ function PlaylistReminderDefaults({
   return (
     <View style={[styles.reminderDefaults, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.reminderDefaultsCopy}>
-        <Text style={[styles.itemText, { color: colors.foreground }]}>Default playlist reminders</Text>
+        <Text style={[styles.itemText, { color: colors.foreground }]}>Default routine and playlist reminders</Text>
         <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-          New playlists start with these choices. You can change them in playlist edit mode.
+          Direct routine runs and new playlists start with these choices. Playlist reminders remain editable.
         </Text>
       </View>
       <View style={[styles.reminderDefaultRow, { borderColor: colors.border }]}>
