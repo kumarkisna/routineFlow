@@ -6,7 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const serverPath = fileURLToPath(new URL("../dist/index.mjs", import.meta.url));
 
-async function assertStartupFails({ name, port, expectedMessage }) {
+async function assertStartupFails({
+  name,
+  port,
+  expectedMessage,
+  expectedDetails = [],
+}) {
   const env = { ...process.env, NODE_ENV: "production" };
   if (port === undefined) {
     delete env.PORT;
@@ -52,10 +57,17 @@ async function assertStartupFails({ name, port, expectedMessage }) {
     Number.isInteger(result.code) && result.code !== 0,
     `Production server should exit unsuccessfully for ${name}; got ${JSON.stringify(result)}`,
   );
+  const output = `${stderr}\n${stdout}`;
   assert.ok(
-    stderr.includes(expectedMessage),
+    output.includes(expectedMessage),
     `Expected ${JSON.stringify(expectedMessage)} for ${name}; stderr was:\n${stderr}\nstdout was:\n${stdout}`,
   );
+  for (const detail of expectedDetails) {
+    assert.ok(
+      output.includes(detail),
+      `Expected ${JSON.stringify(detail)} for ${name}; stderr was:\n${stderr}\nstdout was:\n${stdout}`,
+    );
+  }
 }
 
 async function getUnusedPort() {
@@ -122,6 +134,29 @@ console.log(
 
 const port = await getUnusedPort();
 const baseUrl = `http://127.0.0.1:${port}`;
+
+const occupiedServer = createServer();
+await new Promise((resolve, reject) => {
+  occupiedServer.once("error", reject);
+  occupiedServer.listen(0, resolve);
+});
+const occupiedAddress = occupiedServer.address();
+assert.ok(occupiedAddress && typeof occupiedAddress !== "string");
+
+try {
+  await assertStartupFails({
+    name: "a port already in use",
+    port: String(occupiedAddress.port),
+    expectedMessage: `Port ${occupiedAddress.port} is already in use`,
+    expectedDetails: ["EADDRINUSE"],
+  });
+  console.log("API startup conflict smoke test passed: occupied port");
+} finally {
+  await new Promise((resolve, reject) => {
+    occupiedServer.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
 const child = spawn(
   process.execPath,
   ["--enable-source-maps", serverPath],
