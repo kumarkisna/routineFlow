@@ -599,9 +599,22 @@ function RoutinePlayer() {
           </Pressable>
           <View style={styles.headerCenter}>
             <Text style={[styles.headerLabel, { color: colors.mutedForeground }]}>
-              {inPlaylist ? `PLAYLIST · ${queueCursor + 1} OF ${playlistQueue!.length}` : 'RUNNING ROUTINE'}
+              {inPlaylist ? `PLAYLIST · ROUTINE ${queueCursor + 1} OF ${playlistQueue!.length}` : 'RUNNING ROUTINE'}
             </Text>
-            <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>{currentRoutine.title}</Text>
+            {inPlaylist ? (
+              <>
+                <Text style={[styles.playlistHeaderTitle, { color: colors.foreground }]} numberOfLines={2}>
+                  {playlistTitle ?? 'Playlist'}
+                </Text>
+                <Text style={[styles.playlistHeaderSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+                  Current routine: {currentRoutine.title}
+                </Text>
+              </>
+            ) : (
+              <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
+                {currentRoutine.title}
+              </Text>
+            )}
           </View>
           <Pressable
             accessibilityRole="button"
@@ -622,10 +635,6 @@ function RoutinePlayer() {
             <Ionicons name={voiceEnabled ? 'volume-high' : 'volume-mute'} size={22} color={colors.foreground} />
           </Pressable>
         </View>
-        {inPlaylist ? (
-          <Text style={{ color: colors.mutedForeground, textAlign: 'center', marginBottom: 16,
-            fontFamily: 'Inter_500Medium', paddingHorizontal: 20 }} numberOfLines={2}>{playlistTitle}</Text>
-        ) : null}
 
         <View style={[styles.timerCard, { backgroundColor: colors.hero }]}>
           <View style={[styles.timerRing, { borderColor: colors.sage }]}>
@@ -810,12 +819,14 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: 'center' },
   headerSpacer: { width: 42 },
   headerLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.1 },
-  headerTitle: { fontFamily: 'Inter_700Bold', fontSize: 17, marginTop: 5, maxWidth: 210 },
-  timerCard: { marginHorizontal: 20, borderRadius: 26, alignItems: 'center', paddingHorizontal: 20, paddingTop: 25, paddingBottom: 27 },
-  timerRing: { width: 190, height: 190, borderRadius: 95, borderWidth: 8, alignItems: 'center', justifyContent: 'center' },
-  timerText: { fontFamily: 'Inter_700Bold', fontSize: 30, letterSpacing: 1 },
-  timerCaption: { fontFamily: 'Inter_500Medium', fontSize: 12, opacity: 0.65, marginTop: 5, textTransform: 'uppercase', letterSpacing: 1 },
-  activeTitle: { fontFamily: 'Inter_700Bold', fontSize: 20, textAlign: 'center', marginTop: 22 },
+  headerTitle: { fontFamily: 'Inter_700Bold', fontSize: 17, marginTop: 5, maxWidth: 250 },
+  playlistHeaderTitle: { fontFamily: 'Inter_700Bold', fontSize: 16, lineHeight: 20, textAlign: 'center', marginTop: 3, maxWidth: 260 },
+  playlistHeaderSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 12, textAlign: 'center', marginTop: 3, maxWidth: 260 },
+  timerCard: { marginHorizontal: 20, borderRadius: 26, alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
+  timerRing: { width: 164, height: 164, borderRadius: 82, borderWidth: 7, alignItems: 'center', justifyContent: 'center' },
+  timerText: { fontFamily: 'Inter_700Bold', fontSize: 27, letterSpacing: 1 },
+  timerCaption: { fontFamily: 'Inter_500Medium', fontSize: 11, opacity: 0.65, marginTop: 5, textTransform: 'uppercase', letterSpacing: 1 },
+  activeTitle: { fontFamily: 'Inter_700Bold', fontSize: 20, textAlign: 'center', marginTop: 16 },
   activeDescription: { fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20, textAlign: 'center', opacity: 0.82, marginTop: 9 },
   activeMeta: { fontFamily: 'Inter_400Regular', fontSize: 13, opacity: 0.68, textAlign: 'center', marginTop: 7 },
   body: { paddingHorizontal: 20, paddingTop: 24 },

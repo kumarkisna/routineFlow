@@ -1,0 +1,334 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --rp-background: #1c1912;
+  --rp-foreground: #f5f2eb;
+  --rp-muted: #b9b09f;
+  --rp-card: #2b271e;
+  --rp-border: #554a3b;
+  --rp-secondary: #393328;
+  --rp-primary: #f1bf68;
+  --rp-primary-foreground: #21180c;
+  --rp-hero: #4b4030;
+  --rp-hero-foreground: #fffdf9;
+  --rp-sage: #78bd98;
+  --rp-success: #a8d6b7;
+}
+
+body {
+  margin: 0;
+  background: var(--rp-background);
+  color: var(--rp-foreground);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.rp-stage {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 402px;
+  height: 100vh;
+  min-height: 720px;
+  margin: 0 auto;
+  padding: 0 10px 22px;
+  overflow-y: auto;
+  background: var(--rp-background);
+}
+
+.rp-safe-top {
+  height: 52px;
+}
+
+.rp-header {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  align-items: center;
+  min-height: 62px;
+  padding: 0 10px;
+}
+
+.rp-icon-button {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--rp-foreground);
+  font: inherit;
+  font-size: 25px;
+}
+
+.rp-header-copy {
+  min-width: 0;
+  text-align: center;
+}
+
+.rp-header-label {
+  color: var(--rp-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.rp-header-title {
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 21px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rp-current-playlist {
+  margin: 1px 20px 14px;
+  color: var(--rp-muted);
+  font-size: 12px;
+  line-height: 17px;
+  text-align: center;
+}
+
+.rp-playlist-title {
+  margin-top: 3px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.rp-playlist-subtitle {
+  margin-top: 3px;
+  color: var(--rp-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.rp-playlist-subtitle strong {
+  color: var(--rp-foreground);
+  font-weight: 600;
+}
+
+.rp-timer-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 8px 10px 0;
+  padding: 20px 18px;
+  border-radius: 26px;
+  background: var(--rp-hero);
+  color: var(--rp-hero-foreground);
+}
+
+.rp-timer-ring {
+  display: flex;
+  width: 190px;
+  height: 190px;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 8px solid var(--rp-sage);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.rp-timer-value {
+  font-size: 29px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  line-height: 36px;
+}
+
+.rp-timer-status {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  opacity: .68;
+  text-transform: uppercase;
+}
+
+.rp-active-step {
+  margin-top: 17px;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 23px;
+  text-align: center;
+}
+
+.rp-active-meta {
+  margin-top: 4px;
+  color: rgb(255 253 249 / 72%);
+  font-size: 12px;
+  line-height: 17px;
+  text-align: center;
+}
+
+.rp-content {
+  padding: 0 0 14px;
+}
+
+.rp-progress {
+  height: 7px;
+  margin: 20px 0 21px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--rp-secondary);
+}
+
+.rp-progress-fill {
+  width: 1%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--rp-primary);
+}
+
+.rp-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.rp-skip,
+.rp-start {
+  display: flex;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rp-border);
+  border-radius: 17px;
+  color: var(--rp-foreground);
+  font: inherit;
+}
+
+.rp-skip {
+  width: 52px;
+  background: transparent;
+  font-size: 18px;
+}
+
+.rp-start {
+  min-width: 130px;
+  gap: 9px;
+  padding: 0 20px;
+  border: 0;
+  background: var(--rp-primary);
+  color: var(--rp-primary-foreground);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.rp-reminder-card {
+  margin-top: 22px;
+  padding: 0 14px;
+  border: 1px solid var(--rp-border);
+  border-radius: 18px;
+  background: var(--rp-card);
+}
+
+.rp-reminder-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 14px 0;
+}
+
+.rp-bell {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: #55442c;
+  color: var(--rp-primary);
+  font-size: 16px;
+}
+
+.rp-reminder-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.rp-reminder-description {
+  margin-top: 2px;
+  color: var(--rp-muted);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.rp-reminder-row {
+  display: flex;
+  min-height: 49px;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--rp-border);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.rp-switch {
+  width: 34px;
+  height: 18px;
+  border-radius: 12px;
+  background: var(--rp-secondary);
+}
+
+.rp-sequence-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 32px 0 12px;
+  color: var(--rp-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.rp-sequence-total {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.rp-step-row {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 9px;
+  padding: 0 12px;
+  border: 1px solid var(--rp-primary);
+  border-radius: 17px;
+  background: #443b2b;
+}
+
+.rp-step-number {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--rp-primary);
+  color: var(--rp-primary-foreground);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rp-step-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.rp-step-duration {
+  margin-top: 3px;
+  color: var(--rp-muted);
+  font-size: 12px;
+}
