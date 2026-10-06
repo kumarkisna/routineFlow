@@ -24,6 +24,12 @@ import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { Notifications } from '@/lib/localNotifications';
 import { nextPlaylistCursor, parsePlaylistQueue, playablePlaylistIds } from '@/lib/playlists';
+import {
+  isRunKeepaliveAvailable,
+  startRunKeepalive,
+  stopRunKeepalive,
+  updateRunKeepalive,
+} from '@/lib/runKeepalive';
 import { buildRunReminderRequests, requestRunReminderPermission } from '@/lib/runReminders';
 import { createSkillRatingRun, getPlaylistSkillIds, getRoutineSkillIds, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
 import {
@@ -141,6 +147,7 @@ function RoutinePlayer() {
   const [voiceEnabled, setVoiceEnabled] = useState(voice !== '0');
   const [voiceError, setVoiceError] = useState('');
   const [notificationError, setNotificationError] = useState('');
+  const [backgroundError, setBackgroundError] = useState('');
   const [completionError, setCompletionError] = useState('');
   const [savingCompletion, setSavingCompletion] = useState(false);
   const [ratingSkillIds, setRatingSkillIds] = useState<string[]>([]);
@@ -171,6 +178,7 @@ function RoutinePlayer() {
   const notificationScheduleRevisionRef = useRef(0);
   const notificationPermissionAlertShownRef = useRef(false);
   const notificationPermissionDeniedRef = useRef(false);
+  const playlistTransitionRef = useRef(false);
 
   useEffect(() => {
     if (!loading && !isRunningRef.current && !isAnnouncingRef.current && !isFinishedRef.current && activeIndexRef.current === 0) {
@@ -189,14 +197,20 @@ function RoutinePlayer() {
 
   const showNotificationPermissionHelp = useCallback((canAskAgain: boolean) => {
     if (!mountedRef.current) return;
-    setNotificationError('Allow notifications in your device settings to receive reminders.');
+    setNotificationError(Platform.OS === 'android'
+      ? 'Allow notifications to receive reminders and see the active timer while your phone is locked.'
+      : 'Allow notifications in your device settings to receive reminders.');
     if (notificationPermissionAlertShownRef.current) return;
     notificationPermissionAlertShownRef.current = true;
     Alert.alert(
       'Notifications are off',
       canAskAgain
-        ? 'Allow notifications to receive reminders when a step or routine finishes.'
-        : 'Notifications are blocked for this app. Allow them in your device settings to receive reminders.',
+        ? Platform.OS === 'android'
+          ? 'Allow notifications to receive reminders and keep a visible timer status while a routine runs in the background.'
+          : 'Allow notifications to receive reminders when a step or routine finishes.'
+        : Platform.OS === 'android'
+          ? 'Notifications are blocked for this app. Allow them in your device settings to show the background timer and reminders.'
+          : 'Notifications are blocked for this app. Allow them in your device settings to receive reminders.',
       [
         { text: 'Not now', style: 'cancel' },
         { text: 'Open Settings', onPress: () => { void Linking.openSettings().catch(() => undefined); } },
@@ -344,6 +358,7 @@ function RoutinePlayer() {
 
   const advancePlaylist = useCallback((nextCursor: number) => {
     if (!playlistQueue || nextCursor < 0 || nextCursor >= playlistQueue.length) return;
+    playlistTransitionRef.current = true;
     router.replace({
       pathname: '/routine/[id]/run',
       params: {
@@ -371,13 +386,33 @@ function RoutinePlayer() {
     if (nextCursor !== null) advancePlaylist(nextCursor);
   }, [advancePlaylist, pendingPlaylistCursor]);
 
+  const updateKeepaliveForStep = useCallback((index: number, start: boolean) => {
+    if (Platform.OS !== 'android' || !routine) return;
+    if (!isRunKeepaliveAvailable) {
+      setBackgroundError(
+        'Lock-screen auto-advance needs the installed Android app build. It is unavailable in Expo Go.',
+      );
+      return;
+    }
+
+    const title = inPlaylist
+      ? `Playlist · ${playlistTitle ?? 'Playlist'}`
+      : `Routine · ${routine.title}`;
+    const body = `${routine.title} · Step ${index + 1} of ${routine.steps.length}`;
+    const succeeded = start ? startRunKeepalive(title, body) : updateRunKeepalive(title, body);
+    setBackgroundError(succeeded
+      ? ''
+      : 'The Android timer service could not start. Keep the app open or try starting the run again.');
+  }, [inPlaylist, playlistTitle, routine]);
+
   const startCountdown = useCallback(() => {
     if (isFinishedRef.current) return;
+    updateKeepaliveForStep(activeIndexRef.current, false);
     stepEndsAtRef.current = Date.now() + remainingMillisecondsRef.current;
     isRunningRef.current = true;
     setIsRunning(true);
     void scheduleNotifications();
-  }, [scheduleNotifications]);
+  }, [scheduleNotifications, updateKeepaliveForStep]);
 
   const prepareStep = useCallback(
     (index: number, shouldStart: boolean, milliseconds?: number) => {
@@ -394,6 +429,7 @@ function RoutinePlayer() {
       setRemainingSeconds(Math.ceil(remaining / 1000));
       setVoiceError('');
       if (!shouldStart) return;
+      updateKeepaliveForStep(index, true);
       const token = ++announcementTokenRef.current;
       if (!voiceEnabled) {
         void stopped.then(() => {
@@ -436,7 +472,7 @@ function RoutinePlayer() {
       }).catch(() => finish(true));
     },
     [cancelNotifications, routine, startCountdown, stopAnnouncement, voiceEnabled, skills, inPlaylist,
-      playlistQueue, queueCursor, routines, playlistTitle, playlistSkillIds],
+      playlistQueue, queueCursor, routines, playlistTitle, playlistSkillIds, updateKeepaliveForStep],
   );
 
   const finishRoutine = useCallback(() => {
@@ -472,14 +508,18 @@ function RoutinePlayer() {
         ])];
       if (next !== -1) setPendingPlaylistCursor(next);
       if (involvedSkillIds.length) {
+        stopRunKeepalive();
         setRatingRun(ratingRun);
         setRatingSkillIds(involvedSkillIds);
         setShowRatingPrompt(true);
       } else if (next !== -1) {
         advancePlaylist(next);
+      } else {
+        stopRunKeepalive();
       }
     }).catch(() => {
       if (!mountedRef.current) return;
+      stopRunKeepalive();
       setSavingCompletion(false);
       setCompletionError('Your completion could not be saved. Retry to continue.');
     });
@@ -535,6 +575,7 @@ function RoutinePlayer() {
       isRunningRef.current = false;
       announcementTokenRef.current += 1;
       void cancelNotifications();
+      if (!playlistTransitionRef.current) stopRunKeepalive();
     },
     [cancelNotifications],
   );
@@ -543,7 +584,7 @@ function RoutinePlayer() {
     if (autoStart !== '1' || loading || !routine?.steps.length || autoStartedRef.current) return;
     autoStartedRef.current = true;
     void (async () => {
-      await ensureRunReminderPermission();
+      await ensureRunReminderPermission(Platform.OS === 'android');
       if (mountedRef.current) prepareStep(0, true);
     })();
   }, [autoStart, loading, routine, prepareStep, ensureRunReminderPermission]);
@@ -555,7 +596,7 @@ function RoutinePlayer() {
         <Text style={[styles.missingTitle, { color: colors.foreground }]}>
           {loading ? 'Loading routine' : routine ? 'No visible steps to run' : 'Routine not found'}
         </Text>
-        <Pressable onPress={() => router.back()}>
+        <Pressable onPress={() => { stopRunKeepalive(); router.back(); }}>
           <Text style={[styles.backText, { color: colors.primary }]}>Go back</Text>
         </Pressable>
       </View>
@@ -577,6 +618,7 @@ function RoutinePlayer() {
       if (isAnnouncingRef.current) {
         stopAnnouncement();
         void cancelNotifications();
+        stopRunKeepalive();
         return;
       }
       const stepEndAt = stepEndsAtRef.current;
@@ -587,10 +629,12 @@ function RoutinePlayer() {
       isRunningRef.current = false;
       setIsRunning(false);
       void cancelNotifications();
+      stopRunKeepalive();
     } else if (isAnnouncingRef.current) {
       stopAnnouncement();
+      stopRunKeepalive();
     } else {
-      await ensureRunReminderPermission();
+      await ensureRunReminderPermission(Platform.OS === 'android');
       if (!mountedRef.current || isFinishedRef.current) return;
       prepareStep(activeIndexRef.current, true, remainingMillisecondsRef.current);
     }
@@ -601,6 +645,7 @@ function RoutinePlayer() {
     if (inPlaylist && playlistQueue) {
       const first = nextPlaylistCursor(playlistQueue, -1, routines);
       if (first !== -1 && first !== queueCursor) {
+        playlistTransitionRef.current = true;
         router.replace({
           pathname: '/routine/[id]/run',
           params: { id: playlistQueue[first], queue: JSON.stringify(playlistQueue),
@@ -664,7 +709,7 @@ function RoutinePlayer() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close timer"
-            onPress={() => router.back()}
+            onPress={() => { stopRunKeepalive(); router.back(); }}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
           >
             <Ionicons name="close" size={24} color={colors.foreground} />
@@ -795,6 +840,11 @@ function RoutinePlayer() {
             </Pressable>
           </View>
           {voiceError ? <Text style={[styles.voiceError, { color: colors.destructive }]}>{voiceError}</Text> : null}
+          {backgroundError ? (
+            <Text accessibilityRole="alert" style={[styles.notificationDescription, { color: colors.destructive }]}>
+              {backgroundError}
+            </Text>
+          ) : null}
 
           <View style={[styles.notificationCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.notificationHeader}>
@@ -804,7 +854,11 @@ function RoutinePlayer() {
               <View style={styles.notificationCopy}>
                 <Text style={[styles.notificationTitle, { color: colors.foreground }]}>Reminders</Text>
                 <Text style={[styles.notificationDescription, { color: colors.mutedForeground }]}>
-                  Alerts are scheduled for the current step or routine while the timer runs.
+                  {Platform.OS === 'android'
+                    ? isRunKeepaliveAvailable
+                      ? 'Android keeps this run moving while locked with a quiet status notification. Use these switches for completion alerts.'
+                      : 'Locked playback needs the installed Android app build. Step and routine alerts remain optional.'
+                    : 'Alerts are scheduled for the current step or routine while the timer runs.'}
                 </Text>
               </View>
             </View>
