@@ -23,7 +23,7 @@ import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { Notifications } from '@/lib/localNotifications';
 import { nextPlaylistCursor, parsePlaylistQueue } from '@/lib/playlists';
-import { getRoutineSkillIds, type RoutineSkill } from '@/lib/skills';
+import { createSkillRatingRun, getRoutineSkillIds, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
 import {
   formatDuration,
   getStepDetails,
@@ -137,6 +137,7 @@ function RoutinePlayer() {
   const [completionError, setCompletionError] = useState('');
   const [savingCompletion, setSavingCompletion] = useState(false);
   const [ratingSkillIds, setRatingSkillIds] = useState<string[]>([]);
+  const [ratingRun, setRatingRun] = useState<SkillRatingRun | null>(null);
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const [pendingPlaylistCursor, setPendingPlaylistCursor] = useState<number | null>(null);
   const autoStartedRef = useRef(false);
@@ -291,6 +292,7 @@ function RoutinePlayer() {
     setPendingPlaylistCursor(null);
     setShowRatingPrompt(false);
     setRatingSkillIds([]);
+    setRatingRun(null);
     if (nextCursor !== null) advancePlaylist(nextCursor);
   }, [advancePlaylist, pendingPlaylistCursor]);
 
@@ -364,6 +366,7 @@ function RoutinePlayer() {
 
   const finishRoutine = useCallback(() => {
     if (!routine || isFinishedRef.current) return;
+    const ratingRun = createSkillRatingRun();
     stopAnnouncement();
     isFinishedRef.current = true;
     isRunningRef.current = false;
@@ -387,6 +390,7 @@ function RoutinePlayer() {
       ])];
       if (next !== -1) setPendingPlaylistCursor(next);
       if (involvedSkillIds.length) {
+        setRatingRun(ratingRun);
         setRatingSkillIds(involvedSkillIds);
         setShowRatingPrompt(true);
       } else if (next !== -1) {
@@ -774,6 +778,7 @@ function RoutinePlayer() {
         visible={showRatingPrompt}
         skillIds={ratingSkillIds}
         routineTitle={currentRoutine.title}
+        run={ratingRun ?? undefined}
         onSkip={closeRatingPrompt}
         onSaved={closeRatingPrompt}
       />

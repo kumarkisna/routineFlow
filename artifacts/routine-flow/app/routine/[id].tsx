@@ -16,7 +16,7 @@ import { SkillTagList } from '@/components/SkillPicker';
 import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
-import { getRoutineSkillIds } from '@/lib/skills';
+import { createSkillRatingRun, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
 import { formatDuration, getStepDetails, getStepSeconds, isCompleted } from '@/types/routines';
 
 export default function RoutineDetailScreen() {
@@ -36,6 +36,7 @@ export default function RoutineDetailScreen() {
   const [showHiddenSteps, setShowHiddenSteps] = React.useState(false);
   const [reorderError, setReorderError] = React.useState('');
   const [ratingSkillIds, setRatingSkillIds] = React.useState<string[]>([]);
+  const [ratingRun, setRatingRun] = React.useState<SkillRatingRun | null>(null);
   const [showRatingPrompt, setShowRatingPrompt] = React.useState(false);
   const reorderLock = React.useRef(false);
   const routine = routines.find((item) => item.id === id);
@@ -93,27 +94,31 @@ export default function RoutineDetailScreen() {
     const wasComplete = isCompleted(todayProgress[progressKey]);
     const completesRoutine = !wasComplete && visibleSteps.every(step =>
       step.id === stepId || isCompleted(todayProgress[`${currentRoutine.id}:${step.id}`]));
+    const run = completesRoutine ? createSkillRatingRun() : undefined;
     await toggleStep(currentRoutine.id, stepId);
     void Haptics.selectionAsync();
-    if (completesRoutine) openRatingPrompt();
+    if (run) openRatingPrompt(run);
   }
 
   async function handleComplete() {
+    const run = createSkillRatingRun();
     await completeRoutine(currentRoutine.id);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    openRatingPrompt();
+    openRatingPrompt(run);
   }
 
-  function openRatingPrompt() {
+  function openRatingPrompt(run: SkillRatingRun) {
     const assigned = getRoutineSkillIds(currentRoutine);
     if (!assigned.length) return;
     setRatingSkillIds(assigned);
+    setRatingRun(run);
     setShowRatingPrompt(true);
   }
 
   function closeRatingPrompt() {
     setShowRatingPrompt(false);
     setRatingSkillIds([]);
+    setRatingRun(null);
   }
 
   async function handleCopy() {
@@ -448,6 +453,7 @@ export default function RoutineDetailScreen() {
         visible={showRatingPrompt}
         skillIds={ratingSkillIds}
         routineTitle={currentRoutine.title}
+        run={ratingRun ?? undefined}
         onSkip={closeRatingPrompt}
         onSaved={closeRatingPrompt}
       />

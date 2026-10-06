@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,9 +9,10 @@ import { useSkills } from '@/context/SkillContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import {
-  formatHistoryDay, getHistoryForDay, localDayKey, playlistHistoryOptions,
-  recordedPastDays, routineHistoryOptions, type HistoryFilter,
+  formatHistoryDay, getHistoryForDay, groupSkillRatingEvents, localDayKey, playlistHistoryOptions,
+  recordedHistoryDays, routineHistoryOptions, type HistoryFilter, type SkillRatingEvent,
 } from '@/lib/progressHistory';
+import { buildSkillRatingReportHtml, formatSkillRatingDateTime } from '@/lib/skillRatingReport';
 
 export default function HistoryScreen() {
   const colors = useColors();
@@ -21,6 +24,9 @@ export default function HistoryScreen() {
   const [filterKind, setFilterKind] = React.useState<'all' | 'routine' | 'playlist'>('all');
   const [selectedRoutineId, setSelectedRoutineId] = React.useState('');
   const [selectedPlaylistId, setSelectedPlaylistId] = React.useState('');
+  const [exportingRunId, setExportingRunId] = React.useState<string | null>(null);
+  const [exportError, setExportError] = React.useState<{ runId: string; message: string } | null>(null);
+  const exportLock = React.useRef(false);
   const today = localDayKey(new Date());
   const routineOptions = routineHistoryOptions(progress, routines);
   const playlistOptions = playlistHistoryOptions(progress, playlists);
@@ -31,7 +37,7 @@ export default function HistoryScreen() {
     : filterKind === 'playlist' && selectedPlaylist
       ? { kind: 'playlist', id: selectedPlaylist.id }
       : undefined;
-  const days = filterKind === 'all' || activeFilter ? recordedPastDays(progress, today, activeFilter) : [];
+  const days = filterKind === 'all' || activeFilter ? recordedHistoryDays(progress, today, activeFilter) : [];
   // If a restore adds a more recent day, keep the user's current selection.
   const activeDay = selectedDay && days.includes(selectedDay) ? selectedDay : days[0];
   const activeIndex = days.indexOf(activeDay);
@@ -44,6 +50,50 @@ export default function HistoryScreen() {
     setSelectedDay(null);
     if (kind === 'routine' && routineOptions[0]) setSelectedRoutineId(routineOptions[0].id);
     if (kind === 'playlist' && playlistOptions[0]) setSelectedPlaylistId(playlistOptions[0].id);
+  }
+
+  async function exportSkillRatings(routineTitle: string, event: SkillRatingEvent) {
+    if (exportLock.current) return;
+    exportLock.current = true;
+    setExportingRunId(event.id);
+    setExportError(null);
+    try {
+      const html = buildSkillRatingReportHtml({
+        routineTitle,
+        dateTime: event.dateTime,
+        isRunTime: event.isRunTime,
+        ratings: event.ratings,
+      });
+      if (Platform.OS === 'web') {
+        if (typeof window === 'undefined') throw new Error('Browser printing is unavailable.');
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) throw new Error('Allow pop-ups in your browser to save the PDF.');
+        printWindow.onafterprint = () => printWindow.close();
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+      } else {
+        const file = await Print.printToFileAsync({ html });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(file.uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: `${routineTitle} skill ratings`,
+          });
+        } else {
+          await Print.printAsync({ html });
+        }
+      }
+    } catch (error) {
+      setExportError({
+        runId: event.id,
+        message: error instanceof Error ? error.message : 'Could not create the skill ratings PDF.',
+      });
+    } finally {
+      exportLock.current = false;
+      setExportingRunId(null);
+    }
   }
 
   return (
@@ -224,18 +274,58 @@ export default function HistoryScreen() {
                   </View>
                 </View>
               ))}
-              {group.skillRatings?.length ? (
+          {group.skillRatings?.length ? (
                 <View style={[styles.skillNotes, { borderTopColor: colors.border }]}>
                   <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Skill ratings &amp; reflections</Text>
-                  {group.skillRatings.map((entry) => (
-                    <View key={entry.id} style={[styles.skillNote, { backgroundColor: colors.background }]}>
-                      <View style={styles.skillNoteHeader}>
-                        <Text style={[styles.skillNoteSkill, { color: colors.foreground }]}>{entry.skillName}</Text>
-                        <Text style={[styles.skillNoteScore, { color: colors.primary }]}>{entry.rating}/10</Text>
+                  {groupSkillRatingEvents(group.skillRatings).map((event, eventIndex) => (
+                    <View key={event.id} style={[styles.skillEvent, { borderColor: colors.border }]}>
+                      <View style={styles.skillEventHeader}>
+                        <View style={styles.skillEventCopy}>
+                          <Text style={[styles.skillEventTitle, { color: colors.foreground }]}>
+                            {event.isRunTime ? `Run ${eventIndex + 1}` : `Rating ${eventIndex + 1}`}
+                          </Text>
+                          <Text style={[styles.skillEventTime, { color: colors.mutedForeground }]}>
+                            {event.isRunTime ? 'Completed' : 'Recorded'} · {formatSkillRatingDateTime(event.dateTime)}
+                          </Text>
+                        </View>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Export ${group.title} skill ratings as a PDF`}
+                          accessibilityState={{ disabled: exportingRunId !== null }}
+                          disabled={exportingRunId !== null}
+                          testID={`history-skill-pdf-${event.id}`}
+                          onPress={() => void exportSkillRatings(group.title, event)}
+                          style={({ pressed }) => [
+                            styles.pdfButton,
+                            { backgroundColor: colors.secondary },
+                            pressed && styles.pressed,
+                          ]}
+                        >
+                          {exportingRunId === event.id
+                            ? <ActivityIndicator size="small" color={colors.inkSoft} />
+                            : <Ionicons name="document-text-outline" size={16} color={colors.inkSoft} />}
+                          <Text style={[styles.pdfButtonText, { color: colors.inkSoft }]}>
+                            {exportingRunId === event.id ? 'Preparing…' : 'Export PDF'}
+                          </Text>
+                        </Pressable>
                       </View>
-                      <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>
-                        {entry.note ?? 'No note added.'}
-                      </Text>
+                      {event.ratings.map((entry, index) => (
+                        <View key={entry.id} style={[styles.skillNote, { backgroundColor: colors.background }]}>
+                          <View style={styles.skillNoteHeader}>
+                            <Text style={[styles.skillNoteOrder, { color: colors.mutedForeground }]}>{index + 1}.</Text>
+                            <Text style={[styles.skillNoteSkill, { color: colors.foreground }]}>{entry.skillName}</Text>
+                            <Text style={[styles.skillNoteScore, { color: colors.primary }]}>{entry.rating}/10</Text>
+                          </View>
+                          <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>
+                            {entry.note ?? 'No note added.'}
+                          </Text>
+                        </View>
+                      ))}
+                      {exportError?.runId === event.id ? (
+                        <Text accessibilityRole="alert" style={[styles.pdfError, { color: colors.destructive }]}>
+                          {exportError.message}
+                        </Text>
+                      ) : null}
                     </View>
                   ))}
                 </View>
@@ -252,15 +342,15 @@ export default function HistoryScreen() {
               : filterKind === 'routine' && selectedRoutine
                 ? 'No history for this routine yet'
                 : filterKind === 'all'
-                  ? 'No past progress yet'
+                  ? 'No recorded progress yet'
                   : 'No matching history yet'}
           </Text>
           <Text style={[styles.emptyCopy, { color: colors.mutedForeground }]}>
             {filterKind === 'playlist'
               ? 'Only completions launched from this playlist appear in its history. New runs will show here.'
               : filterKind === 'routine'
-                ? 'Completed steps from earlier days will show here.'
-                : 'Completed steps from earlier days, including restored progress, will show up here.'}
+                ? 'Completed steps from today and earlier days will show here.'
+                : 'Completed steps from today and earlier days, including restored progress, will show up here.'}
           </Text>
         </View>
       )}
@@ -305,8 +395,17 @@ const styles = StyleSheet.create({
   skillHistoryError: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginBottom: 12 },
   skillNotes: { borderTopWidth: 1, paddingTop: 13, marginTop: 4 },
   skillNotesHeading: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 6 },
+  skillEvent: { borderWidth: 1, borderRadius: 13, padding: 10, marginTop: 7 },
+  skillEventHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 9, marginBottom: 3 },
+  skillEventCopy: { flex: 1 },
+  skillEventTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  skillEventTime: { fontFamily: 'Inter_400Regular', fontSize: 10, lineHeight: 15, marginTop: 2 },
+  pdfButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 10 },
+  pdfButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  pdfError: { fontFamily: 'Inter_500Medium', fontSize: 11, lineHeight: 16, marginTop: 6 },
   skillNote: { borderRadius: 11, padding: 10, marginTop: 5 },
   skillNoteHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  skillNoteOrder: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   skillNoteSkill: { fontFamily: 'Inter_600SemiBold', fontSize: 12, flex: 1 },
   skillNoteScore: { fontFamily: 'Inter_700Bold', fontSize: 12 },
   skillNoteText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },

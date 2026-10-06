@@ -15,6 +15,7 @@ import {
   validateSkillName,
   MAX_SKILL_NOTE_LENGTH,
   type RoutineSkill,
+  type SkillRatingRun,
 } from '@/lib/skills';
 import { PERSON_DATA_KEYS } from '@/lib/personStorage';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
@@ -31,7 +32,8 @@ type SkillContextValue = {
   setRatingWindow: (value: number) => Promise<void>;
   recordRatings: (
     routineTitle: string,
-    ratings: { skillId: string; rating: number; note?: string }[],
+    ratings: { skillId: string; rating: number; note?: string; sequence: number }[],
+    run: SkillRatingRun,
   ) => Promise<void>;
   mergeImportedSkills: (skills: RoutineSkill[]) => Promise<Record<string, string>>;
 };
@@ -111,8 +113,8 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
   }), [error, loading, runWrite, storage]);
 
   const recordRatings = useCallback((routineTitle: string, entries: {
-    skillId: string; rating: number; note?: string;
-  }[]) =>
+    skillId: string; rating: number; note?: string; sequence: number;
+  }[], run: SkillRatingRun) =>
     runWrite(async () => {
       if (loading || error) throw new Error('Wait for skills to load successfully before saving ratings.');
       const title = routineTitle.trim();
@@ -129,6 +131,14 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
         throw new Error('One or more skills were removed. Refresh the skill list and try again.');
       }
       if (!entries.length) return;
+      if (!run || typeof run.runId !== 'string' || !run.runId.trim() || run.runId.length > 160
+        || typeof run.completedAt !== 'string' || !Number.isFinite(Date.parse(run.completedAt))) {
+        throw new Error('The routine completion time could not be verified. Please retry the rating.');
+      }
+      if (entries.some(entry => !Number.isInteger(entry.sequence) || entry.sequence < 0 || entry.sequence > 999)
+        || new Set(entries.map(entry => entry.sequence)).size !== entries.length) {
+        throw new Error('The skill order could not be verified. Please retry the rating.');
+      }
       const ratedAt = new Date().toISOString();
       const ratingsBySkill = new Map(entries.map(entry => [entry.skillId, entry]));
       const next = current.current.map(skill => {
@@ -140,6 +150,9 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
           rating: entry.rating,
           ratedAt,
           routineTitle: title,
+          runId: run.runId,
+          completedAt: run.completedAt,
+          sequence: entry.sequence,
           ...(note ? { note } : {}),
         }];
         if (ratings.length > 20_000) throw new Error('This skill has reached its saved rating limit.');

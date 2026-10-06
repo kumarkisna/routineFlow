@@ -2,11 +2,15 @@ import type { Routine } from '@/types/routines';
 import type { RoutinePlaylist } from './playlists';
 
 export type RoutineSkill = { id: string; name: string; ratings?: SkillRating[] };
+export type SkillRatingRun = { runId: string; completedAt: string };
 export type SkillRating = {
   id: string;
   rating: number;
   ratedAt: string;
   routineTitle: string;
+  runId?: string;
+  completedAt?: string;
+  sequence?: number;
   note?: string;
 };
 
@@ -18,6 +22,13 @@ export const MAX_SKILL_NOTE_LENGTH = 1000;
 export const DEFAULT_SKILL_RATING_WINDOW = 5;
 export const MIN_SKILL_RATING_WINDOW = 1;
 export const MAX_SKILL_RATING_WINDOW = 100;
+
+export function createSkillRatingRun(): SkillRatingRun {
+  return {
+    runId: `run-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    completedAt: new Date().toISOString(),
+  };
+}
 
 export function parseSkillRatingWindow(value: string | null): number {
   if (value === null) return DEFAULT_SKILL_RATING_WINDOW;
@@ -90,6 +101,13 @@ function parseRatings(value: unknown): SkillRating[] {
       || typeof rating.rating !== 'number' || !Number.isInteger(rating.rating) || rating.rating < 1 || rating.rating > 10
       || typeof rating.ratedAt !== 'string' || !Number.isFinite(Date.parse(rating.ratedAt))
       || typeof rating.routineTitle !== 'string' || !rating.routineTitle.trim() || rating.routineTitle.length > 200
+      || ((rating.runId === undefined) !== (rating.completedAt === undefined))
+      || (rating.runId !== undefined
+        && (typeof rating.runId !== 'string' || !rating.runId.trim() || rating.runId.length > 160 || rating.runId.includes(':')))
+      || (rating.completedAt !== undefined
+        && (typeof rating.completedAt !== 'string' || !Number.isFinite(Date.parse(rating.completedAt))))
+      || (rating.sequence !== undefined
+        && (!Number.isInteger(rating.sequence) || (rating.sequence as number) < 0 || (rating.sequence as number) > 999))
       || (rating.note !== undefined
         && (typeof rating.note !== 'string' || rating.note.length > MAX_SKILL_NOTE_LENGTH))
       || ratings.some(existing => existing.id === rating.id)) {
@@ -101,6 +119,9 @@ function parseRatings(value: unknown): SkillRating[] {
       rating: rating.rating,
       ratedAt: rating.ratedAt,
       routineTitle: rating.routineTitle.trim(),
+      ...(typeof rating.runId === 'string' ? { runId: rating.runId } : {}),
+      ...(typeof rating.completedAt === 'string' ? { completedAt: rating.completedAt } : {}),
+      ...(typeof rating.sequence === 'number' ? { sequence: rating.sequence } : {}),
       ...(note ? { note } : {}),
     });
   }

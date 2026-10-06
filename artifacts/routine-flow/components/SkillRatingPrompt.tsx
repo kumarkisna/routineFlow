@@ -4,18 +4,20 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View 
 import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
-import { MAX_SKILL_NOTE_LENGTH } from '@/lib/skills';
+import { MAX_SKILL_NOTE_LENGTH, type SkillRatingRun } from '@/lib/skills';
 
 export function SkillRatingPrompt({
   visible,
   skillIds,
   routineTitle,
+  run,
   onSkip,
   onSaved,
 }: {
   visible: boolean;
   skillIds: string[];
   routineTitle: string;
+  run?: SkillRatingRun;
   onSkip: () => void;
   onSaved: () => void;
 }) {
@@ -41,17 +43,26 @@ export function SkillRatingPrompt({
 
   async function save() {
     if (lock.current) return;
-    const entries = Object.entries(selected).map(([skillId, rating]) => ({
-      skillId,
-      rating,
-      ...(notes[skillId]?.trim() ? { note: notes[skillId].trim() } : {}),
-    }));
+    const entries = items.flatMap((skill, sequence) => {
+      const rating = selected[skill.id];
+      if (rating === undefined) return [];
+      return [{
+        skillId: skill.id,
+        rating,
+        sequence,
+        ...(notes[skill.id]?.trim() ? { note: notes[skill.id].trim() } : {}),
+      }];
+    });
     if (!entries.length) return;
+    if (!run) {
+      setError('Could not find this routine’s completion time. Please close and try again.');
+      return;
+    }
     lock.current = true;
     setSaving(true);
     setError('');
     try {
-      await recordRatings(routineTitle, entries);
+      await recordRatings(routineTitle, entries, run);
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save these ratings.');

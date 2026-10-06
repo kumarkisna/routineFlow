@@ -9,6 +9,22 @@ export type HistoryFilter =
   | { kind: 'routine'; id: string }
   | { kind: 'playlist'; id: string };
 export type HistoryFilterOption = { id: string; title: string; archived: boolean };
+export type HistorySkillRating = {
+  id: string;
+  skillName: string;
+  rating: number;
+  ratedAt: string;
+  runId?: string;
+  completedAt?: string;
+  sequence?: number;
+  note?: string;
+};
+export type SkillRatingEvent = {
+  id: string;
+  dateTime: string;
+  isRunTime: boolean;
+  ratings: HistorySkillRating[];
+};
 export type HistoryRoutine = {
   id: string;
   title: string;
@@ -16,7 +32,7 @@ export type HistoryRoutine = {
   removed: boolean;
   steps: { id: string; title: string; hidden: boolean; removed: boolean }[];
   playlistRuns?: PlaylistCompletionSource[];
-  skillRatings?: { id: string; skillName: string; rating: number; ratedAt: string; note?: string }[];
+  skillRatings?: HistorySkillRating[];
 };
 
 export function recordCompletion(
@@ -68,6 +84,39 @@ export function recordedPastDays(progress: CompletionMap, today: string, filter?
       && Object.entries(entries).some(([key, value]) => completionMatchesFilter(key, value, filter)))
     .map(([day]) => day)
     .sort((a, b) => b.localeCompare(a));
+}
+
+export function recordedHistoryDays(progress: CompletionMap, today: string, filter?: HistoryFilter): string[] {
+  return Object.entries(progress)
+    .filter(([day, entries]) =>
+      isValidDay(day) && day <= today && entries
+      && Object.entries(entries).some(([key, value]) => completionMatchesFilter(key, value, filter)))
+    .map(([day]) => day)
+    .sort((a, b) => b.localeCompare(a));
+}
+
+export function groupSkillRatingEvents(ratings: HistorySkillRating[]): SkillRatingEvent[] {
+  const events = new Map<string, HistorySkillRating[]>();
+  for (const rating of ratings) {
+    const eventId = rating.runId ? `run:${rating.runId}` : `legacy:${rating.ratedAt}`;
+    const eventRatings = events.get(eventId) ?? [];
+    eventRatings.push(rating);
+    events.set(eventId, eventRatings);
+  }
+  return [...events.entries()]
+    .map(([id, eventRatings]) => {
+      const orderedRatings = [...eventRatings].sort((a, b) =>
+        (a.sequence ?? Number.MAX_SAFE_INTEGER) - (b.sequence ?? Number.MAX_SAFE_INTEGER)
+        || a.skillName.localeCompare(b.skillName));
+      const completionTime = orderedRatings.find(rating => rating.completedAt)?.completedAt;
+      return {
+        id,
+        dateTime: completionTime ?? orderedRatings[0].ratedAt,
+        isRunTime: Boolean(completionTime),
+        ratings: orderedRatings,
+      };
+    })
+    .sort((a, b) => Date.parse(a.dateTime) - Date.parse(b.dateTime));
 }
 
 export function formatHistoryDay(day: string): string {
@@ -134,15 +183,21 @@ export function getHistoryForDay(
   for (const group of history) {
     const ratings = skills.flatMap(skill => (skill.ratings ?? [])
       .filter(rating => rating.routineTitle === group.title
-        && localDayKey(new Date(rating.ratedAt)) === day)
+        && localDayKey(new Date(rating.completedAt ?? rating.ratedAt)) === day)
       .map(rating => ({
         id: `${skill.id}:${rating.id}`,
         skillName: skill.name,
         rating: rating.rating,
         ratedAt: rating.ratedAt,
+        ...(rating.runId ? { runId: rating.runId } : {}),
+        ...(rating.completedAt ? { completedAt: rating.completedAt } : {}),
+        ...(rating.sequence !== undefined ? { sequence: rating.sequence } : {}),
         ...(rating.note?.trim() ? { note: rating.note.trim() } : {}),
       })))
-      .sort((a, b) => Date.parse(a.ratedAt) - Date.parse(b.ratedAt));
+      .sort((a, b) =>
+        Date.parse(a.completedAt ?? a.ratedAt) - Date.parse(b.completedAt ?? b.ratedAt)
+        || (a.sequence ?? Number.MAX_SAFE_INTEGER) - (b.sequence ?? Number.MAX_SAFE_INTEGER)
+        || a.skillName.localeCompare(b.skillName));
     if (ratings.length) group.skillRatings = ratings;
   }
   return history;

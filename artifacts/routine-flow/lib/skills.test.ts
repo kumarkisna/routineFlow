@@ -72,6 +72,28 @@ test('skill parser validates saved rating entries and the shared window', () => 
   }])), /could not be read/);
 });
 
+test('run time and skill sequence metadata survive skill backup parsing', () => {
+  const skill = {
+    id: 'skill-balance',
+    name: 'Balance',
+    ratings: [{
+      id: 'rating-run-1',
+      rating: 8,
+      ratedAt: '2030-06-12T12:05:00.000Z',
+      routineTitle: 'Morning',
+      runId: 'run-1',
+      completedAt: '2030-06-12T12:00:00.000Z',
+      sequence: 2,
+      note: 'Slow down on the turns.',
+    }],
+  };
+  assert.deepEqual(parseSkills(JSON.stringify([skill])), [skill]);
+  assert.throws(() => parseSkills(JSON.stringify([{
+    ...skill,
+    ratings: [{ ...skill.ratings[0], completedAt: undefined }],
+  }])), /could not be read/);
+});
+
 test('a completed routine rates unique skills from visible steps only', () => {
   const skillIds = getRoutineSkillIds({
     id: 'routine',

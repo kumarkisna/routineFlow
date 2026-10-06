@@ -4,8 +4,8 @@ import { test } from 'node:test';
 import type { Routine } from '@/types/routines';
 import type { RoutineSkill } from './skills';
 import {
-  formatHistoryDay, getHistoryForDay, playlistHistoryOptions, recordCompletion,
-  recordedPastDays, routineHistoryOptions,
+  formatHistoryDay, getHistoryForDay, groupSkillRatingEvents, playlistHistoryOptions, recordCompletion,
+  recordedHistoryDays, recordedPastDays, routineHistoryOptions,
 } from './progressHistory';
 
 const routine: Routine = {
@@ -60,6 +60,37 @@ test('lists only past dates with completions, newest first', () => {
   }, '2026-01-04');
   assert.deepEqual(days, ['2026-01-03', '2026-01-01']);
   assert.match(formatHistoryDay('2026-01-03'), /January 3, 2026/);
+});
+
+test('history includes today so a completed run can be reviewed and exported immediately', () => {
+  const progress = {
+    '2026-01-03': { 'morning:water': true },
+    '2026-01-02': { 'morning:water': true },
+    '2026-01-04': { 'morning:water': true },
+  };
+  assert.deepEqual(recordedHistoryDays(progress, '2026-01-03'), ['2026-01-03', '2026-01-02']);
+});
+
+test('skill ratings group by run and stay in the order presented for rating', () => {
+  const ratings = [
+    {
+      id: 'balance', skillName: 'Balance', rating: 7, ratedAt: '2030-06-12T12:05:00.000Z',
+      runId: 'run-one', completedAt: '2030-06-12T12:00:00.000Z', sequence: 1,
+    },
+    {
+      id: 'breathing', skillName: 'Breathing', rating: 8, ratedAt: '2030-06-12T12:05:00.000Z',
+      runId: 'run-one', completedAt: '2030-06-12T12:00:00.000Z', sequence: 0,
+    },
+    {
+      id: 'older-run', skillName: 'Focus', rating: 6, ratedAt: '2030-06-11T12:05:00.000Z',
+      runId: 'run-older', completedAt: '2030-06-11T12:00:00.000Z', sequence: 0,
+    },
+  ];
+  const events = groupSkillRatingEvents(ratings);
+  assert.deepEqual(events.map(event => event.id), ['run:run-older', 'run:run-one']);
+  assert.deepEqual(events[1].ratings.map(rating => rating.skillName), ['Breathing', 'Balance']);
+  assert.equal(events[1].dateTime, '2030-06-12T12:00:00.000Z');
+  assert.equal(events[1].isRunTime, true);
 });
 
 test('routine and playlist filters return only dates belonging to the selected item', () => {
