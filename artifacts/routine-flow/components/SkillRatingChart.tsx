@@ -1,8 +1,24 @@
-import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
+import Svg, {
+  Circle,
+  Line,
+  Path,
+  Text as SvgText,
+  type CircleProps,
+  type LineProps,
+  type PathProps,
+  type SvgProps,
+  type TextProps,
+} from 'react-native-svg';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { getSkillRatingPoints, type RoutineSkill } from '@/lib/skills';
+
+const SvgElement = Svg as unknown as React.ComponentType<React.PropsWithChildren<SvgProps>>;
+const SvgCircle = Circle as unknown as React.ComponentType<CircleProps>;
+const SvgLine = Line as unknown as React.ComponentType<LineProps>;
+const SvgPath = Path as unknown as React.ComponentType<PathProps>;
+const SvgTextElement = SvgText as unknown as React.ComponentType<TextProps>;
 
 const CHART_WIDTH = 340;
 const CHART_HEIGHT = 142;
@@ -46,27 +62,27 @@ export function SkillRatingChart({ skill, windowSize }: { skill: RoutineSkill; w
       testID={`skill-rating-chart-${skill.id}`}
       style={styles.container}
     >
-      <Svg width="100%" height={CHART_HEIGHT} viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}>
+      <SvgElement width="100%" height={CHART_HEIGHT} viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}>
         {[1, 5, 10].map(value => {
           const y = TOP + ((10 - value) / 9) * plotHeight;
           return (
             <React.Fragment key={value}>
-              <Line x1={LEFT} y1={y} x2={RIGHT} y2={y} stroke={colors.border} strokeWidth={1} />
-              <SvgText x={LEFT - 6} y={y + 4} textAnchor="end" fontSize={10} fill={colors.mutedForeground}>{value}</SvgText>
+              <SvgLine x1={LEFT} y1={y} x2={RIGHT} y2={y} stroke={colors.border} strokeWidth={1} />
+              <SvgTextElement x={LEFT - 6} y={y + 4} textAnchor="end" fontSize={10} fill={colors.mutedForeground}>{value}</SvgTextElement>
             </React.Fragment>
           );
         })}
-        <Path d={ratingPath} fill="none" stroke={colors.primary} strokeWidth={2} />
-        <Path d={averagePath} fill="none" stroke={colors.success} strokeWidth={2.5} strokeDasharray="5 3" />
+        <SvgPath d={ratingPath} fill="none" stroke={colors.primary} strokeWidth={2} />
+        <SvgPath d={averagePath} fill="none" stroke={colors.success} strokeWidth={2.5} strokeDasharray="5 3" />
         {coordinates.map((point, index) => (
-          <Circle key={`${points[index].id}-rating`} cx={point.x} cy={point.ratingY} r={3.6} fill={colors.primary} />
+          <SvgCircle key={`${points[index].id}-rating`} cx={point.x} cy={point.ratingY} r={3.6} fill={colors.primary} />
         ))}
         {coordinates.length === 1 ? (
-          <Circle cx={coordinates[0].x} cy={coordinates[0].averageY} r={4.5} fill={colors.success} />
+          <SvgCircle cx={coordinates[0].x} cy={coordinates[0].averageY} r={4.5} fill={colors.success} />
         ) : null}
-        <SvgText x={LEFT} y={CHART_HEIGHT - 8} textAnchor="start" fontSize={10} fill={colors.mutedForeground}>{startLabel}</SvgText>
-        <SvgText x={RIGHT} y={CHART_HEIGHT - 8} textAnchor="end" fontSize={10} fill={colors.mutedForeground}>{endLabel}</SvgText>
-      </Svg>
+        <SvgTextElement x={LEFT} y={CHART_HEIGHT - 8} textAnchor="start" fontSize={10} fill={colors.mutedForeground}>{startLabel}</SvgTextElement>
+        <SvgTextElement x={RIGHT} y={CHART_HEIGHT - 8} textAnchor="end" fontSize={10} fill={colors.mutedForeground}>{endLabel}</SvgTextElement>
+      </SvgElement>
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendLine, { backgroundColor: colors.primary }]} />

@@ -4,7 +4,7 @@ import { SkillProvider, useSkills } from '@/context/SkillContext';
 import { AppearanceProvider } from '@/context/AppearanceContext';
 import { ScheduleNotificationLink } from '@/components/ScheduleNotificationLink';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { setBaseUrl } from '@workspace/api-client-react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -27,6 +27,11 @@ import {
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { RoutineProvider } from '@/context/RoutineContext';
+
+const GestureHandlerRoot = GestureHandlerRootView as unknown as React.ComponentType<{
+  children?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+}>;
 
 // Keep the splash only until our own visible startup screen has laid out.
 void SplashScreen.preventAutoHideAsync().catch(() => {
@@ -98,7 +103,7 @@ function PersonApp({ waitingForFonts, fontsLoaded, fontFailed }: { waitingForFon
     <AppearanceProvider key={`${activePerson.id}:${revision}`}>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView style={{ flex: 1 }}>
+          <GestureHandlerRoot style={{ flex: 1 }}>
             {waitingForFonts ? <StartupLoading /> : <>
               <KeyboardProvider>
                 <RoutineProvider>
@@ -114,7 +119,7 @@ function PersonApp({ waitingForFonts, fontsLoaded, fontFailed }: { waitingForFon
               {!fontsLoaded ? <FontLoadingNotice failed={fontFailed} /> : null}
               <PersonNotice />
             </>}
-          </GestureHandlerRootView>
+          </GestureHandlerRoot>
         </QueryClientProvider>
       </ErrorBoundary>
     </AppearanceProvider>

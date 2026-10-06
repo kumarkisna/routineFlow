@@ -14,3 +14,9 @@ Declared dev dependencies can be present in the pnpm store but missing their wor
 **Why:** The package-management callback attempted a root-level add and could not accept a workspace filter, while no new dependency was actually needed.
 
 **How to apply:** When declared packages are already cached but their links are missing, restore the lockfile's existing install rather than adding the same packages again.
+
+Expo's automatic SDK alignment can be blocked when its recommended patch release is too new for pnpm's minimum-release-age policy. Do not bypass that policy just to install the suggested version.
+
+**Why:** An SDK fix requested packages published the same day, and pnpm rejected them under the workspace's package-maturity safeguard.
+
+**How to apply:** If `expo install --fix` hits `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, keep the safeguard intact and either use the installed versions or retry alignment after the release matures.

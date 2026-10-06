@@ -3,11 +3,16 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { useAppearance } from '@/context/AppearanceContext';
 import { Feather } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
+import { BlurView, type BlurViewProps } from 'expo-blur';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Tabs } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { SymbolView } from 'expo-symbols';
+
+const NativeTabsRoot = NativeTabs as unknown as React.ComponentType<{
+  children?: React.ReactNode;
+}>;
+const BlurViewElement = BlurView as unknown as React.ComponentType<BlurViewProps>;
 
 // IMPORTANT: iOS 26 uses NativeTabs for native tabs with liquid glass support.
 // NativeTabs intentionally does NOT use custom design tokens — liquid glass
@@ -15,7 +20,7 @@ import { SymbolView } from 'expo-symbols';
 // Custom brand colors are applied only on the ClassicTabLayout path (older iOS / Android / web).
 function NativeTabLayout() {
   return (
-    <NativeTabs>
+    <NativeTabsRoot>
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Icon
           sf={{ default: 'house', selected: 'house.fill' }}
@@ -42,7 +47,7 @@ function NativeTabLayout() {
         <NativeTabs.Trigger.Icon sf={{ default: 'paintpalette', selected: 'paintpalette.fill' }} />
         <NativeTabs.Trigger.Label>Themes</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
-    </NativeTabs>
+    </NativeTabsRoot>
   );
 }
 
@@ -69,7 +74,7 @@ function ClassicTabLayout() {
         },
         tabBarBackground: () =>
           isIOS ? (
-            <BlurView
+            <BlurViewElement
               intensity={100}
               tint={isDark ? 'dark' : 'light'}
               style={StyleSheet.absoluteFill}

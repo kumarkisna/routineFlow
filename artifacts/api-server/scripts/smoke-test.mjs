@@ -6,6 +6,58 @@ import { fileURLToPath } from "node:url";
 
 const serverPath = fileURLToPath(new URL("../dist/index.mjs", import.meta.url));
 
+async function assertStartupFails({ name, port, expectedMessage }) {
+  const env = { ...process.env, NODE_ENV: "production" };
+  if (port === undefined) {
+    delete env.PORT;
+  } else {
+    env.PORT = port;
+  }
+
+  const child = spawn(
+    process.execPath,
+    ["--enable-source-maps", serverPath],
+    { env, stdio: ["ignore", "pipe", "pipe"] },
+  );
+
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += chunk));
+  child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
+
+  const completion = new Promise((resolve) => {
+    child.once("error", (error) => resolve({ error }));
+    child.once("exit", (code, signal) => resolve({ code, signal }));
+  });
+  const result = await Promise.race([
+    completion,
+    delay(3_000).then(() => null),
+  ]);
+
+  if (!result) {
+    child.kill("SIGTERM");
+    const terminated = await Promise.race([
+      completion,
+      delay(1_000).then(() => null),
+    ]);
+    if (!terminated) {
+      child.kill("SIGKILL");
+      await completion;
+    }
+    assert.fail(`Production server did not exit for ${name}`);
+  }
+  if (result.error) throw result.error;
+
+  assert.ok(
+    Number.isInteger(result.code) && result.code !== 0,
+    `Production server should exit unsuccessfully for ${name}; got ${JSON.stringify(result)}`,
+  );
+  assert.ok(
+    stderr.includes(expectedMessage),
+    `Expected ${JSON.stringify(expectedMessage)} for ${name}; stderr was:\n${stderr}\nstdout was:\n${stdout}`,
+  );
+}
+
 async function getUnusedPort() {
   const server = createServer();
   await new Promise((resolve, reject) => {
@@ -29,6 +81,25 @@ async function checkHealthEndpoint(baseUrl, path) {
   assert.equal(response.status, 200, `GET ${path} should return HTTP 200`);
   assert.deepEqual(await response.json(), { status: "ok" });
 }
+
+await assertStartupFails({
+  name: "a missing PORT",
+  expectedMessage:
+    "PORT environment variable is required but was not provided.",
+});
+await assertStartupFails({
+  name: "a non-numeric PORT",
+  port: "not-a-number",
+  expectedMessage: 'Invalid PORT value: "not-a-number"',
+});
+await assertStartupFails({
+  name: "a non-positive PORT",
+  port: "0",
+  expectedMessage: 'Invalid PORT value: "0"',
+});
+console.log(
+  "API startup configuration smoke tests passed: missing, non-numeric, and non-positive PORT",
+);
 
 const port = await getUnusedPort();
 const baseUrl = `http://127.0.0.1:${port}`;
