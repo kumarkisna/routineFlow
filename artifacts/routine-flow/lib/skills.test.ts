@@ -6,6 +6,7 @@ import {
   getSkillAssociations,
   getSkillAverage,
   getSkillRatingPoints,
+  MAX_SKILL_NOTE_LENGTH,
   mergeSkillCatalog,
   parseSkillRatingWindow,
   parseSkills,
@@ -16,7 +17,7 @@ const history: RoutineSkill = {
   id: 'skill-focus',
   name: 'Focus',
   ratings: [
-    { id: 'rating-2', rating: 8, ratedAt: '2030-01-02T00:00:00.000Z', routineTitle: 'Morning' },
+    { id: 'rating-2', rating: 8, ratedAt: '2030-01-02T00:00:00.000Z', routineTitle: 'Morning', note: 'Keep breathing steadily.' },
     { id: 'rating-4', rating: 10, ratedAt: '2030-01-04T00:00:00.000Z', routineTitle: 'Evening' },
     { id: 'rating-1', rating: 2, ratedAt: '2030-01-01T00:00:00.000Z', routineTitle: 'Morning' },
     { id: 'rating-3', rating: 4, ratedAt: '2030-01-03T00:00:00.000Z', routineTitle: 'Midday' },
@@ -50,6 +51,7 @@ test('rating history import merges matching skills and ignores duplicate rating 
   assert.equal(first.idMap['imported-focus'], 'local-focus');
   assert.deepEqual(first.skills[0].ratings?.map(rating => rating.id), ['rating-2', 'rating-4']);
   assert.equal(first.skills[0].ratings?.[0].rating, 8, 'a conflicting imported copy must not replace local rating history');
+  assert.equal(first.skills[0].ratings?.[0].note, 'Keep breathing steadily.');
   const second = mergeSkillCatalog(first.skills, incoming);
   assert.equal(second.skills[0].ratings?.length, 2);
 });
@@ -63,6 +65,10 @@ test('skill parser validates saved rating entries and the shared window', () => 
   assert.throws(() => parseSkills(JSON.stringify([{
     ...history,
     ratings: [{ ...history.ratings![0], rating: 11 }],
+  }])), /could not be read/);
+  assert.throws(() => parseSkills(JSON.stringify([{
+    ...history,
+    ratings: [{ ...history.ratings![0], note: 'x'.repeat(MAX_SKILL_NOTE_LENGTH + 1) }],
   }])), /could not be read/);
 });
 

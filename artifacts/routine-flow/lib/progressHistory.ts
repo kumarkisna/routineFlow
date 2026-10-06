@@ -1,5 +1,6 @@
 import { isCompleted, type CompletionMap, type CompletionValue, type Routine } from '@/types/routines';
 import { historySourceId, splitProgressKey } from '@/lib/historyIdentity';
+import type { RoutineSkill } from '@/lib/skills';
 
 export type HistoryRoutine = {
   id: string;
@@ -7,6 +8,7 @@ export type HistoryRoutine = {
   hidden: boolean;
   removed: boolean;
   steps: { id: string; title: string; hidden: boolean; removed: boolean }[];
+  skillRatings?: { id: string; skillName: string; rating: number; ratedAt: string; note: string }[];
 };
 
 export function recordCompletion(
@@ -46,6 +48,7 @@ export function getHistoryForDay(
   progress: CompletionMap,
   routines: Routine[],
   day: string,
+  skills: RoutineSkill[] = [],
 ): HistoryRoutine[] {
   const byId = new Map(routines.map((routine) => [routine.id, routine]));
   const groups = new Map<string, HistoryRoutine>();
@@ -81,9 +84,25 @@ export function getHistoryForDay(
     });
   }
 
-  return [...groups.values()].sort((a, b) => {
+  const history = [...groups.values()].sort((a, b) => {
     const aIndex = routines.findIndex((item) => item.id === a.id);
     const bIndex = routines.findIndex((item) => item.id === b.id);
     return (aIndex < 0 ? Infinity : aIndex) - (bIndex < 0 ? Infinity : bIndex);
   });
+  for (const group of history) {
+    const ratings = skills.flatMap(skill => (skill.ratings ?? [])
+      .filter(rating => rating.routineTitle === group.title
+        && rating.note?.trim()
+        && localDayKey(new Date(rating.ratedAt)) === day)
+      .map(rating => ({
+        id: `${skill.id}:${rating.id}`,
+        skillName: skill.name,
+        rating: rating.rating,
+        ratedAt: rating.ratedAt,
+        note: rating.note!.trim(),
+      })))
+      .sort((a, b) => Date.parse(a.ratedAt) - Date.parse(b.ratedAt));
+    if (ratings.length) group.skillRatings = ratings;
+  }
+  return history;
 }

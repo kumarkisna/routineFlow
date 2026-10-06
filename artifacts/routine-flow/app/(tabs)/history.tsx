@@ -3,6 +3,7 @@ import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines } from '@/context/RoutineContext';
+import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { formatHistoryDay, getHistoryForDay, localDayKey, recordedPastDays } from '@/lib/progressHistory';
 
@@ -10,13 +11,14 @@ export default function HistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { progress, routines, loading } = useRoutines();
+  const { skills, loading: skillsLoading, error: skillsError } = useSkills();
   const [selectedDay, setSelectedDay] = React.useState<string | null>(null);
   const today = localDayKey(new Date());
   const days = recordedPastDays(progress, today);
   // If a restore adds a more recent day, keep the user's current selection.
   const activeDay = selectedDay && days.includes(selectedDay) ? selectedDay : days[0];
   const activeIndex = days.indexOf(activeDay);
-  const groups = activeDay ? getHistoryForDay(progress, routines, activeDay) : [];
+  const groups = activeDay ? getHistoryForDay(progress, routines, activeDay, skills) : [];
   const total = groups.reduce((sum, group) => sum + group.steps.length, 0);
 
   return (
@@ -35,10 +37,15 @@ export default function HistoryScreen() {
         A look at the steps you completed on earlier days.
       </Text>
 
-      {loading ? (
+      {loading || skillsLoading ? (
         <ActivityIndicator style={styles.loading} color={colors.primary} />
       ) : activeDay ? (
         <>
+          {skillsError ? (
+            <Text accessibilityRole="alert" style={[styles.skillHistoryError, { color: colors.destructive }]}>
+              Skill notes could not load. Retry from the Skills page to view them here.
+            </Text>
+          ) : null}
           <View style={[styles.dayCard, { backgroundColor: colors.hero }]}>
             <Text style={[styles.dayOverline, { color: colors.accent }]}>RECORDED PROGRESS</Text>
             <Text style={[styles.dayTitle, { color: colors.heroForeground }]}>{formatHistoryDay(activeDay)}</Text>
@@ -98,6 +105,20 @@ export default function HistoryScreen() {
                   </View>
                 </View>
               ))}
+              {group.skillRatings?.length ? (
+                <View style={[styles.skillNotes, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Skill reflections</Text>
+                  {group.skillRatings.map((entry) => (
+                    <View key={entry.id} style={[styles.skillNote, { backgroundColor: colors.background }]}>
+                      <View style={styles.skillNoteHeader}>
+                        <Text style={[styles.skillNoteSkill, { color: colors.foreground }]}>{entry.skillName}</Text>
+                        <Text style={[styles.skillNoteScore, { color: colors.primary }]}>{entry.rating}/10</Text>
+                      </View>
+                      <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>{entry.note}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
           ))}
         </>
@@ -139,6 +160,14 @@ const styles = StyleSheet.create({
   stepCopy: { flex: 1 },
   stepTitle: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19 },
   stepNote: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
+  skillHistoryError: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginBottom: 12 },
+  skillNotes: { borderTopWidth: 1, paddingTop: 13, marginTop: 4 },
+  skillNotesHeading: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 6 },
+  skillNote: { borderRadius: 11, padding: 10, marginTop: 5 },
+  skillNoteHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  skillNoteSkill: { fontFamily: 'Inter_600SemiBold', fontSize: 12, flex: 1 },
+  skillNoteScore: { fontFamily: 'Inter_700Bold', fontSize: 12 },
+  skillNoteText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
   empty: { borderWidth: 1, borderRadius: 19, padding: 25, alignItems: 'center' },
   emptyTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 16, marginTop: 12 },
   emptyCopy: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 6 },

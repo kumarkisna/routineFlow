@@ -1,7 +1,7 @@
 - [Expo notifications](expo-notifications.md) — align notification packages with the SDK; on Android Expo Go, custom channel APIs may need to be avoided.
 - [Speech-gated routine timers](speech-gated-timers.md) — speak assigned skill names in the step announcement before its countdown starts.
 - [Routine visibility behavior](routine-visibility.md) — hidden steps are inactive, not just concealed; keep run and progress logic aligned.
-- [Routine transfer safety](routine-transfer.md) — imports merge routines/playlists additively and preserve existing skill-rating history.
+- [Routine transfer safety](routine-transfer.md) — imports merge routines/playlists additively and preserve skill ratings and their reflection notes.
 - [Routine copies](routine-copies.md) — copied routines retain step settings but start with separate progress.
 - [Routine step details](routine-step-details.md) — steps keep the existing detail and support additional ordered entries added on demand.
 - [Routine categories](routine-categories.md) — categories remain labels; Skills are a separate managed library assigned across routines, steps, and playlists.
@@ -16,4 +16,4 @@
 - [Expo SDK 57 checks](expo-sdk-57.md) — legacy splash configuration is invalid, and early Hermes V1 builds have a documented memory regression.
 - [Expo preview warmup](expo-web-preview.md) — early cold-start screenshots can be blank; wait for visible UI before diagnosing broken layout.
 - [Android backup files](android-backup-imports.md) — use Expo FileSystem pickers for provider-backed imports and local folder saves; sharing opens an app chooser, not a save dialog.
-- [Local person profiles](person-profiles.md) — skill rating history and its shared average window belong to the person; cross-person copies do not transfer ratings.
+- [Local person profiles](person-profiles.md) — skill ratings, reflections, and their shared average window belong to the person; cross-person copies do not transfer ratings.

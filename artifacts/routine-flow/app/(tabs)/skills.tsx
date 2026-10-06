@@ -9,6 +9,12 @@ import { useColors } from '@/hooks/useColors';
 import { getSkillAssociations, getSkillAverage, MAX_SKILL_NAME } from '@/lib/skills';
 import { SkillRatingChart } from '@/components/SkillRatingChart';
 
+function formatRatingTimestamp(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  }).format(new Date(value));
+}
+
 export default function SkillsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -25,6 +31,8 @@ export default function SkillsScreen() {
   const [windowSaving, setWindowSaving] = React.useState(false);
   const [windowMessage, setWindowMessage] = React.useState('');
   const [expandedUsageId, setExpandedUsageId] = React.useState<string | null>(null);
+  const [expandedRatingHistoryId, setExpandedRatingHistoryId] = React.useState<string | null>(null);
+  const [ratingHistoryLimits, setRatingHistoryLimits] = React.useState<Record<string, number>>({});
   const lock = React.useRef(false);
   const windowLock = React.useRef(false);
   const associations = React.useMemo(() => new Map(
@@ -214,6 +222,10 @@ export default function SkillsScreen() {
           const confirming = pendingDeleteId === item.id;
           const usage = associations.get(item.id) ?? { routines: [], playlists: [] };
           const usageExpanded = expandedUsageId === item.id;
+          const ratingHistoryExpanded = expandedRatingHistoryId === item.id;
+          const ratingHistory = [...(item.ratings ?? [])].sort((a, b) =>
+            Date.parse(b.ratedAt) - Date.parse(a.ratedAt) || b.id.localeCompare(a.id));
+          const visibleRatingHistory = ratingHistory.slice(0, ratingHistoryLimits[item.id] ?? 20);
           const average = getSkillAverage(item, ratingWindow);
           return (
             <View testID={`skill-${item.id}`} style={[styles.skillCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -284,6 +296,57 @@ export default function SkillsScreen() {
                     </Text>
                   )}
                   <SkillRatingChart skill={item} windowSize={ratingWindow} />
+                  {ratingHistory.length ? (
+                    <>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: ratingHistoryExpanded }}
+                        accessibilityLabel={`Show rating history for ${item.name}`}
+                        testID={`skill-rating-history-toggle-${item.id}`}
+                        onPress={() => setExpandedRatingHistoryId(current => current === item.id ? null : item.id)}
+                        style={({ pressed }) => [styles.usageToggle, { borderColor: colors.border }, pressed && styles.pressed]}
+                      >
+                        <View style={styles.usageToggleText}>
+                          <Text style={[styles.usageTitle, { color: colors.foreground }]}>Rating history</Text>
+                          <Text style={[styles.usageSummary, { color: colors.mutedForeground }]}>
+                            {ratingHistory.length} saved {ratingHistory.length === 1 ? 'rating entry' : 'rating entries'}
+                          </Text>
+                        </View>
+                        <Ionicons name={ratingHistoryExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.inkSoft} />
+                      </Pressable>
+                      {ratingHistoryExpanded ? (
+                        <View testID={`skill-rating-history-${item.id}`} style={styles.ratingHistory}>
+                          {visibleRatingHistory.map(rating => (
+                            <View key={rating.id} style={[styles.ratingHistoryEntry, { borderColor: colors.border }]}>
+                              <View style={styles.ratingHistoryHeader}>
+                                <Text style={[styles.ratingHistoryScore, { color: colors.primary }]}>{rating.rating}/10</Text>
+                                <Text style={[styles.ratingHistoryDate, { color: colors.mutedForeground }]}>
+                                  {formatRatingTimestamp(rating.ratedAt)}
+                                </Text>
+                              </View>
+                              <Text style={[styles.ratingHistoryRoutine, { color: colors.foreground }]}>{rating.routineTitle}</Text>
+                              <Text style={[styles.ratingHistoryNote, { color: colors.inkSoft }]}>
+                                {rating.note || 'No note added.'}
+                              </Text>
+                            </View>
+                          ))}
+                          {visibleRatingHistory.length < ratingHistory.length ? (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Show older ratings for ${item.name}`}
+                              testID={`skill-rating-history-more-${item.id}`}
+                              onPress={() => setRatingHistoryLimits(current => ({
+                                ...current, [item.id]: (current[item.id] ?? 20) + 20,
+                              }))}
+                              style={({ pressed }) => [styles.historyMore, pressed && styles.pressed]}
+                            >
+                              <Text style={[styles.historyMoreText, { color: colors.primary }]}>Show older ratings</Text>
+                            </Pressable>
+                          ) : null}
+                        </View>
+                      ) : null}
+                    </>
+                  ) : null}
                   <Pressable
                     accessibilityRole="button"
                     accessibilityState={{ expanded: usageExpanded }}
@@ -383,6 +446,15 @@ const styles = StyleSheet.create({
   skillIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 5 },
   skillName: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   ratingSummary: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 7 },
+  ratingHistory: { paddingTop: 9 },
+  ratingHistoryEntry: { borderWidth: 1, borderRadius: 12, padding: 10, marginTop: 6 },
+  ratingHistoryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  ratingHistoryScore: { fontFamily: 'Inter_700Bold', fontSize: 13 },
+  ratingHistoryDate: { fontFamily: 'Inter_400Regular', fontSize: 11 },
+  ratingHistoryRoutine: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 4 },
+  ratingHistoryNote: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  historyMore: { minHeight: 42, alignItems: 'center', justifyContent: 'center' },
+  historyMoreText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   usageToggle: { minHeight: 54, marginTop: 10, paddingVertical: 9, paddingHorizontal: 10, borderWidth: 1, borderRadius: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
   usageToggleText: { flex: 1 },
   usageTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },

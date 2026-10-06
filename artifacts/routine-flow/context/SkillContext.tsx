@@ -13,6 +13,7 @@ import {
   parseSkillRatingWindow,
   parseSkills,
   validateSkillName,
+  MAX_SKILL_NOTE_LENGTH,
   type RoutineSkill,
 } from '@/lib/skills';
 import { PERSON_DATA_KEYS } from '@/lib/personStorage';
@@ -28,7 +29,10 @@ type SkillContextValue = {
   updateSkill: (id: string, name: string) => Promise<void>;
   deleteSkill: (id: string) => Promise<void>;
   setRatingWindow: (value: number) => Promise<void>;
-  recordRatings: (routineTitle: string, ratings: { skillId: string; rating: number }[]) => Promise<void>;
+  recordRatings: (
+    routineTitle: string,
+    ratings: { skillId: string; rating: number; note?: string }[],
+  ) => Promise<void>;
   mergeImportedSkills: (skills: RoutineSkill[]) => Promise<Record<string, string>>;
 };
 
@@ -106,31 +110,37 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
     setRatingWindowState(value);
   }), [error, loading, runWrite, storage]);
 
-  const recordRatings = useCallback((routineTitle: string, entries: { skillId: string; rating: number }[]) =>
+  const recordRatings = useCallback((routineTitle: string, entries: {
+    skillId: string; rating: number; note?: string;
+  }[]) =>
     runWrite(async () => {
       if (loading || error) throw new Error('Wait for skills to load successfully before saving ratings.');
       const title = routineTitle.trim();
       if (!title || title.length > 200) throw new Error('The completed routine name is invalid.');
       if (!Array.isArray(entries) || entries.some(entry =>
         !entry || typeof entry.skillId !== 'string'
-        || !Number.isInteger(entry.rating) || entry.rating < 1 || entry.rating > 10)
+       || !Number.isInteger(entry.rating) || entry.rating < 1 || entry.rating > 10
+       || (entry.note !== undefined
+         && (typeof entry.note !== 'string' || entry.note.length > MAX_SKILL_NOTE_LENGTH)))
         || new Set(entries.map(entry => entry.skillId)).size !== entries.length) {
-        throw new Error('Choose a rating from 1 to 10 for each selected skill.');
+        throw new Error('Choose a rating from 1 to 10 and a valid note for each selected skill.');
       }
       if (entries.some(entry => !current.current.some(skill => skill.id === entry.skillId))) {
         throw new Error('One or more skills were removed. Refresh the skill list and try again.');
       }
       if (!entries.length) return;
       const ratedAt = new Date().toISOString();
-      const ratingsBySkill = new Map(entries.map(entry => [entry.skillId, entry.rating]));
+      const ratingsBySkill = new Map(entries.map(entry => [entry.skillId, entry]));
       const next = current.current.map(skill => {
-        const rating = ratingsBySkill.get(skill.id);
-        if (rating === undefined) return skill;
+        const entry = ratingsBySkill.get(skill.id);
+        if (entry === undefined) return skill;
+        const note = entry.note?.trim();
         const ratings = [...(skill.ratings ?? []), {
           id: `rating-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-          rating,
+          rating: entry.rating,
           ratedAt,
           routineTitle: title,
+          ...(note ? { note } : {}),
         }];
         if (ratings.length > 20_000) throw new Error('This skill has reached its saved rating limit.');
         return { ...skill, ratings };

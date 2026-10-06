@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Routine } from '@/types/routines';
+import type { RoutineSkill } from './skills';
 import { formatHistoryDay, getHistoryForDay, recordCompletion, recordedPastDays } from './progressHistory';
 
 const routine: Routine = {
@@ -78,4 +79,27 @@ test('saved labels survive routine and step edits or removal while older boolean
   assert.equal(groups[1].steps[0].title, 'Read a page');
   assert.equal(groups[2].title, 'Removed routine (gone)');
   assert.equal(groups[2].steps[0].title, 'Removed step (legacy)');
+});
+
+test('routine event history shows only its same-day skill ratings that have reflection notes', () => {
+  const ratedAt = new Date('2030-06-12T12:00:00.000Z');
+  const day = `${ratedAt.getFullYear()}-${String(ratedAt.getMonth() + 1).padStart(2, '0')}-${String(ratedAt.getDate()).padStart(2, '0')}`;
+  const skills: RoutineSkill[] = [{
+    id: 'focus',
+    name: 'Focus',
+    ratings: [
+      { id: 'focus-good', rating: 8, ratedAt: ratedAt.toISOString(), routineTitle: 'Morning', note: 'I stayed with the task.' },
+      { id: 'focus-no-note', rating: 6, ratedAt: ratedAt.toISOString(), routineTitle: 'Morning' },
+      { id: 'focus-other-event', rating: 9, ratedAt: ratedAt.toISOString(), routineTitle: 'Evening', note: 'A different routine.' },
+    ],
+  }];
+
+  const groups = getHistoryForDay({ [day]: { 'morning:water': true } }, [routine], day, skills);
+  assert.deepEqual(groups[0].skillRatings, [{
+    id: 'focus:focus-good',
+    skillName: 'Focus',
+    rating: 8,
+    ratedAt: ratedAt.toISOString(),
+    note: 'I stayed with the task.',
+  }]);
 });

@@ -93,7 +93,8 @@ test('routine backup round-trips skill assignments and rating history', () => {
   const skills = [{
     id: 'skill-focus',
     name: 'Focus',
-    ratings: [{ id: 'rating-focus', rating: 9, ratedAt: '2030-01-01T00:00:00.000Z', routineTitle: 'Morning' }],
+    ratings: [{ id: 'rating-focus', rating: 9, ratedAt: '2030-01-01T00:00:00.000Z',
+      routineTitle: 'Morning', note: 'Keep the pace steady.' }],
   }];
 
   const imported = parseRoutinesFile(serializeRoutines([source], undefined, skills));
@@ -165,7 +166,8 @@ test('person backup includes playlists, schedules, selected theme, and optional 
     skills: [{
       id: 'skill-focus',
       name: 'Focus',
-      ratings: [{ id: 'rating-focus-1', rating: 8, ratedAt: '2030-01-02T03:04:05.000Z', routineTitle: 'Morning' }],
+      ratings: [{ id: 'rating-focus-1', rating: 8, ratedAt: '2030-01-02T03:04:05.000Z',
+        routineTitle: 'Morning', note: 'Set a clearer intention next time.' }],
     }],
     skillRatingWindow: 7,
   };

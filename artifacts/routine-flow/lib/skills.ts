@@ -7,12 +7,14 @@ export type SkillRating = {
   rating: number;
   ratedAt: string;
   routineTitle: string;
+  note?: string;
 };
 
 export type SkillRatingPoint = SkillRating & { average: number };
 
 export const MAX_SKILL_NAME = 50;
 export const MAX_SKILLS = 200;
+export const MAX_SKILL_NOTE_LENGTH = 1000;
 export const DEFAULT_SKILL_RATING_WINDOW = 5;
 export const MIN_SKILL_RATING_WINDOW = 1;
 export const MAX_SKILL_RATING_WINDOW = 100;
@@ -88,14 +90,18 @@ function parseRatings(value: unknown): SkillRating[] {
       || typeof rating.rating !== 'number' || !Number.isInteger(rating.rating) || rating.rating < 1 || rating.rating > 10
       || typeof rating.ratedAt !== 'string' || !Number.isFinite(Date.parse(rating.ratedAt))
       || typeof rating.routineTitle !== 'string' || !rating.routineTitle.trim() || rating.routineTitle.length > 200
+      || (rating.note !== undefined
+        && (typeof rating.note !== 'string' || rating.note.length > MAX_SKILL_NOTE_LENGTH))
       || ratings.some(existing => existing.id === rating.id)) {
       throw new Error('Saved skills could not be read.');
     }
+    const note = typeof rating.note === 'string' ? rating.note.trim() : '';
     ratings.push({
       id: rating.id,
       rating: rating.rating,
       ratedAt: rating.ratedAt,
       routineTitle: rating.routineTitle.trim(),
+      ...(note ? { note } : {}),
     });
   }
   return ratings;
