@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { usePeople } from '@/context/PeopleContext';
@@ -17,8 +17,10 @@ export default function PeopleScreen() {
   const insets = useSafeAreaInsets();
   const { people, activePerson, busy, notice, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson } = usePeople();
   const [name, setName] = React.useState('');
+  const [newPersonPlaylistRatingDefault, setNewPersonPlaylistRatingDefault] = React.useState(true);
   const [editingPersonId, setEditingPersonId] = React.useState<string | null>(null);
   const [editingName, setEditingName] = React.useState('');
+  const [editingPlaylistRatingDefault, setEditingPlaylistRatingDefault] = React.useState(true);
   const [error, setError] = React.useState('');
   const [working, setWorking] = React.useState(false);
   const [sourceId, setSourceId] = React.useState<string | null>(null);
@@ -70,19 +72,24 @@ export default function PeopleScreen() {
     }
     setEditingPersonId(person.id);
     setEditingName(person.name);
+    setEditingPlaylistRatingDefault(person.defaultRateSkillsAtPlaylistEnd ?? true);
     setError('');
   }
 
   function submitAdd() {
     void run(async () => {
-      await addPerson({ name });
+      await addPerson({ name, defaultRateSkillsAtPlaylistEnd: newPersonPlaylistRatingDefault });
       setName('');
+      setNewPersonPlaylistRatingDefault(true);
     }, 'Could not add person.');
   }
 
   function submitEdit(personId: string) {
     void run(async () => {
-      await updatePerson(personId, { name: editingName });
+      await updatePerson(personId, {
+        name: editingName,
+        defaultRateSkillsAtPlaylistEnd: editingPlaylistRatingDefault,
+      });
       setEditingPersonId(null);
     }, 'Could not update person.');
   }
@@ -205,6 +212,22 @@ export default function PeopleScreen() {
                         style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
                       />
                     )}
+                    <View style={styles.profileRatingSetting}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.itemText, { color: colors.foreground }]}>Ask for skill ratings at playlist end</Text>
+                        <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                          New playlists use this value; you can change it per playlist.
+                        </Text>
+                      </View>
+                      <Switch
+                        testID={`person-playlist-rating-default-${p.id}`}
+                        accessibilityLabel="Default to skill ratings after the full playlist"
+                        disabled={disabled}
+                        value={editingPlaylistRatingDefault}
+                        onValueChange={setEditingPlaylistRatingDefault}
+                        trackColor={{ true: colors.primary, false: colors.border }}
+                      />
+                    </View>
                     <View style={styles.formActions}>
                       <Pressable
                         testID={`person-edit-cancel-${p.id}`}
@@ -247,6 +270,22 @@ export default function PeopleScreen() {
               style={[styles.btn, { backgroundColor: colors.primary, opacity: disabled || !name.trim() ? 0.5 : 1 }]}>
               <Text style={[styles.linkText, { color: colors.primaryForeground }]}>Add</Text>
             </Pressable>
+          </View>
+          <View style={[styles.profileRatingSetting, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.itemText, { color: colors.foreground }]}>Ask for skill ratings at playlist end</Text>
+              <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                New playlists use this value; you can change it per playlist.
+              </Text>
+            </View>
+            <Switch
+              testID="new-person-playlist-rating-default"
+              accessibilityLabel="Default to skill ratings after the full playlist"
+              disabled={disabled}
+              value={newPersonPlaylistRatingDefault}
+              onValueChange={setNewPersonPlaylistRatingDefault}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
           </View>
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
             New people start empty and become active right away. Each person keeps separate routines, playlists, schedules, and progress.
@@ -320,6 +359,7 @@ const styles = StyleSheet.create({
   avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontFamily: 'Inter_500Medium', fontSize: 15 },
   profileEditor: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 },
+  profileRatingSetting: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 12 },
   editButton: { minHeight: 44, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   formActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   btnSecondary: { minHeight: 48, paddingHorizontal: 18, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

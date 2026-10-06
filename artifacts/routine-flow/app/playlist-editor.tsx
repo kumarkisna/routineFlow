@@ -9,6 +9,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSchedules } from '@/context/ScheduleContext';
 import { useSkills } from '@/context/SkillContext';
+import { usePeople } from '@/context/PeopleContext';
 import { SkillPicker } from '@/components/SkillPicker';
 import { useColors } from '@/hooks/useColors';
 import { playablePlaylistIds } from '@/lib/playlists';
@@ -18,6 +19,7 @@ import { formatDuration, getStepSeconds } from '@/types/routines';
 export default function PlaylistEditor() {
   const { id, scheduleId } = useLocalSearchParams<{ id?: string; scheduleId?: string }>();
   const colors = useColors();
+  const { activePerson } = usePeople();
   const { playlists, loading, error } = usePlaylists();
   const { loading: rLoading } = useRoutines();
   const { schedules, loading: sLoading, error: sError } = useSchedules();
@@ -43,7 +45,9 @@ export default function PlaylistEditor() {
   const src = scheduled ?? existing;
   return <Editor key={scheduleId ? `s-${scheduleId}` : id ?? 'new'} editId={existing?.id} scheduleId={scheduleId} hasOverride={hasOverride} canReset={origOk}
     initialTitle={src?.title ?? ''} initialIds={src?.routineIds ?? []} initialSkillIds={src?.skillIds ?? []}
-    initialRateSkillsAtPlaylistEnd={src?.rateSkillsAtPlaylistEnd ?? true} />;
+    initialRateSkillsAtPlaylistEnd={src
+      ? src.rateSkillsAtPlaylistEnd ?? true
+      : activePerson.defaultRateSkillsAtPlaylistEnd} />;
 }
 
 function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds, initialSkillIds,
@@ -160,7 +164,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
             <View style={styles.ratingSettingCopy}>
               <Text style={[styles.ratingSettingTitle, { color: colors.foreground }]}>Rate skills after the full playlist</Text>
               <Text style={[styles.ratingSettingHint, { color: colors.mutedForeground }]}>
-                When on, ask once after the last routine instead of after each routine. You can skip the prompt.
+                When on, ask once after the last routine instead of after each routine. New playlists use the person default; you can change it here.
               </Text>
             </View>
             <Switch

@@ -4,11 +4,11 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'rea
 import { router } from 'expo-router';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme } from '@/lib/appThemes';
 import { buildPersonCopy, readPersonSnapshot, repairPersonRoutineDurations } from '@/lib/personCopy';
+import { initialPeopleRegistry, parsePeopleRegistry, type PeopleRegistry } from '@/lib/peopleRegistry';
 import { DEFAULT_SKILL_RATING_WINDOW } from '@/lib/skills';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 
-type Registry = { version: 1; people: Person[]; activePersonId: string };
 type PeopleContextValue = {
   people: Person[];
   activePerson: Person;
@@ -21,30 +21,10 @@ type PeopleContextValue = {
   loadPerson: (id: string) => Promise<PersonSnapshot>;
   copyFromPerson: (sourceId: string, selection: PersonCopySelection) => Promise<PersonCopySummary>;
 };
-const initialRegistry: Registry = { version: 1, people: [{ id: DEFAULT_PERSON_ID, name: 'Me' }], activePersonId: DEFAULT_PERSON_ID };
 const PeopleContext = createContext<PeopleContextValue | null>(null);
 const colors = APP_THEMES[0].colors;
 
-function parseRegistry(raw: string): Registry {
-  const value: unknown = JSON.parse(raw);
-  if (!value || typeof value !== 'object') throw new Error('Saved people are invalid.');
-  const item = value as Partial<Registry>;
-  if (item.version !== 1 || !Array.isArray(item.people) || !item.people.length
-    || item.people.some(person => !person || typeof person.id !== 'string' || !person.id
-      || typeof person.name !== 'string' || !person.name.trim())
-    || new Set(item.people.map(person => person.id)).size !== item.people.length
-    || !item.people.some(person => person.id === DEFAULT_PERSON_ID && person.name === 'Me')
-    || !item.people.some(person => person.id === item.activePersonId)) {
-    throw new Error('Saved people are invalid. Your data has not been replaced.');
-  }
-  return {
-    version: 1,
-    people: item.people.map(person => ({ id: person.id, name: person.name })),
-    activePersonId: item.activePersonId!,
-  };
-}
-
-async function saveRegistry(registry: Registry) {
+async function saveRegistry(registry: PeopleRegistry) {
   const serialized = JSON.stringify(registry);
   try {
     await AsyncStorage.setItem(PEOPLE_KEY, serialized);
@@ -72,7 +52,7 @@ async function validatePersonSettings(personId: string) {
 }
 
 export function PeopleProvider({ children }: { children: React.ReactNode }) {
-  const [registry, setRegistry] = useState<Registry>(initialRegistry);
+  const [registry, setRegistry] = useState<PeopleRegistry>(initialPeopleRegistry);
   const current = useRef(registry);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -89,7 +69,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     let activePersonId: string | null = null;
     try {
       const raw = await AsyncStorage.getItem(PEOPLE_KEY);
-      const next = raw ? parseRegistry(raw) : initialRegistry;
+      const next = raw ? parsePeopleRegistry(raw) : initialPeopleRegistry;
       activePersonId = next.activePersonId;
       if (!raw || JSON.stringify(next) !== raw) await saveRegistry(next);
       await readPersonSnapshot(next.activePersonId);
@@ -153,7 +133,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     await waitForPersonWrites(id);
     await readPersonSnapshot(id);
     await validatePersonSettings(id);
-    const next: Registry = { ...previous, activePersonId: id };
+    const next: PeopleRegistry = { ...previous, activePersonId: id };
     await saveRegistry(next);
     router.replace('/');
     current.current = next;
@@ -171,6 +151,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     const person: Person = {
       id: `person-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       name: trimmed,
+      defaultRateSkillsAtPlaylistEnd: profile.defaultRateSkillsAtPlaylistEnd ?? true,
     };
     await AsyncStorage.multiSet([
       [personStorageKey(person.id, PERSON_DATA_KEYS.routines), '[]'],
@@ -181,7 +162,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       [personStorageKey(person.id, PERSON_DATA_KEYS.skillRatingWindow), String(DEFAULT_SKILL_RATING_WINDOW)],
       [personStorageKey(person.id, PERSON_DATA_KEYS.appearance), DEFAULT_THEME_ID],
     ]);
-    const next: Registry = { version: 1, people: [...previous.people, person], activePersonId: person.id };
+    const next: PeopleRegistry = { version: 1, people: [...previous.people, person], activePersonId: person.id };
     await saveRegistry(next);
     router.replace('/');
     current.current = next;
@@ -204,8 +185,10 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     const updated: Person = {
       ...existing,
       name: trimmed,
+      defaultRateSkillsAtPlaylistEnd:
+        profile.defaultRateSkillsAtPlaylistEnd ?? existing.defaultRateSkillsAtPlaylistEnd,
     };
-    const next: Registry = {
+    const next: PeopleRegistry = {
       ...previous,
       people: previous.people.map(person => person.id === id ? updated : person),
     };

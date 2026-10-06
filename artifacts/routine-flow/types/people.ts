@@ -6,9 +6,11 @@ import type { RoutineSkill } from '@/lib/skills';
 export type Person = {
   id: string;
   name: string;
+  defaultRateSkillsAtPlaylistEnd: boolean;
 };
 export type PersonProfileInput = {
   name: string;
+  defaultRateSkillsAtPlaylistEnd: boolean;
 };
 export type PersonSnapshot = {
   routines: Routine[];
