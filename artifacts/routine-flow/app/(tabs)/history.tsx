@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as Speech from 'expo-speech';
@@ -51,13 +52,7 @@ export default function HistoryScreen() {
   const total = groups.reduce((sum, group) => sum + group.steps.length, 0);
   const isLoading = loading || skillsLoading || playlistsLoading;
 
-  React.useEffect(() => () => {
-    speechSessionRef.current += 1;
-    speechEventKeyRef.current = null;
-    void Speech.stop().catch(() => undefined);
-  }, []);
-
-  function stopSkillSpeech() {
+  const stopSkillSpeech = React.useCallback(() => {
     const stoppedEventKey = speechEventKeyRef.current;
     const session = ++speechSessionRef.current;
     speechEventKeyRef.current = null;
@@ -68,7 +63,12 @@ export default function HistoryScreen() {
         setSpeechError({ eventKey: stoppedEventKey, message: 'Could not stop speech playback.' });
       }
     });
-  }
+  }, []);
+
+  useFocusEffect(React.useCallback(
+    () => () => stopSkillSpeech(),
+    [stopSkillSpeech],
+  ));
 
   async function speakSkillRatings(routineTitle: string, event: SkillRatingEvent, eventKey: string) {
     if (speechEventKeyRef.current === eventKey) {
@@ -431,7 +431,8 @@ export default function HistoryScreen() {
                         </Text>
                       ) : null}
                     </View>
-                  ); })}
+                    );
+                  })}
                 </View>
               ) : null}
             </View>
@@ -504,6 +505,9 @@ const styles = StyleSheet.create({
   skillEventCopy: { flex: 1 },
   skillEventTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   skillEventTime: { fontFamily: 'Inter_400Regular', fontSize: 10, lineHeight: 15, marginTop: 2 },
+  skillEventActions: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 },
+  speechButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 10 },
+  speechButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   pdfButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRadius: 10, paddingHorizontal: 10 },
   pdfButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   pdfError: { fontFamily: 'Inter_500Medium', fontSize: 11, lineHeight: 16, marginTop: 6 },
