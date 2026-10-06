@@ -830,7 +830,7 @@ const styles = StyleSheet.create({
   playlistContextPrefix: { fontFamily: 'Inter_700Bold', fontSize: 22, letterSpacing: 0.2, opacity: 0.9 },
   playlistContextName: { fontFamily: 'Inter_700Bold', fontSize: 22 },
   playlistContextPosition: { fontFamily: 'Inter_500Medium', fontSize: 12, letterSpacing: 0.6, lineHeight: 16, textAlign: 'center', marginTop: 4 },
-  playlistContextSubtitle: { fontFamily: 'Inter_500Medium', fontSize: 15, textAlign: 'center', lineHeight: 20, marginTop: 5, opacity: 0.78, maxWidth: 280 },
+  playlistContextSubtitle: { fontFamily: 'Inter_700Bold', fontSize: 20, textAlign: 'center', lineHeight: 24, marginTop: 5, maxWidth: 280 },
   timerCard: { marginHorizontal: 20, borderRadius: 26, alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
   timerRing: { width: 164, height: 164, borderRadius: 82, borderWidth: 7, alignItems: 'center', justifyContent: 'center' },
   timerText: { fontFamily: 'Inter_700Bold', fontSize: 27, letterSpacing: 1 },
