@@ -3,8 +3,20 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { parsePort } from "../dist/port.mjs";
 
 const serverPath = fileURLToPath(new URL("../dist/index.mjs", import.meta.url));
+
+for (const [rawPort, expectedPort] of [
+  ["1", 1],
+  ["65535", 65535],
+]) {
+  assert.equal(
+    parsePort(rawPort),
+    expectedPort,
+    `PORT ${rawPort} should be accepted as a valid TCP port`,
+  );
+}
 
 async function assertStartupFails({
   name,
@@ -129,7 +141,7 @@ await assertStartupFails({
     'Invalid PORT value: "Infinity". Expected a whole-number TCP port from 1 to 65535.',
 });
 console.log(
-  "API startup configuration smoke tests passed: missing, non-numeric, non-positive, fractional, infinite, and out-of-range PORT",
+  "API startup configuration smoke tests passed: inclusive port boundaries, missing, non-numeric, non-positive, fractional, infinite, and out-of-range PORT",
 );
 
 const port = await getUnusedPort();
