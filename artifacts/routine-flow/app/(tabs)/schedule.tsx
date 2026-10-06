@@ -11,7 +11,12 @@ import { useSchedules } from '@/context/ScheduleContext';
 import { useColors } from '@/hooks/useColors';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS, playablePlaylistIds } from '@/lib/playlists';
 import { buildSchedulePrintHtml } from '@/lib/schedulePrint';
-import { scheduledPlaylistSource, type RoutineSchedule } from '@/lib/schedules';
+import {
+  scheduledPlaylistSource,
+  scheduledRoutineRunParams,
+  scheduledRoutineSource,
+  type RoutineSchedule,
+} from '@/lib/schedules';
 import { formatAlertOffset, scheduleAlertOffsets } from '@/lib/scheduleAlerts';
 
 type Row = { kind: 'head'; key: string; label: string } | { kind: 'item'; key: string; item: RoutineSchedule };
@@ -53,7 +58,7 @@ export default function ScheduleScreen() {
 
   function source(s: RoutineSchedule) {
     if (s.targetType === 'routine') {
-      const r = routines.find((x) => x.id === s.targetId);
+      const r = scheduledRoutineSource(s, routines);
       if (!r) return {
         title: null as string | null, ids: [] as string[], skillIds: [] as string[],
         rateSkillsAtPlaylistEnd: false, reminderSettings: activePerson.defaultPlaylistReminderSettings,
@@ -77,12 +82,7 @@ export default function ScheduleScreen() {
     if (!src.ids.length) return;
     if (s.targetType === 'routine') router.push({
       pathname: '/routine/[id]/run',
-      params: {
-        id: src.ids[0],
-        stepReminder: src.reminderSettings.stepCompletion ? '1' : '0',
-        routineReminder: src.reminderSettings.routineCompletion ? '1' : '0',
-        autoStart: '1',
-      },
+      params: scheduledRoutineRunParams(src.ids[0], src.reminderSettings),
     });
     else router.push({
       pathname: '/routine/[id]/run',

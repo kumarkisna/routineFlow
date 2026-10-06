@@ -2,7 +2,7 @@ import { validatePlaylist, type RoutinePlaylist } from './playlists';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from './playlists';
 import { alertDate, futureScheduleAlerts, MAX_SCHEDULE_ALERTS, scheduleNotificationRecords, validateAlertOffsets,
   type ScheduledAlertNotification } from './scheduleAlerts';
-import type { RoutineNotificationSettings } from '../types/routines';
+import type { Routine, RoutineNotificationSettings } from '../types/routines';
 
 export type ScheduleTargetType = 'routine' | 'playlist';
 export type ScheduledPlaylistOverride = {
@@ -23,6 +23,24 @@ export type RoutineSchedule = {
   notifications?: ScheduledAlertNotification[];
   playlistOverride?: ScheduledPlaylistOverride;
 };
+
+/** Routine schedules resolve against the current saved routine when the user starts them. */
+export function scheduledRoutineSource(schedule: RoutineSchedule, routines: Routine[]): Routine | null {
+  if (schedule.targetType !== 'routine') return null;
+  return routines.find(item => item.id === schedule.targetId) ?? null;
+}
+
+export function scheduledRoutineRunParams(
+  routineId: string,
+  reminderSettings: RoutineNotificationSettings,
+): { id: string; stepReminder: '0' | '1'; routineReminder: '0' | '1'; autoStart: '1' } {
+  return {
+    id: routineId,
+    stepReminder: reminderSettings.stepCompletion ? '1' : '0',
+    routineReminder: reminderSettings.routineCompletion ? '1' : '0',
+    autoStart: '1',
+  };
+}
 
 /** A customized appointment owns its sequence; ordinary appointments follow the saved playlist. */
 export function scheduledPlaylistSource(schedule: RoutineSchedule, playlists: RoutinePlaylist[]): RoutinePlaylist | null {

@@ -3,9 +3,10 @@ import test from 'node:test';
 import type { Routine } from '../types/routines';
 import { buildStepAnnouncement } from './routineSpeech';
 import { getNextRoutineStepIndex, getPlayableRoutine, getRoutinePlaybackStep, getRoutinePlaybackStepSeconds } from './routinePlayback';
+import { scheduledRoutineRunParams, scheduledRoutineSource } from './schedules';
 import { moveRoutineStep } from './routineStepOrdering';
 
-test('a saved reordered routine announces, times, and completes each step in order', () => {
+test('a scheduled run loads the saved reordered routine and announces, times, and completes it in order', () => {
   const originalRoutine: Routine = {
     id: 'morning-reset',
     title: 'Morning reset',
@@ -28,7 +29,27 @@ test('a saved reordered routine announces, times, and completes each step in ord
     ...originalRoutine,
     steps: reorderedSteps,
   })) as Routine;
-  const playbackRoutine = getPlayableRoutine(savedRoutine);
+  const schedule = {
+    id: 'morning-reset-schedule',
+    targetType: 'routine' as const,
+    targetId: originalRoutine.id,
+    targetTitle: originalRoutine.title,
+    scheduledAt: '2030-01-01T08:00:00.000Z',
+    reminder: false,
+  };
+  const scheduledRoutine = scheduledRoutineSource(schedule, [savedRoutine]);
+  assert.ok(scheduledRoutine);
+  assert.equal(scheduledRoutine, savedRoutine);
+  assert.deepEqual(
+    scheduledRoutineRunParams(scheduledRoutine.id, { stepCompletion: false, routineCompletion: false }),
+    {
+      id: 'morning-reset',
+      stepReminder: '0',
+      routineReminder: '0',
+      autoStart: '1',
+    },
+  );
+  const playbackRoutine = getPlayableRoutine(scheduledRoutine);
 
   assert.deepEqual(savedRoutine.steps.map(step => step.id), ['drink-water', 'warm-up', 'optional']);
   assert.deepEqual(playbackRoutine.steps.map(step => step.id), ['drink-water', 'warm-up']);

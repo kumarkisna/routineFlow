@@ -7,7 +7,7 @@ Scheduling means a one-time future appointment with an optional local phone remi
 
 **Why:** Mobile operating systems do not reliably allow an app to launch itself and begin speech or timer playback at a future time. Manual launch also avoids unexpectedly starting audio.
 
-**How to apply:** Do not promise automatic background execution or exact notification delivery. Notification taps open the schedule screen. Convert the selected device-local date/time into a fixed instant; show it using the current device time zone. Reject nonexistent local times during daylight-saving transitions rather than silently shifting them.
+**How to apply:** Do not promise automatic background execution or exact notification delivery. A notification tap should open the schedule screen and require an explicit Start before audio; verify that tap routing is implemented before relying on it. Convert the selected device-local date/time into a fixed instant; show it using the current device time zone. Reject nonexistent local times during daylight-saving transitions rather than silently shifting them.
 
 Users can edit a scheduled playlist for that appointment only. This date-only version owns its playlist name and ordered routine references (including repeats), without modifying the original playlist or other appointments. Rescheduling keeps that version; selecting a different source removes it. Routine contents remain live, and inactive routines are skipped. Customized appointments remain usable if the original playlist is deleted.
 
