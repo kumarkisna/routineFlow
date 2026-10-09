@@ -12,7 +12,7 @@ import { useSkills } from '@/context/SkillContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import {
-  createHistorySkillRatingRun, formatHistoryDay, getHistoryForDay, getUnratedSkillIds,
+  createHistorySkillRatingRun, formatHistoryDay, getHistoryForDay, getSkillRatingsMissingNotes, getUnratedSkillIds,
   groupSkillRatingEvents, localDayKey, playlistHistoryOptions, playlistHistoryRatingAnchorId,
   recordedHistoryDays, routineHistoryOptions, type HistoryFilter, type SkillRatingEvent,
 } from '@/lib/progressHistory';
@@ -36,10 +36,12 @@ export default function HistoryScreen() {
   const [speakingEventKey, setSpeakingEventKey] = React.useState<string | null>(null);
   const [speechError, setSpeechError] = React.useState<{ eventKey: string; message: string } | null>(null);
   const [ratingPrompt, setRatingPrompt] = React.useState<{
+    mode: 'ratings' | 'notes';
     skillIds: string[];
     routineTitle: string;
     contextLabel: string;
-    run: SkillRatingRun;
+    run?: SkillRatingRun;
+    noteTargets?: ReturnType<typeof getSkillRatingsMissingNotes>;
   } | null>(null);
   const exportLock = React.useRef(false);
   const speechSessionRef = React.useRef(0);
@@ -207,10 +209,26 @@ export default function HistoryScreen() {
     const missingSkillIds = getUnratedSkillIds(skillIds, ratings ?? []);
     if (!missingSkillIds.length) return;
     setRatingPrompt({
+      mode: 'ratings',
       skillIds: missingSkillIds,
       routineTitle,
       contextLabel,
       run: createHistorySkillRatingRun(activeDay, scope, sourceId),
+    });
+  }
+
+  function openHistoryNotePrompt(
+    routineTitle: string,
+    noteTargets: ReturnType<typeof getSkillRatingsMissingNotes>,
+    contextLabel: string,
+  ) {
+    if (!noteTargets.length) return;
+    setRatingPrompt({
+      mode: 'notes',
+      skillIds: [...new Set(noteTargets.map(target => target.skillId))],
+      routineTitle,
+      contextLabel,
+      noteTargets,
     });
   }
 
@@ -374,6 +392,7 @@ export default function HistoryScreen() {
               : routine ? getRoutineSkillIds(routine) : [];
             const existingRatings = isPlaylistRunEntry ? playlistRatings : group.skillRatings ?? [];
             const unratedSkillIds = getUnratedSkillIds(ratingSkillIds, existingRatings);
+            const missingNoteTargets = getSkillRatingsMissingNotes(existingRatings);
             const ratingScope = isPlaylistRunEntry ? 'playlist' : 'routine';
             const ratingSourceId = ratingScope === 'playlist' && activeFilter?.kind === 'playlist'
               ? activeFilter.id
@@ -433,6 +452,24 @@ export default function HistoryScreen() {
                     {unratedSkillIds.length === ratingSkillIds.length
                       ? 'Add skill ratings and notes'
                       : 'Rate remaining skills'}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {missingNoteTargets.length ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add missing reflection notes for ${ratingScope} ${ratingContext.replace(/^(Routine|Playlist): /, '')}`}
+                  testID={`history-add-skill-notes-${group.id}`}
+                  onPress={() => openHistoryNotePrompt(group.title, missingNoteTargets, ratingContext)}
+                  style={({ pressed }) => [
+                    styles.ratingAction,
+                    { backgroundColor: colors.sageSoft },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="create-outline" size={17} color={colors.success} />
+                  <Text style={[styles.ratingActionText, { color: colors.success }]}>
+                    {missingNoteTargets.length === 1 ? 'Add missing note' : 'Add missing notes'}
                   </Text>
                 </Pressable>
               ) : null}
@@ -556,7 +593,8 @@ export default function HistoryScreen() {
         skillIds={ratingPrompt?.skillIds ?? []}
         routineTitle={ratingPrompt?.routineTitle ?? ''}
         contextLabel={ratingPrompt?.contextLabel}
-        run={ratingPrompt?.run}
+        run={ratingPrompt?.mode === 'ratings' ? ratingPrompt.run : undefined}
+        noteTargets={ratingPrompt?.mode === 'notes' ? ratingPrompt.noteTargets : undefined}
         onSkip={() => setRatingPrompt(null)}
         onSaved={() => setRatingPrompt(null)}
       />

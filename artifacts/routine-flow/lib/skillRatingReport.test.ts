@@ -9,8 +9,8 @@ test('skill report includes the run time, escaped notes, and sequential skill or
     dateTime: '2030-06-12T12:00:00.000Z',
     isRunTime: true,
     ratings: [
-      { id: 'second', skillId: 'balance', skillName: 'Balance', rating: 7, ratedAt: '2030-06-12T12:05:00.000Z', sequence: 1, note: 'Keep <steady>.' },
-      { id: 'first', skillId: 'breathing', skillName: 'Breathing', rating: 8, ratedAt: '2030-06-12T12:05:00.000Z', sequence: 0 },
+      { id: 'second', skillId: 'balance', ratingId: 'rating-second', skillName: 'Balance', rating: 7, ratedAt: '2030-06-12T12:05:00.000Z', sequence: 1, note: 'Keep <steady>.' },
+      { id: 'first', skillId: 'breathing', ratingId: 'rating-first', skillName: 'Breathing', rating: 8, ratedAt: '2030-06-12T12:05:00.000Z', sequence: 0 },
     ],
   });
   assert.match(html, /Morning &lt;Routine&gt;/);

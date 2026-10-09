@@ -16,6 +16,7 @@ export type HistorySkillRating = {
   skillName: string;
   rating: number;
   ratedAt: string;
+  completedDay?: string;
   runId?: string;
   completedAt?: string;
   sequence?: number;
@@ -95,12 +96,20 @@ export type MissingSkillRatingNote = {
   skillId: string;
   ratingId: string;
   rating: number;
+  skillName: string;
+  ratedAt: string;
+  completedDay?: string;
+  completedAt?: string;
 };
 
 export function getSkillRatingsMissingNotes(ratings: HistorySkillRating[]): MissingSkillRatingNote[] {
   return ratings
     .filter(rating => !rating.note?.trim())
-    .map(({ skillId, ratingId, rating }) => ({ skillId, ratingId, rating }));
+    .map(({ skillId, ratingId, rating, skillName, ratedAt, completedDay, completedAt }) => ({
+      skillId, ratingId, rating, skillName, ratedAt,
+      ...(completedDay ? { completedDay } : {}),
+      ...(completedAt ? { completedAt } : {}),
+    }));
 }
 
 export function playlistHistoryRatingAnchorId(
@@ -249,6 +258,7 @@ export function getHistoryForDay(
         skillName: skill.name,
         rating: rating.rating,
         ratedAt: rating.ratedAt,
+        ...(rating.completedDay ? { completedDay: rating.completedDay } : {}),
         ...(rating.runId ? { runId: rating.runId } : {}),
         ...(rating.completedAt ? { completedAt: rating.completedAt } : {}),
         ...(rating.sequence !== undefined ? { sequence: rating.sequence } : {}),

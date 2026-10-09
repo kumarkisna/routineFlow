@@ -27,6 +27,12 @@ Reflection notes are attached to individual skill ratings after routine completi
 
 **How to apply:** Persist an optional note on the rating record and keep it with the rating through person backups and imports.
 
+When filling a missing reflection later, update only the targeted existing rating ID. Preserve its score and timestamps, and keep multiple missing ratings for the same skill as separate targets.
+
+**Why:** A retrospective note should not change the user's score or merge reflections from distinct runs.
+
+**How to apply:** Use both skill ID and rating ID for a note-only update; do not create a new rating or replace an existing reflection.
+
 Ratings added later from History must use the completion date the app actually retained, rather than inventing a completion time. Backfill IDs stay stable for that routine or playlist on that day so adding remaining ratings does not create duplicate sessions.
 
 **Why:** Legacy progress is stored at day-and-routine granularity and does not retain an exact completion timestamp or an individual playlist-run identifier.

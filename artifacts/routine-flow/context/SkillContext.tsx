@@ -185,7 +185,7 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
       || typeof entry.ratingId !== 'string' || !entry.ratingId.trim()
       || typeof entry.note !== 'string' || !entry.note.trim()
       || entry.note.length > MAX_SKILL_NOTE_LENGTH)
-      || new Set(entries.map(entry => JSON.stringify([entry.skillId, entry.ratingId])).size !== entries.length) {
+      || new Set(entries.map(entry => JSON.stringify([entry.skillId, entry.ratingId]))).size !== entries.length) {
       throw new Error('Add a valid note for each selected skill rating.');
     }
     if (!entries.length) return;
@@ -206,13 +206,15 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
 
     let changed = false;
     const next = current.current.map(skill => {
+      let skillChanged = false;
       const ratings = skill.ratings?.map(rating => {
         const note = updates.get(JSON.stringify([skill.id, rating.id]));
         if (note === undefined || rating.note?.trim()) return rating;
+        skillChanged = true;
         changed = true;
         return { ...rating, note };
       });
-      return changed && ratings ? { ...skill, ratings } : skill;
+      return skillChanged && ratings ? { ...skill, ratings } : skill;
     });
     if (!changed) return;
     await storage.setItem(KEY, JSON.stringify(next));

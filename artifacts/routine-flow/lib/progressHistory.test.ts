@@ -5,7 +5,7 @@ import type { Routine } from '@/types/routines';
 import type { RoutineSkill } from './skills';
 import {
   createHistorySkillRatingRun, formatHistoryDay, getHistoryForDay, getUnratedSkillIds,
-  groupSkillRatingEvents, playlistHistoryOptions, playlistHistoryRatingAnchorId, recordCompletion,
+  getSkillRatingsMissingNotes, groupSkillRatingEvents, playlistHistoryOptions, playlistHistoryRatingAnchorId, recordCompletion,
   recordedHistoryDays, recordedPastDays, routineHistoryOptions,
 } from './progressHistory';
 
@@ -75,15 +75,15 @@ test('history includes today so a completed run can be reviewed and exported imm
 test('skill ratings group by run and stay in the order presented for rating', () => {
   const ratings = [
     {
-      id: 'balance', skillId: 'balance-id', skillName: 'Balance', rating: 7, ratedAt: '2030-06-12T12:05:00.000Z',
+      id: 'balance', skillId: 'balance-id', ratingId: 'balance-rating', skillName: 'Balance', rating: 7, ratedAt: '2030-06-12T12:05:00.000Z',
       runId: 'run-one', completedAt: '2030-06-12T12:00:00.000Z', sequence: 1,
     },
     {
-      id: 'breathing', skillId: 'breathing-id', skillName: 'Breathing', rating: 8, ratedAt: '2030-06-12T12:05:00.000Z',
+      id: 'breathing', skillId: 'breathing-id', ratingId: 'breathing-rating', skillName: 'Breathing', rating: 8, ratedAt: '2030-06-12T12:05:00.000Z',
       runId: 'run-one', completedAt: '2030-06-12T12:00:00.000Z', sequence: 0,
     },
     {
-      id: 'older-run', skillId: 'focus-id', skillName: 'Focus', rating: 6, ratedAt: '2030-06-11T12:05:00.000Z',
+      id: 'older-run', skillId: 'focus-id', ratingId: 'focus-rating', skillName: 'Focus', rating: 6, ratedAt: '2030-06-11T12:05:00.000Z',
       runId: 'run-older', completedAt: '2030-06-11T12:00:00.000Z', sequence: 0,
     },
   ];
@@ -113,10 +113,23 @@ test('history rating IDs stay stable for a backfilled routine or playlist day', 
 test('history rating choices exclude skills already rated for that entry', () => {
   assert.deepEqual(
     getUnratedSkillIds(['balance', 'focus', 'balance', 'breathing'], [
-      { id: 'focus:1', skillId: 'focus', skillName: 'Focus', rating: 8, ratedAt: '2030-06-12T12:00:00Z' },
+      { id: 'focus:1', skillId: 'focus', ratingId: 'rating-1', skillName: 'Focus', rating: 8, ratedAt: '2030-06-12T12:00:00Z' },
     ]),
     ['balance', 'breathing'],
   );
+});
+
+test('missing-note choices include only ratings without a saved reflection', () => {
+  assert.deepEqual(getSkillRatingsMissingNotes([
+    { id: 'focus:1', skillId: 'focus', ratingId: 'rating-1', skillName: 'Focus', rating: 8, ratedAt: '2030-06-12T12:00:00Z' },
+    { id: 'focus:2', skillId: 'focus', ratingId: 'rating-2', skillName: 'Focus', rating: 9, ratedAt: '2030-06-12T12:30:00Z' },
+    { id: 'breathing:2', skillId: 'breathing', ratingId: 'rating-2', skillName: 'Breathing', rating: 6, ratedAt: '2030-06-12T12:00:00Z', note: 'Keep the pace.' },
+    { id: 'balance:3', skillId: 'balance', ratingId: 'rating-3', skillName: 'Balance', rating: 7, ratedAt: '2030-06-12T12:00:00Z', note: '  ' },
+  ]), [
+    { skillId: 'focus', ratingId: 'rating-1', rating: 8, skillName: 'Focus', ratedAt: '2030-06-12T12:00:00Z' },
+    { skillId: 'focus', ratingId: 'rating-2', rating: 9, skillName: 'Focus', ratedAt: '2030-06-12T12:30:00Z' },
+    { skillId: 'balance', ratingId: 'rating-3', rating: 7, skillName: 'Balance', ratedAt: '2030-06-12T12:00:00Z' },
+  ]);
 });
 
 test('playlist history has one rating anchor at the last completed routine in playlist order', () => {
@@ -215,6 +228,7 @@ test('routine event history shows all same-day skill ratings with optional refle
     {
       id: 'focus:focus-good',
       skillId: 'focus',
+      ratingId: 'focus-good',
       skillName: 'Focus',
       rating: 8,
       ratedAt: ratedAt.toISOString(),
@@ -223,6 +237,7 @@ test('routine event history shows all same-day skill ratings with optional refle
     {
       id: 'focus:focus-no-note',
       skillId: 'focus',
+      ratingId: 'focus-no-note',
       skillName: 'Focus',
       rating: 6,
       ratedAt: ratedAt.toISOString(),

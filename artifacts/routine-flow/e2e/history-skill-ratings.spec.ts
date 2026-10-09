@@ -42,7 +42,6 @@ test('history can add a missing routine skill rating and reflection without dupl
         rating: 6,
         ratedAt: '2020-01-02T10:00:00.000Z',
         routineTitle: 'Morning routine',
-        note: 'Already saved.',
       }],
     },
     { id: 'breathing', name: 'Breathing' },
@@ -61,6 +60,16 @@ test('history can add a missing routine skill rating and reflection without dupl
   await page.getByTestId('history-filter-routine').click();
   await page.getByTestId('history-routine-morning').click();
   await expect(page.getByTestId('history-add-skill-ratings-morning')).toBeVisible();
+  await expect(page.getByTestId('history-add-skill-notes-morning')).toBeVisible();
+  await page.getByTestId('history-add-skill-notes-morning').click();
+  await expect(page.getByText('Add notes to past ratings')).toBeVisible();
+  await expect(page.getByText('Saved score · 6/10')).toBeVisible();
+  await expect(page.getByTestId('rate-skill-focus-8')).toHaveCount(0);
+  await page.getByTestId('skill-note-focus-existing-focus-rating').fill('I noticed a steady start helps.');
+  await page.getByTestId('save-skill-notes').click();
+  await expect(page.getByText('I noticed a steady start helps.')).toBeVisible();
+  await expect(page.getByTestId('history-add-skill-notes-morning')).toHaveCount(0);
+
   await page.getByTestId('history-add-skill-ratings-morning').click();
   await expect(page.getByText('Routine: Morning routine')).toBeVisible();
   await expect(page.getByTestId('rate-skill-focus-8')).toHaveCount(0);
@@ -71,11 +80,13 @@ test('history can add a missing routine skill rating and reflection without dupl
   await expect(page.getByText('Breathing', { exact: true })).toBeVisible();
   await expect(page.getByText('Keep a steady pace.')).toBeVisible();
   await expect(page.getByTestId('history-add-skill-ratings-morning')).toHaveCount(0);
+  await expect(page.getByTestId('history-add-skill-notes-morning')).toHaveCount(0);
   await page.reload();
   await page.getByTestId('history-filter-routine').click();
   await page.getByTestId('history-routine-morning').click();
   await expect(page.getByText('Keep a steady pace.')).toBeVisible();
   await expect(page.getByTestId('history-add-skill-ratings-morning')).toHaveCount(0);
+  await expect(page.getByTestId('history-add-skill-notes-morning')).toHaveCount(0);
 
   const storedSkills = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
@@ -86,7 +97,10 @@ test('history can add a missing routine skill rating and reflection without dupl
   const focus = storedSkills.find(skill => skill.id === 'focus');
   const breathing = storedSkills.find(skill => skill.id === 'breathing');
   expect(focus?.ratings).toHaveLength(1);
-  expect(focus?.ratings?.[0].note).toBe('Already saved.');
+  expect(focus?.ratings?.[0]).toMatchObject({
+    rating: 6,
+    note: 'I noticed a steady start helps.',
+  });
   expect(breathing?.ratings).toHaveLength(1);
   expect(breathing?.ratings?.[0]).toMatchObject({
     rating: 8,
@@ -142,7 +156,16 @@ test('playlist history offers one end-of-run rating action for playlist and rout
     rateSkillsAtPlaylistEnd: true,
   }];
   const skills = [
-    { id: 'first-skill', name: 'Preparation' },
+    {
+      id: 'first-skill',
+      name: 'Preparation',
+      ratings: [{
+        id: 'first-existing-rating',
+        rating: 7,
+        ratedAt: `${day}T10:00:00.000Z`,
+        routineTitle: 'First routine',
+      }],
+    },
     { id: 'last-skill', name: 'Reflection' },
     { id: 'playlist-skill', name: 'Consistency' },
   ];
@@ -160,12 +183,18 @@ test('playlist history offers one end-of-run rating action for playlist and rout
   await page.getByTestId('history-filter-playlist').click();
   await page.getByTestId('history-playlist-daily').click();
   await expect(page.getByTestId('history-add-skill-ratings-last')).toBeVisible();
+  await expect(page.getByTestId('history-add-skill-notes-last')).toBeVisible();
   await expect(page.getByTestId('history-add-skill-ratings-first')).toHaveCount(0);
+  await page.getByTestId('history-add-skill-notes-last').click();
+  await expect(page.getByText('Saved score · 7/10')).toBeVisible();
+  await page.getByTestId('skill-note-first-skill-first-existing-rating').fill('Preparation feels more natural now.');
+  await page.getByTestId('save-skill-notes').click();
+  await expect(page.getByText('Preparation feels more natural now.')).toBeVisible();
+  await expect(page.getByTestId('history-add-skill-notes-last')).toHaveCount(0);
   await page.getByTestId('history-add-skill-ratings-last').click();
   await expect(page.getByText('Playlist: Daily flow', { exact: true })).toBeVisible();
 
   for (const [skillId, score] of [
-    ['first-skill', 7],
     ['last-skill', 8],
     ['playlist-skill', 9],
   ] as const) {
@@ -178,21 +207,30 @@ test('playlist history offers one end-of-run rating action for playlist and rout
   await page.reload();
   await page.getByTestId('history-filter-playlist').click();
   await page.getByTestId('history-playlist-daily').click();
+  await expect(page.getByText('Preparation feels more natural now.')).toBeVisible();
   await expect(page.getByText('Reflection for playlist-skill.')).toBeVisible();
   await expect(page.getByTestId('history-add-skill-ratings-last')).toHaveCount(0);
+  await expect(page.getByTestId('history-add-skill-notes-last')).toHaveCount(0);
 
   const storedSkills = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
       id: string;
-      ratings?: { runId?: string; completedDay?: string; note?: string }[];
+      ratings?: { rating: number; runId?: string; completedDay?: string; note?: string }[];
     }[],
   );
-  const ratings = storedSkills.flatMap(skill => skill.ratings ?? []);
-  expect(ratings).toHaveLength(3);
+  const firstSkill = storedSkills.find(skill => skill.id === 'first-skill');
+  expect(firstSkill?.ratings).toHaveLength(1);
+  expect(firstSkill?.ratings?.[0]).toMatchObject({
+    rating: 7,
+    note: 'Preparation feels more natural now.',
+  });
+  const ratings = storedSkills
+    .filter(skill => skill.id !== 'first-skill')
+    .flatMap(skill => skill.ratings ?? []);
+  expect(ratings).toHaveLength(2);
   expect(new Set(ratings.map(rating => rating.runId)).size).toBe(1);
   expect(ratings.every(rating => rating.completedDay === day)).toBe(true);
   expect(ratings.map(rating => rating.note)).toEqual([
-    'Reflection for first-skill.',
     'Reflection for last-skill.',
     'Reflection for playlist-skill.',
   ]);

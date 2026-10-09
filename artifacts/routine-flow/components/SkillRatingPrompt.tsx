@@ -4,7 +4,15 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View 
 import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
-import { MAX_SKILL_NOTE_LENGTH, type SkillRatingRun } from '@/lib/skills';
+import { MAX_SKILL_NOTE_LENGTH, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
+import type { MissingSkillRatingNote } from '@/lib/progressHistory';
+import { formatHistoryDay } from '@/lib/progressHistory';
+
+type RatingPromptItem = {
+  skill: RoutineSkill;
+  key: string;
+  noteTarget?: MissingSkillRatingNote;
+};
 
 export function SkillRatingPrompt({
   visible,
@@ -12,6 +20,7 @@ export function SkillRatingPrompt({
   routineTitle,
   contextLabel,
   run,
+  noteTargets,
   onSkip,
   onSaved,
 }: {
@@ -21,20 +30,29 @@ export function SkillRatingPrompt({
   /** Optional display context, such as a playlist name; ratings still attach to routineTitle in history. */
   contextLabel?: string;
   run?: SkillRatingRun;
+  /** Existing ratings can be given a missing note without changing the saved score. */
+  noteTargets?: MissingSkillRatingNote[];
   onSkip: () => void;
   onSaved: () => void;
 }) {
   const colors = useColors();
-  const { skills, recordRatings } = useSkills();
-  const items = [...new Set(skillIds)]
-    .map(id => skills.find(skill => skill.id === id))
-    .filter((skill): skill is NonNullable<typeof skill> => Boolean(skill));
+  const { skills, recordRatings, addRatingNotes } = useSkills();
+  const noteOnly = noteTargets !== undefined;
+  const items: RatingPromptItem[] = noteOnly
+    ? (noteTargets ?? []).flatMap(noteTarget => {
+      const skill = skills.find(item => item.id === noteTarget.skillId);
+      return skill ? [{ skill, key: noteTarget.ratingId, noteTarget }] : [];
+    })
+    : [...new Set(skillIds)].flatMap(id => {
+      const skill = skills.find(item => item.id === id);
+      return skill ? [{ skill, key: skill.id }] : [];
+    });
   const [selected, setSelected] = React.useState<Record<string, number>>({});
   const [notes, setNotes] = React.useState<Record<string, string>>({});
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
   const lock = React.useRef(false);
-  const itemKey = items.map(item => item.id).join('|');
+  const itemKey = items.map(item => item.key).join('|');
 
   React.useEffect(() => {
     if (visible) {
@@ -46,18 +64,24 @@ export function SkillRatingPrompt({
 
   async function save() {
     if (lock.current) return;
-    const entries = items.flatMap((skill, sequence) => {
+    const ratingEntries = items.flatMap(({ skill, key }, sequence) => {
       const rating = selected[skill.id];
       if (rating === undefined) return [];
       return [{
         skillId: skill.id,
         rating,
         sequence,
-        ...(notes[skill.id]?.trim() ? { note: notes[skill.id].trim() } : {}),
+        ...(notes[key]?.trim() ? { note: notes[key].trim() } : {}),
       }];
     });
-    if (!entries.length) return;
-    if (!run) {
+    const noteEntries = items.flatMap(({ skill, key, noteTarget }) => {
+      const note = notes[key]?.trim();
+      const target = noteTarget;
+      if (!target || !note) return [];
+      return [{ skillId: skill.id, ratingId: target.ratingId, note }];
+    });
+    if (noteOnly ? !noteEntries.length : !ratingEntries.length) return;
+    if (!noteOnly && !run) {
       setError('Could not find this routine’s completion time. Please close and try again.');
       return;
     }
@@ -65,7 +89,11 @@ export function SkillRatingPrompt({
     setSaving(true);
     setError('');
     try {
-      await recordRatings(routineTitle, entries, run);
+      if (noteOnly) {
+        await addRatingNotes(noteEntries);
+      } else {
+        await recordRatings(routineTitle, ratingEntries, run!);
+      }
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save these ratings.');
@@ -74,6 +102,10 @@ export function SkillRatingPrompt({
       setSaving(false);
     }
   }
+
+  const canSave = noteOnly
+    ? Object.values(notes).some(note => note.trim().length > 0)
+    : Object.keys(selected).length > 0;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onSkip}>
@@ -87,57 +119,84 @@ export function SkillRatingPrompt({
       >
           <View style={styles.header}>
             <View style={[styles.icon, { backgroundColor: colors.sageSoft }]}>
-              <Ionicons name="star" size={18} color={colors.success} />
+              <Ionicons name={noteOnly ? 'create-outline' : 'star'} size={18} color={colors.success} />
             </View>
             <View style={styles.headerText}>
-              <Text style={[styles.title, { color: colors.foreground }]}>Rate the skills you used</Text>
+              <Text style={[styles.title, { color: colors.foreground }]}>
+                {noteOnly ? 'Add notes to past ratings' : 'Rate the skills you used'}
+              </Text>
               <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={2}>{contextLabel ?? routineTitle}</Text>
             </View>
           </View>
-          <Text style={[styles.note, { color: colors.mutedForeground }]}>Choose a score from 1 to 10 for any skill. Add an optional note to remember what went well or what to work on.</Text>
+          <Text style={[styles.note, { color: colors.mutedForeground }]}>
+            {noteOnly
+              ? 'Add a reflection to the saved rating. The score will stay unchanged.'
+              : 'Choose a score from 1 to 10 for any skill. Add an optional note to remember what went well or what to work on.'}
+          </Text>
           <View style={styles.list}>
-            {items.map(skill => (
-              <View key={skill.id} style={[styles.skillRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {items.map(({ skill, key, noteTarget }) => (
+              <View key={key} style={[styles.skillRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[styles.skillName, { color: colors.foreground }]}>{skill.name}</Text>
-                <View style={styles.scores}>
-                  {Array.from({ length: 10 }, (_, index) => index + 1).map(score => {
-                    const active = selected[skill.id] === score;
-                    return (
-                      <Pressable
-                        key={score}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Rate ${skill.name} ${score} out of 10`}
-                        accessibilityState={{ selected: active }}
-                        testID={`rate-skill-${skill.id}-${score}`}
-                        disabled={saving}
-                        onPress={() => {
-                          setSelected(previous => ({ ...previous, [skill.id]: score }));
-                          setError('');
-                        }}
-                        style={({ pressed }) => [
-                          styles.score,
-                          { backgroundColor: active ? colors.primary : colors.background, borderColor: active ? colors.primary : colors.border },
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <Text style={[styles.scoreText, { color: active ? colors.primaryForeground : colors.inkSoft }]}>{score}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <Text style={[styles.noteLabel, { color: colors.inkSoft }]}>Reflection note · optional</Text>
+                {noteOnly ? (
+                  <>
+                    <Text style={[styles.savedScore, { color: colors.primary }]}>
+                      Saved score · {noteTarget?.rating}/10
+                    </Text>
+                    {noteTarget ? (
+                      <Text style={[styles.targetDate, { color: colors.mutedForeground }]}>
+                        {noteTarget.completedAt
+                          ? new Date(noteTarget.completedAt).toLocaleString()
+                          : noteTarget.completedDay
+                            ? `Completed ${formatHistoryDay(noteTarget.completedDay)}`
+                            : `Rated ${new Date(noteTarget.ratedAt).toLocaleString()}`}
+                      </Text>
+                    ) : null}
+                  </>
+                ) : (
+                  <View style={styles.scores}>
+                    {Array.from({ length: 10 }, (_, index) => index + 1).map(score => {
+                      const active = selected[skill.id] === score;
+                      return (
+                        <Pressable
+                          key={score}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Rate ${skill.name} ${score} out of 10`}
+                          accessibilityState={{ selected: active }}
+                          testID={`rate-skill-${skill.id}-${score}`}
+                          disabled={saving}
+                          onPress={() => {
+                            setSelected(previous => ({ ...previous, [skill.id]: score }));
+                            setError('');
+                          }}
+                          style={({ pressed }) => [
+                            styles.score,
+                            { backgroundColor: active ? colors.primary : colors.background, borderColor: active ? colors.primary : colors.border },
+                            pressed && styles.pressed,
+                          ]}
+                        >
+                          <Text style={[styles.scoreText, { color: active ? colors.primaryForeground : colors.inkSoft }]}>{score}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+                <Text style={[styles.noteLabel, { color: colors.inkSoft }]}>
+                  {noteOnly ? 'Add reflection note' : 'Reflection note · optional'}
+                </Text>
                 <TextInput
-                  accessibilityLabel={`Note about ${skill.name}`}
-                  testID={`skill-note-${skill.id}`}
-                  value={notes[skill.id] ?? ''}
+                  accessibilityLabel={`Note about ${skill.name}${noteTarget ? `, rating ${noteTarget.rating} out of 10` : ''}`}
+                  testID={noteTarget ? `skill-note-${skill.id}-${noteTarget.ratingId}` : `skill-note-${skill.id}`}
+                  value={notes[key] ?? ''}
                   onChangeText={value => {
-                    setNotes(previous => ({ ...previous, [skill.id]: value }));
+                    setNotes(previous => ({ ...previous, [key]: value }));
                     setError('');
                   }}
-                  editable={!saving && selected[skill.id] !== undefined}
+                  editable={!saving && (noteOnly || selected[skill.id] !== undefined)}
                   maxLength={MAX_SKILL_NOTE_LENGTH}
                   multiline
-                  placeholder={selected[skill.id] !== undefined ? 'What did you notice? What could you improve?' : 'Choose a score to add a note'}
+                  placeholder={noteOnly || selected[skill.id] !== undefined
+                    ? 'What did you notice? What could you improve?'
+                    : 'Choose a score to add a note'}
                   placeholderTextColor={colors.mutedForeground}
                   style={[
                     styles.noteInput,
@@ -145,12 +204,12 @@ export function SkillRatingPrompt({
                       color: colors.foreground,
                       backgroundColor: colors.background,
                       borderColor: colors.border,
-                      opacity: selected[skill.id] !== undefined ? 1 : 0.55,
+                      opacity: noteOnly || selected[skill.id] !== undefined ? 1 : 0.55,
                     },
                   ]}
                 />
                 <Text style={[styles.noteCount, { color: colors.mutedForeground }]}>
-                  {(notes[skill.id] ?? '').length}/{MAX_SKILL_NOTE_LENGTH}
+                  {(notes[key] ?? '').length}/{MAX_SKILL_NOTE_LENGTH}
                 </Text>
               </View>
             ))}
@@ -159,29 +218,29 @@ export function SkillRatingPrompt({
           <View style={styles.actions}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Skip skill ratings"
+              accessibilityLabel={noteOnly ? 'Close note editor' : 'Skip skill ratings'}
               testID="skip-skill-ratings"
               disabled={saving}
               onPress={onSkip}
               style={({ pressed }) => [styles.skip, pressed && styles.pressed]}
             >
-              <Text style={[styles.skipText, { color: colors.inkSoft }]}>Not now</Text>
+              <Text style={[styles.skipText, { color: colors.inkSoft }]}>{noteOnly ? 'Close' : 'Not now'}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Save skill ratings"
-              testID="save-skill-ratings"
-              disabled={saving || !Object.keys(selected).length}
+              accessibilityLabel={noteOnly ? 'Save reflection notes' : 'Save skill ratings'}
+              testID={noteOnly ? 'save-skill-notes' : 'save-skill-ratings'}
+              disabled={saving || !canSave}
               onPress={() => void save()}
               style={({ pressed }) => [
                 styles.save,
-                { backgroundColor: saving || !Object.keys(selected).length ? colors.secondary : colors.primary },
+                { backgroundColor: saving || !canSave ? colors.secondary : colors.primary },
                 pressed && styles.pressed,
               ]}
             >
               {saving ? <ActivityIndicator color={colors.primaryForeground} size="small" /> : null}
-              <Text style={[styles.saveText, { color: saving || !Object.keys(selected).length ? colors.mutedForeground : colors.primaryForeground }]}>
-                {saving ? 'Saving…' : 'Save ratings and notes'}
+              <Text style={[styles.saveText, { color: saving || !canSave ? colors.mutedForeground : colors.primaryForeground }]}>
+                {saving ? 'Saving…' : noteOnly ? 'Save notes' : 'Save ratings and notes'}
               </Text>
             </Pressable>
           </View>
@@ -207,6 +266,8 @@ const styles = StyleSheet.create({
   scores: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   score: { width: 27, height: 34, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   scoreText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  savedScore: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 10 },
+  targetDate: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   noteLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
   noteInput: { minHeight: 74, maxHeight: 140, borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 9, fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18, textAlignVertical: 'top' },
   noteCount: { fontFamily: 'Inter_400Regular', fontSize: 10, textAlign: 'right', marginTop: -4 },
