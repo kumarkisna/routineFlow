@@ -375,14 +375,14 @@ test('all-profiles import adds profiles and merges saved history without replaci
           exportedAt: new Date().toISOString(),
           routines: [second],
           skills: [{
-            id: 'alex-calm',
-            name: 'Calm',
+            id: 'alex-focus',
+            name: 'Focus',
             ratings: [{
-              id: 'alex-calm-rating',
+              id: 'alex-focus-rating',
               rating: 9,
               ratedAt: `${day}T10:00:00.000Z`,
               routineTitle: 'Travel Reset',
-              note: 'Pause before the next step.',
+              note: 'Alex’s Focus reflection belongs only to Alex.',
             }],
           }],
           progress: { [day]: { 'travel-reset:unpack': true } },
@@ -391,7 +391,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
               id: 'travel-list',
               title: 'Travel list',
               routineIds: ['travel-reset'],
-              skillIds: ['alex-calm'],
+              skillIds: ['alex-focus'],
               rateSkillsAtPlaylistEnd: true,
               reminderSettings: { stepCompletion: true, routineCompletion: false },
             }],
@@ -520,6 +520,8 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.meProgress[day]['morning-reset:morning-water']).toBe(true);
   expect(restored.meProgress[day][`${mergedRoutine.id}:morning-water`]).toBe(true);
   expect(restored.meSkills).toHaveLength(1);
+  expect(restored.meSkills[0].id).toBe('local-focus');
+  expect(restored.meSkills[0].name).toBe('Focus');
   expect(restored.meSkills[0].ratings.map((rating: { note: string }) => rating.note)).toEqual([
     'Local reflection stays intact.',
     'Backup reflection stays with this profile.',
@@ -538,7 +540,12 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.meTheme).toBe(meThemeId);
   expect(restored.alexRoutines.map((routine: { id: string }) => routine.id)).toEqual(['travel-reset']);
   expect(restored.alexProgress[day]['travel-reset:unpack']).toBe(true);
-  expect(restored.alexSkills[0].ratings[0].note).toBe('Pause before the next step.');
+  expect(restored.alexSkills).toHaveLength(1);
+  expect(restored.alexSkills[0]).toMatchObject({
+    id: 'alex-focus',
+    name: 'Focus',
+    ratings: [{ id: 'alex-focus-rating', note: 'Alex’s Focus reflection belongs only to Alex.' }],
+  });
   expect(restored.alexPlaylists[0].title).toBe('Travel list');
   expect(restored.alexWindow).toBe('12');
   expect(restored.alexTheme).toBe(alexThemeId);
@@ -631,7 +638,11 @@ test('all-profiles import adds profiles and merges saved history without replaci
     name: 'Alex from backup',
   });
   expect(exportedAlex.backup.routines.map((routine: { id: string }) => routine.id)).toEqual(['travel-reset']);
-  expect(exportedAlex.backup.skills[0].ratings[0].note).toBe('Pause before the next step.');
+  expect(exportedAlex.backup.skills[0]).toMatchObject({
+    id: 'alex-focus',
+    name: 'Focus',
+    ratings: [{ id: 'alex-focus-rating', note: 'Alex’s Focus reflection belongs only to Alex.' }],
+  });
   const exportedCasey = exported.people.find((entry: { profile: { id: string } }) => entry.profile.id === 'casey');
   expect(exportedCasey.profile).toMatchObject({ id: 'casey', profileNumber: 'casey', name: 'Alex' });
   expect(exportedCasey.backup.routines.map((routine: { id: string }) => routine.id)).toEqual(['casey-routine']);
@@ -662,6 +673,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
   const afterRoundTrip = await page.evaluate(() => ({
     registry: JSON.parse(localStorage.getItem('@routine-flow/people') ?? 'null'),
     meRoutines: JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]'),
+    meSkills: JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]'),
     alexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines') ?? '[]'),
     alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
     caseyRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),
@@ -678,14 +690,49 @@ test('all-profiles import adds profiles and merges saved history without replaci
     name: 'Alex from backup',
   });
   expect(afterRoundTrip.meRoutines.map((routine: { id: string }) => routine.id)).toContain('morning-reset');
+  expect(afterRoundTrip.meSkills).toHaveLength(1);
+  expect(afterRoundTrip.meSkills[0]).toMatchObject({
+    id: 'local-focus',
+    name: 'Focus',
+    ratings: [
+      { id: 'local-focus-rating', note: 'Local reflection stays intact.' },
+      { id: 'backup-focus-rating', note: 'Backup reflection stays with this profile.' },
+    ],
+  });
   expect(afterRoundTrip.alexRoutines.map((routine: { id: string }) => routine.id)).toContain('travel-reset');
-  expect(afterRoundTrip.alexSkills[0].ratings[0].note).toBe('Pause before the next step.');
+  expect(afterRoundTrip.alexSkills).toHaveLength(1);
+  expect(afterRoundTrip.alexSkills[0]).toMatchObject({
+    id: 'alex-focus',
+    name: 'Focus',
+    ratings: [{ id: 'alex-focus-rating', note: 'Alex’s Focus reflection belongs only to Alex.' }],
+  });
   expect(afterRoundTrip.caseyRoutines).toEqual([caseyRoutine]);
   expect(afterRoundTrip.caseySkills).toEqual([caseySkill]);
   expect(afterRoundTrip.registry.people.find((person: { id: string }) => person.id === 'alex-lower'))
     .toMatchObject({ id: 'alex-lower', name: 'aLeX (imported 2)' });
   expect(afterRoundTrip.lowerAlexRoutines).toEqual([lowerAlexRoutine]);
   expect(afterRoundTrip.lowerAlexSkills).toEqual([lowerAlexSkill]);
+
+  await page.getByRole('tab', { name: 'Today' }).click();
+  await page.getByLabel('Active person: aLeX (imported 2). Open people').click();
+  await page.getByTestId('person-switch-alex').click();
+  await expect(page.getByLabel('Active person: Alex from backup. Open people')).toBeVisible();
+  await page.getByRole('tab', { name: 'Skills' }).click();
+  await page.getByTestId('skill-rating-history-toggle-alex-focus').click();
+  await expect(page.getByText('Alex’s Focus reflection belongs only to Alex.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Local reflection stays intact.', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Backup reflection stays with this profile.', { exact: true })).toHaveCount(0);
+
+  await page.getByRole('tab', { name: 'Today' }).click();
+  await page.getByLabel('Active person: Alex from backup. Open people').click();
+  await page.getByTestId('person-switch-me').click();
+  await expect(page.getByLabel('Active person: Me. Open people')).toBeVisible();
+  await page.getByRole('tab', { name: 'Skills' }).click();
+  await page.getByTestId('skill-rating-history-toggle-local-focus').click();
+  await expect(page.getByText('Local reflection stays intact.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Backup reflection stays with this profile.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Alex’s Focus reflection belongs only to Alex.', { exact: true })).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Today' }).click();
 
   const exportedMe = exported.people.find((entry: { profile: { id: string } }) => entry.profile.id === 'me');
   const acceptedSuggestionBackup = JSON.stringify({
@@ -725,7 +772,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(acceptedSuggestion.registry.people.find((person: { id: string }) => person.id === 'restore-copy'))
     .toMatchObject({ id: 'restore-copy', name: 'Alex from backup (imported)' });
   expect(acceptedSuggestion.routines.map((routine: { id: string }) => routine.id)).toContain('travel-reset');
-  expect(acceptedSuggestion.skills[0].ratings[0].note).toBe('Pause before the next step.');
+  expect(acceptedSuggestion.skills[0].ratings[0].note).toBe('Alex’s Focus reflection belongs only to Alex.');
 });
 
 test('cancelling an all-profiles import leaves every profile and reminder unchanged', async ({ page }) => {
