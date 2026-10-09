@@ -12,6 +12,7 @@ export type HistoryFilterOption = { id: string; title: string; archived: boolean
 export type HistorySkillRating = {
   id: string;
   skillId: string;
+  ratingId: string;
   skillName: string;
   rating: number;
   ratedAt: string;
@@ -88,6 +89,18 @@ export function createHistorySkillRatingRun(
 export function getUnratedSkillIds(skillIds: string[], ratings: HistorySkillRating[]): string[] {
   const rated = new Set(ratings.map(rating => rating.skillId));
   return [...new Set(skillIds)].filter(skillId => !rated.has(skillId));
+}
+
+export type MissingSkillRatingNote = {
+  skillId: string;
+  ratingId: string;
+  rating: number;
+};
+
+export function getSkillRatingsMissingNotes(ratings: HistorySkillRating[]): MissingSkillRatingNote[] {
+  return ratings
+    .filter(rating => !rating.note?.trim())
+    .map(({ skillId, ratingId, rating }) => ({ skillId, ratingId, rating }));
 }
 
 export function playlistHistoryRatingAnchorId(
@@ -232,6 +245,7 @@ export function getHistoryForDay(
       .map(rating => ({
         id: `${skill.id}:${rating.id}`,
         skillId: skill.id,
+        ratingId: rating.id,
         skillName: skill.name,
         rating: rating.rating,
         ratedAt: rating.ratedAt,

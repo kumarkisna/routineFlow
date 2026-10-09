@@ -38,6 +38,7 @@ type SkillContextValue = {
     ratings: { skillId: string; rating: number; note?: string; sequence: number }[],
     run: SkillRatingRun,
   ) => Promise<void>;
+  addRatingNotes: (notes: { skillId: string; ratingId: string; note: string }[]) => Promise<void>;
   mergeImportedSkills: (skills: RoutineSkill[]) => Promise<Record<string, string>>;
 };
 
@@ -175,6 +176,50 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
       setSkills(next);
     }), [error, loading, runWrite, storage]);
 
+  const addRatingNotes = useCallback((entries: {
+    skillId: string; ratingId: string; note: string;
+  }[]) => runWrite(async () => {
+    if (loading || error) throw new Error('Wait for skills to load successfully before adding notes.');
+    if (!Array.isArray(entries) || entries.some(entry =>
+      !entry || typeof entry.skillId !== 'string' || !entry.skillId.trim()
+      || typeof entry.ratingId !== 'string' || !entry.ratingId.trim()
+      || typeof entry.note !== 'string' || !entry.note.trim()
+      || entry.note.length > MAX_SKILL_NOTE_LENGTH)
+      || new Set(entries.map(entry => JSON.stringify([entry.skillId, entry.ratingId])).size !== entries.length) {
+      throw new Error('Add a valid note for each selected skill rating.');
+    }
+    if (!entries.length) return;
+
+    const updates = new Map(entries.map(entry => [
+      JSON.stringify([entry.skillId, entry.ratingId]),
+      entry.note.trim(),
+    ]));
+    for (const entry of entries) {
+      const skill = current.current.find(item => item.id === entry.skillId);
+      const rating = skill?.ratings?.find(item => item.id === entry.ratingId);
+      if (!rating) throw new Error('One or more skill ratings could not be found. Refresh History and try again.');
+      const existingNote = rating.note?.trim();
+      if (existingNote && existingNote !== entry.note.trim()) {
+        throw new Error('A note is already saved for one of these ratings. Refresh History before trying again.');
+      }
+    }
+
+    let changed = false;
+    const next = current.current.map(skill => {
+      const ratings = skill.ratings?.map(rating => {
+        const note = updates.get(JSON.stringify([skill.id, rating.id]));
+        if (note === undefined || rating.note?.trim()) return rating;
+        changed = true;
+        return { ...rating, note };
+      });
+      return changed && ratings ? { ...skill, ratings } : skill;
+    });
+    if (!changed) return;
+    await storage.setItem(KEY, JSON.stringify(next));
+    current.current = next;
+    setSkills(next);
+  }), [error, loading, runWrite, storage]);
+
   const deleteSkill = useCallback((id: string) => runWrite(async () => {
     if (loading || error) throw new Error('Wait for skills to load successfully before making changes.');
     if (!current.current.some(skill => skill.id === id)) throw new Error('Skill not found.');
@@ -207,7 +252,7 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
   return (
     <SkillContext.Provider value={{
       skills, ratingWindow, loading, error, reload, createSkill, updateSkill, deleteSkill,
-      setRatingWindow, recordRatings, mergeImportedSkills,
+      setRatingWindow, recordRatings, addRatingNotes, mergeImportedSkills,
     }}>
       {children}
     </SkillContext.Provider>
