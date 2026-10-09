@@ -234,7 +234,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
   };
   const caseyProfile = {
     id: 'casey',
-    name: 'Casey',
+    name: 'Alex',
     defaultRateSkillsAtPlaylistEnd: false,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
   };
@@ -307,6 +307,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
       {
         profile: {
           ...localProfile,
+          profileNumber: localProfile.id,
           defaultRateSkillsAtPlaylistEnd: false,
           defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
         },
@@ -345,6 +346,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
       {
         profile: {
           id: 'alex',
+          profileNumber: 'alex',
           name: 'Alex',
           defaultRateSkillsAtPlaylistEnd: true,
           defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
@@ -412,7 +414,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
   });
   await expect(page.getByText('Restore 2 profiles?')).toBeVisible();
   await page.getByTestId('import-all-with-progress').click();
-  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
+  await expect(page.getByLabel('Active person: Alex (imported). Open people')).toBeVisible();
   await expect(page.getByLabel('Open Travel Reset')).toBeVisible();
 
   const restored = await page.evaluate(() => ({
@@ -440,6 +442,10 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.registry.activePersonId).toBe('alex');
   expect(restored.registry.people).toHaveLength(3);
   expect(restored.registry.people.find((person: { id: string }) => person.id === 'casey')).toEqual(caseyProfile);
+  expect(restored.registry.people.find((person: { id: string }) => person.id === 'alex')).toMatchObject({
+    id: 'alex',
+    name: 'Alex (imported)',
+  });
   expect(restored.registry.people.find((person: { id: string }) => person.id === 'me')).toMatchObject({
     defaultRateSkillsAtPlaylistEnd: false,
     defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
@@ -491,14 +497,14 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.alexSchedules[0].notifications).toBeUndefined();
 
   await page.reload();
-  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
+  await expect(page.getByLabel('Active person: Alex (imported). Open people')).toBeVisible();
   await page.getByRole('tab', { name: 'Themes' }).click();
   await expect(page.getByTestId('theme-summary')).toContainText('Active: Nordic');
   await page.reload();
   await expect(page.getByTestId('theme-summary')).toContainText('Active: Nordic');
 
   await page.getByRole('tab', { name: 'Today' }).click();
-  await page.getByLabel('Active person: Alex. Open people').click();
+  await page.getByLabel('Active person: Alex (imported). Open people').click();
   await page.getByLabel('Switch to Me').click();
   await expect(page.getByLabel('Active person: Me. Open people')).toBeVisible();
   await page.getByRole('tab', { name: 'Themes' }).click();
@@ -508,8 +514,8 @@ test('all-profiles import adds profiles and merges saved history without replaci
 
   await page.getByRole('tab', { name: 'Today' }).click();
   await page.getByLabel('Active person: Me. Open people').click();
-  await page.getByLabel('Switch to Casey').click();
-  await expect(page.getByLabel('Active person: Casey. Open people')).toBeVisible();
+  await page.getByTestId('person-switch-casey').click();
+  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
   await page.getByRole('tab', { name: 'Themes' }).click();
   await expect(page.getByTestId('theme-summary')).toContainText('Active: Linen');
   await page.reload();
