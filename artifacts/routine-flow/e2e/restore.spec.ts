@@ -225,11 +225,30 @@ test('all-profiles import adds profiles and merges saved history without replaci
   const localThemeId = 'sandstone';
   const meThemeId = 'porcelain';
   const alexThemeId = 'nordic';
+  const caseyThemeId = 'linen';
   const localProfile = {
     id: 'me',
     name: 'Me',
     defaultRateSkillsAtPlaylistEnd: true,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+  };
+  const caseyProfile = {
+    id: 'casey',
+    name: 'Casey',
+    defaultRateSkillsAtPlaylistEnd: false,
+    defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+  };
+  const caseyRoutine = { ...second, id: 'casey-routine', title: 'Casey morning' };
+  const caseySkill = {
+    id: 'casey-skill',
+    name: 'Casey focus',
+    ratings: [{
+      id: 'casey-rating',
+      rating: 6,
+      ratedAt: `${day}T08:00:00.000Z`,
+      routineTitle: 'Casey morning',
+      note: 'Casey’s local reflection stays intact.',
+    }],
   };
   const incomingRoutine = {
     ...original,
@@ -251,7 +270,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
     '@routine-flow/people': {
       version: 1,
       activePersonId: 'me',
-      people: [localProfile],
+      people: [localProfile, caseyProfile],
     },
     '@routine-flow/routines': [customized],
     '@routine-flow/progress': { [day]: { 'morning-reset:morning-water': true } },
@@ -270,6 +289,15 @@ test('all-profiles import adds profiles and merges saved history without replaci
     }],
     '@routine-flow/skill-rating-window': '3',
     '@routine-flow/appearance': localThemeId,
+    '@routine-flow/person/casey/@routine-flow/routines': [caseyRoutine],
+    '@routine-flow/person/casey/@routine-flow/progress': {
+      [day]: { 'casey-routine:unpack': true },
+    },
+    '@routine-flow/person/casey/@routine-flow/playlists': [],
+    '@routine-flow/person/casey/@routine-flow/schedules': [],
+    '@routine-flow/person/casey/@routine-flow/skills': [caseySkill],
+    '@routine-flow/person/casey/@routine-flow/skill-rating-window': '6',
+    '@routine-flow/person/casey/@routine-flow/appearance': caseyThemeId,
   };
   const allPeopleBackup = JSON.stringify({
     format: 'routine-flow-all-people',
@@ -392,10 +420,15 @@ test('all-profiles import adds profiles and merges saved history without replaci
     alexSchedules: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/schedules') ?? '[]'),
     alexWindow: localStorage.getItem('@routine-flow/person/alex/@routine-flow/skill-rating-window'),
     alexTheme: localStorage.getItem('@routine-flow/person/alex/@routine-flow/appearance'),
+    caseyRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),
+    caseyProgress: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/progress') ?? '{}'),
+    caseySkills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
+    caseyTheme: localStorage.getItem('@routine-flow/person/casey/@routine-flow/appearance'),
   }));
 
   expect(restored.registry.activePersonId).toBe('alex');
-  expect(restored.registry.people).toHaveLength(2);
+  expect(restored.registry.people).toHaveLength(3);
+  expect(restored.registry.people.find((person: { id: string }) => person.id === 'casey')).toEqual(caseyProfile);
   expect(restored.registry.people.find((person: { id: string }) => person.id === 'me')).toMatchObject({
     defaultRateSkillsAtPlaylistEnd: false,
     defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
@@ -426,6 +459,10 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.alexPlaylists[0].title).toBe('Travel list');
   expect(restored.alexWindow).toBe('12');
   expect(restored.alexTheme).toBe(alexThemeId);
+  expect(restored.caseyRoutines).toEqual([caseyRoutine]);
+  expect(restored.caseyProgress).toEqual({ [day]: { 'casey-routine:unpack': true } });
+  expect(restored.caseySkills).toEqual([caseySkill]);
+  expect(restored.caseyTheme).toBe(caseyThemeId);
   expect(restored.alexSchedules).toHaveLength(1);
   expect(restored.alexSchedules[0]).toMatchObject({
     targetId: 'travel-reset',
@@ -449,6 +486,28 @@ test('all-profiles import adds profiles and merges saved history without replaci
   await expect(page.getByTestId('theme-summary')).toContainText('Active: Porcelain');
   await page.reload();
   await expect(page.getByTestId('theme-summary')).toContainText('Active: Porcelain');
+
+  await page.getByRole('tab', { name: 'Today' }).click();
+  await page.getByLabel('Active person: Me. Open people').click();
+  await page.getByLabel('Switch to Casey').click();
+  await expect(page.getByLabel('Active person: Casey. Open people')).toBeVisible();
+  await page.getByRole('tab', { name: 'Themes' }).click();
+  await expect(page.getByTestId('theme-summary')).toContainText('Active: Linen');
+  await page.reload();
+  await expect(page.getByTestId('theme-summary')).toContainText('Active: Linen');
+
+  const caseyAfterReload = await page.evaluate(() => ({
+    routines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),
+    progress: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/progress') ?? '{}'),
+    skills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
+    theme: localStorage.getItem('@routine-flow/person/casey/@routine-flow/appearance'),
+  }));
+  expect(caseyAfterReload).toEqual({
+    routines: [caseyRoutine],
+    progress: { [day]: { 'casey-routine:unpack': true } },
+    skills: [caseySkill],
+    theme: caseyThemeId,
+  });
 });
 
 test('cancelling an all-profiles import leaves every profile and reminder unchanged', async ({ page }) => {
