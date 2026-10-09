@@ -405,9 +405,9 @@ test('all-profiles import adds profiles and merges saved history without replaci
 
   await page.goto('/');
   await expect(page.getByLabel('Open My own reset')).toBeVisible();
-  const chooserPromise = page.waitForEvent('filechooser');
+  const roundTripChooserPromise = page.waitForEvent('filechooser');
   await page.getByTestId('import-routines').click();
-  await (await chooserPromise).setFiles({
+  await (await roundTripChooserPromise).setFiles({
     name: 'routine-flow-all-profiles.json',
     mimeType: 'application/json',
     buffer: Buffer.from(allPeopleBackup),
@@ -533,6 +533,57 @@ test('all-profiles import adds profiles and merges saved history without replaci
     skills: [caseySkill],
     theme: caseyThemeId,
   });
+
+  await page.getByRole('tab', { name: 'Today' }).click();
+  const exportPromise = page.waitForEvent('download');
+  await page.getByTestId('export-all-people-data').click();
+  const exportedFile = await exportPromise;
+  const exportedPath = await exportedFile.path();
+  expect(exportedPath).not.toBeNull();
+  const exportedContents = readFileSync(exportedPath!, 'utf8');
+  const exported = JSON.parse(exportedContents);
+  const exportedAlex = exported.people.find((entry: { profile: { id: string } }) => entry.profile.id === 'alex');
+  expect(exportedAlex.profile).toMatchObject({
+    id: 'alex',
+    profileNumber: 'alex',
+    name: 'Alex (imported)',
+  });
+  expect(exportedAlex.backup.routines.map((routine: { id: string }) => routine.id)).toEqual(['travel-reset']);
+  expect(exportedAlex.backup.skills[0].ratings[0].note).toBe('Pause before the next step.');
+  const exportedCasey = exported.people.find((entry: { profile: { id: string } }) => entry.profile.id === 'casey');
+  expect(exportedCasey.profile).toMatchObject({ id: 'casey', profileNumber: 'casey', name: 'Alex' });
+  expect(exportedCasey.backup.routines.map((routine: { id: string }) => routine.id)).toEqual(['casey-routine']);
+
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('import-routines').click();
+  await (await chooserPromise).setFiles({
+    name: 'routine-flow-collision-round-trip.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(exportedContents),
+  });
+  await expect(page.getByText('Restore 3 profiles?')).toBeVisible();
+  await page.getByTestId('import-all-profiles').click();
+  await expect(page.getByText('Restore 3 profiles?')).toHaveCount(0);
+
+  const afterRoundTrip = await page.evaluate(() => ({
+    registry: JSON.parse(localStorage.getItem('@routine-flow/people') ?? 'null'),
+    meRoutines: JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]'),
+    alexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines') ?? '[]'),
+    alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
+    caseyRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),
+    caseySkills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
+  }));
+  expect(afterRoundTrip.registry.people).toHaveLength(3);
+  expect(afterRoundTrip.registry.people.map((person: { id: string }) => person.id)).toEqual(['me', 'casey', 'alex']);
+  expect(afterRoundTrip.registry.people.find((person: { id: string }) => person.id === 'alex')).toMatchObject({
+    id: 'alex',
+    name: 'Alex (imported)',
+  });
+  expect(afterRoundTrip.meRoutines.map((routine: { id: string }) => routine.id)).toContain('morning-reset');
+  expect(afterRoundTrip.alexRoutines.map((routine: { id: string }) => routine.id)).toContain('travel-reset');
+  expect(afterRoundTrip.alexSkills[0].ratings[0].note).toBe('Pause before the next step.');
+  expect(afterRoundTrip.caseyRoutines).toEqual([caseyRoutine]);
+  expect(afterRoundTrip.caseySkills).toEqual([caseySkill]);
 });
 
 test('cancelling an all-profiles import leaves every profile and reminder unchanged', async ({ page }) => {
