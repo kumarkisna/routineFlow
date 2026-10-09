@@ -225,6 +225,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
   const localThemeId = 'sandstone';
   const meThemeId = 'porcelain';
   const alexThemeId = 'nordic';
+  const lowerAlexThemeId = 'slate';
   const caseyThemeId = 'linen';
   const localProfile = {
     id: 'me',
@@ -248,6 +249,23 @@ test('all-profiles import adds profiles and merges saved history without replaci
       ratedAt: `${day}T08:00:00.000Z`,
       routineTitle: 'Casey morning',
       note: 'Casey’s local reflection stays intact.',
+    }],
+  };
+  const lowerAlexRoutine = {
+    ...second,
+    id: 'alex-lower-routine',
+    title: 'Lowercase Alex routine',
+    steps: [{ id: 'lowercase-step', title: 'Plan the next day', durationSeconds: 90 }],
+  };
+  const lowerAlexSkill = {
+    id: 'alex-lower-skill',
+    name: 'Planning',
+    ratings: [{
+      id: 'alex-lower-rating',
+      rating: 7,
+      ratedAt: `${day}T11:00:00.000Z`,
+      routineTitle: 'Lowercase Alex routine',
+      note: 'Lowercase Alex history remains separate.',
     }],
   };
   const incomingRoutine = {
@@ -393,6 +411,29 @@ test('all-profiles import adds profiles and merges saved history without replaci
           },
         },
       },
+      {
+        profile: {
+          id: 'alex-lower',
+          profileNumber: 'alex-lower',
+          name: 'aLeX',
+          defaultRateSkillsAtPlaylistEnd: false,
+          defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+        },
+        backup: {
+          format: 'routine-flow-routines',
+          version: 7,
+          exportedAt: new Date().toISOString(),
+          routines: [lowerAlexRoutine],
+          skills: [lowerAlexSkill],
+          progress: {},
+          personData: {
+            playlists: [],
+            schedules: [],
+            selectedThemeId: lowerAlexThemeId,
+            skillRatingWindow: 4,
+          },
+        },
+      },
     ],
   });
   await page.addInitScript(seed => {
@@ -412,9 +453,11 @@ test('all-profiles import adds profiles and merges saved history without replaci
     mimeType: 'application/json',
     buffer: Buffer.from(allPeopleBackup),
   });
-  await expect(page.getByText('Restore 2 profiles?')).toBeVisible();
-  await expect(page.getByText('“Alex” conflicts with an existing profile. Suggested name:')).toBeVisible();
+  await expect(page.getByText('Restore 3 profiles?')).toBeVisible();
+  await expect(page.getByText('“Alex” conflicts with an existing profile. Suggested name:', { exact: true })).toBeVisible();
+  await expect(page.getByText('“aLeX” conflicts with an existing profile. Suggested name:', { exact: true })).toBeVisible();
   await expect(page.getByTestId('restore-profile-name-alex')).toHaveValue('Alex (imported)');
+  await expect(page.getByTestId('restore-profile-name-alex-lower')).toHaveValue('aLeX (imported 2)');
   await page.getByTestId('restore-profile-name-alex').fill('Me');
   await expect(page.getByTestId('restore-profile-name-error')).toBeVisible();
   await expect(page.getByTestId('import-all-with-progress')).toBeDisabled();
@@ -445,14 +488,21 @@ test('all-profiles import adds profiles and merges saved history without replaci
     caseyProgress: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/progress') ?? '{}'),
     caseySkills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
     caseyTheme: localStorage.getItem('@routine-flow/person/casey/@routine-flow/appearance'),
+    lowerAlexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/routines') ?? '[]'),
+    lowerAlexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/skills') ?? '[]'),
+    lowerAlexTheme: localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/appearance'),
   }));
 
   expect(restored.registry.activePersonId).toBe('alex');
-  expect(restored.registry.people).toHaveLength(3);
+  expect(restored.registry.people).toHaveLength(4);
   expect(restored.registry.people.find((person: { id: string }) => person.id === 'casey')).toEqual(caseyProfile);
   expect(restored.registry.people.find((person: { id: string }) => person.id === 'alex')).toMatchObject({
     id: 'alex',
     name: 'Alex from backup',
+  });
+  expect(restored.registry.people.find((person: { id: string }) => person.id === 'alex-lower')).toMatchObject({
+    id: 'alex-lower',
+    name: 'aLeX (imported 2)',
   });
   expect(restored.registry.people.find((person: { id: string }) => person.id === 'me')).toMatchObject({
     defaultRateSkillsAtPlaylistEnd: false,
@@ -496,6 +546,9 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.caseyProgress).toEqual({ [day]: { 'casey-routine:unpack': true } });
   expect(restored.caseySkills).toEqual([caseySkill]);
   expect(restored.caseyTheme).toBe(caseyThemeId);
+  expect(restored.lowerAlexRoutines).toEqual([lowerAlexRoutine]);
+  expect(restored.lowerAlexSkills).toEqual([lowerAlexSkill]);
+  expect(restored.lowerAlexTheme).toBe(lowerAlexThemeId);
   expect(restored.alexSchedules).toHaveLength(1);
   expect(restored.alexSchedules[0]).toMatchObject({
     targetId: 'travel-reset',
@@ -529,17 +582,33 @@ test('all-profiles import adds profiles and merges saved history without replaci
   await page.reload();
   await expect(page.getByTestId('theme-summary')).toContainText('Active: Linen');
 
-  const caseyAfterReload = await page.evaluate(() => ({
+  await page.getByRole('tab', { name: 'Today' }).click();
+  await page.getByLabel('Active person: Alex. Open people').click();
+  await page.getByTestId('person-switch-alex-lower').click();
+  await expect(page.getByLabel('Active person: aLeX (imported 2). Open people')).toBeVisible();
+  await expect(page.getByLabel('Open Lowercase Alex routine')).toBeVisible();
+  await page.getByRole('tab', { name: 'Themes' }).click();
+  await expect(page.getByTestId('theme-summary')).toContainText('Active: Slate');
+  await page.reload();
+  await expect(page.getByTestId('theme-summary')).toContainText('Active: Slate');
+
+  const profilesAfterReload = await page.evaluate(() => ({
     routines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),
     progress: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/progress') ?? '{}'),
     skills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
     theme: localStorage.getItem('@routine-flow/person/casey/@routine-flow/appearance'),
+    lowerAlexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/routines') ?? '[]'),
+    lowerAlexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/skills') ?? '[]'),
+    lowerAlexTheme: localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/appearance'),
   }));
-  expect(caseyAfterReload).toEqual({
+  expect(profilesAfterReload).toEqual({
     routines: [caseyRoutine],
     progress: { [day]: { 'casey-routine:unpack': true } },
     skills: [caseySkill],
     theme: caseyThemeId,
+    lowerAlexRoutines: [lowerAlexRoutine],
+    lowerAlexSkills: [lowerAlexSkill],
+    lowerAlexTheme: lowerAlexThemeId,
   });
 
   await page.getByRole('tab', { name: 'Today' }).click();
@@ -550,6 +619,11 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(exportedPath).not.toBeNull();
   const exportedContents = readFileSync(exportedPath!, 'utf8');
   const exported = JSON.parse(exportedContents);
+  expect(exported.activePersonId).toBe('alex-lower');
+  expect(exported.people.map((entry: { profile: { id: string; profileNumber: string } }) =>
+    [entry.profile.id, entry.profile.profileNumber])).toEqual([
+    ['me', 'me'], ['casey', 'casey'], ['alex', 'alex'], ['alex-lower', 'alex-lower'],
+  ]);
   const exportedAlex = exported.people.find((entry: { profile: { id: string } }) => entry.profile.id === 'alex');
   expect(exportedAlex.profile).toMatchObject({
     id: 'alex',
@@ -561,6 +635,14 @@ test('all-profiles import adds profiles and merges saved history without replaci
   const exportedCasey = exported.people.find((entry: { profile: { id: string } }) => entry.profile.id === 'casey');
   expect(exportedCasey.profile).toMatchObject({ id: 'casey', profileNumber: 'casey', name: 'Alex' });
   expect(exportedCasey.backup.routines.map((routine: { id: string }) => routine.id)).toEqual(['casey-routine']);
+  const exportedLowerAlex = exported.people.find((entry: { profile: { id: string } }) => entry.profile.id === 'alex-lower');
+  expect(exportedLowerAlex.profile).toMatchObject({
+    id: 'alex-lower',
+    profileNumber: 'alex-lower',
+    name: 'aLeX (imported 2)',
+  });
+  expect(exportedLowerAlex.backup.routines.map((routine: { id: string }) => routine.id)).toEqual(['alex-lower-routine']);
+  expect(exportedLowerAlex.backup.skills[0].ratings[0].note).toBe('Lowercase Alex history remains separate.');
 
   const chooserPromise = page.waitForEvent('filechooser');
   await page.getByTestId('import-routines').click();
@@ -569,10 +651,13 @@ test('all-profiles import adds profiles and merges saved history without replaci
     mimeType: 'application/json',
     buffer: Buffer.from(exportedContents),
   });
-  await expect(page.getByText('Restore 3 profiles?')).toBeVisible();
+  await expect(page.getByText('Restore 4 profiles?')).toBeVisible();
   await expect(page.getByTestId('restore-profile-name-alex')).toHaveCount(0);
+  await expect(page.getByTestId('restore-profile-name-alex-lower')).toHaveCount(0);
   await page.getByTestId('import-all-profiles').click();
-  await expect(page.getByText('Restore 3 profiles?')).toHaveCount(0);
+  await expect(page.getByText('Restore 4 profiles?')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByLabel('Active person: aLeX (imported 2). Open people')).toBeVisible();
 
   const afterRoundTrip = await page.evaluate(() => ({
     registry: JSON.parse(localStorage.getItem('@routine-flow/people') ?? 'null'),
@@ -581,9 +666,13 @@ test('all-profiles import adds profiles and merges saved history without replaci
     alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
     caseyRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),
     caseySkills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
+    lowerAlexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/routines') ?? '[]'),
+    lowerAlexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/skills') ?? '[]'),
   }));
-  expect(afterRoundTrip.registry.people).toHaveLength(3);
-  expect(afterRoundTrip.registry.people.map((person: { id: string }) => person.id)).toEqual(['me', 'casey', 'alex']);
+  expect(afterRoundTrip.registry.activePersonId).toBe('alex-lower');
+  expect(afterRoundTrip.registry.people).toHaveLength(4);
+  expect(afterRoundTrip.registry.people.map((person: { id: string }) => person.id))
+    .toEqual(['me', 'casey', 'alex', 'alex-lower']);
   expect(afterRoundTrip.registry.people.find((person: { id: string }) => person.id === 'alex')).toMatchObject({
     id: 'alex',
     name: 'Alex from backup',
@@ -593,6 +682,10 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(afterRoundTrip.alexSkills[0].ratings[0].note).toBe('Pause before the next step.');
   expect(afterRoundTrip.caseyRoutines).toEqual([caseyRoutine]);
   expect(afterRoundTrip.caseySkills).toEqual([caseySkill]);
+  expect(afterRoundTrip.registry.people.find((person: { id: string }) => person.id === 'alex-lower'))
+    .toMatchObject({ id: 'alex-lower', name: 'aLeX (imported 2)' });
+  expect(afterRoundTrip.lowerAlexRoutines).toEqual([lowerAlexRoutine]);
+  expect(afterRoundTrip.lowerAlexSkills).toEqual([lowerAlexSkill]);
 
   const exportedMe = exported.people.find((entry: { profile: { id: string } }) => entry.profile.id === 'me');
   const acceptedSuggestionBackup = JSON.stringify({
