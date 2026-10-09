@@ -783,7 +783,7 @@ export default function HomeScreen() {
             <View style={[styles.transferCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.transferTitle, { color: colors.foreground }]}>Back up {activePerson.name}</Text>
               <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
-                Export this person’s routines, playlists, schedules, and selected theme as one JSON file. Daily progress is optional. {Platform.OS === 'android' ? 'On Android, save to a folder on your device or share the backup with another app. ' : ''}Import JSON only restores routines and optional progress; it does not restore playlists, schedules, or theme.
+                Export this person’s routines, playlists, schedules, skills and rating history, and selected theme as one JSON file. Daily progress is optional. {Platform.OS === 'android' ? 'On Android, save to a folder on your device or share the backup with another app. ' : ''}Import JSON merges a single-profile backup into the active profile; schedules and theme are not restored.
               </Text>
               <Pressable
                 accessibilityRole="checkbox"
@@ -854,6 +854,58 @@ export default function HomeScreen() {
                   </Pressable>
                 </View>
               ) : null}
+              <View style={[styles.allProfilesSection, { borderTopColor: colors.border }]}>
+                <Text style={[styles.transferTitle, { color: colors.foreground }]}>Back up all profiles</Text>
+                <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                  Export every profile saved on this device in one JSON file. Each profile keeps its own routines, playlists, schedules, skills, ratings, preferences, and theme. Daily progress follows the checkbox above. Import JSON still handles a single profile at a time.
+                </Text>
+                <View style={styles.transferActions}>
+                  {Platform.OS === 'android' ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Save backup for all profiles on this device"
+                      testID="save-all-people-data"
+                      disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                      onPress={() => void saveAllPeopleFileLocally()}
+                      style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
+                    >
+                      <Ionicons name="download-outline" size={18} color={colors.primary} />
+                      <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                        {transferBusy === 'export-all' ? 'Saving…' : 'Save all profiles'}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Export backup for all profiles"
+                      testID="export-all-people-data"
+                      disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                      onPress={() => void exportAllPeopleFile()}
+                      style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
+                    >
+                      <Ionicons name="download-outline" size={18} color={colors.primary} />
+                      <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                        {transferBusy === 'export-all' ? 'Exporting…' : 'Export all profiles'}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {Platform.OS === 'android' ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Share backup for all profiles"
+                      testID="share-all-people-data"
+                      disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                      onPress={() => void exportAllPeopleFile()}
+                      style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
+                    >
+                      <Ionicons name="share-outline" size={18} color={colors.primary} />
+                      <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                        {transferBusy === 'export-all' ? 'Preparing…' : 'Share all profiles'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              </View>
               {pendingBackup ? (
                 <View style={[styles.importChoice, { borderTopColor: colors.border }]}>
                   <Text style={[styles.historyLabel, { color: colors.foreground }]}>This backup includes daily progress.</Text>
@@ -984,6 +1036,7 @@ const styles = StyleSheet.create({
   loading: { paddingVertical: 12 },
   footer: { alignItems: 'center', paddingTop: 17 },
   transferCard: { width: '100%', borderWidth: 1, borderRadius: 19, padding: 17 },
+  allProfilesSection: { borderTopWidth: 1, marginTop: 14, paddingTop: 14, gap: 6 },
   transferTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   transferDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
   historyOption: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, minHeight: 36 },

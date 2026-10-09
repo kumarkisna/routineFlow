@@ -43,9 +43,15 @@ Full-person exports must include that person's routines, playlists, schedules, a
 
 **Why:** The user explicitly requested those four sections in each person's export.
 
-**How to apply:** Keep future person-backup exports scoped to the active profile and include all four sections.
+**How to apply:** Keep the single-person export scoped to the active profile and include all four sections.
 
-Routine Flow intentionally has no backup email feature or per-person email settings. Person backups use JSON export/import and stay scoped to the active person.
+All-profile backups should be one file containing a separate full backup for every local profile, preserving each person's own skill history and the active profile selection.
+
+**Why:** The user asked for a backup covering all profiles in one file after confirming that an active-profile-only export was insufficient.
+
+**How to apply:** Snapshot each person independently; do not merge routines, ratings, notes, or progress between profiles.
+
+Routine Flow intentionally has no backup email feature or per-person email settings. Backup files are generated locally for users to save or share.
 
 **Why:** The user asked to remove email because of Resend setup uncertainty and concern about future charges.
 

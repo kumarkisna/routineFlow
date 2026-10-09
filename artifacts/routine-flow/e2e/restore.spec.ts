@@ -106,6 +106,120 @@ for (const [label, includeProgress] of [
   });
 }
 
+test('all-profiles export keeps each profile and its skill history together', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const day = new Date().toISOString().slice(0, 10);
+  const people = {
+    version: 1,
+    activePersonId: 'alex',
+    people: [
+      {
+        id: 'me',
+        name: 'Me',
+        defaultRateSkillsAtPlaylistEnd: true,
+        defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+      },
+      {
+        id: 'alex',
+        name: 'Alex',
+        defaultRateSkillsAtPlaylistEnd: false,
+        defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: false },
+      },
+    ],
+  };
+  const storage: Record<string, unknown> = {
+    '@routine-flow/people': people,
+    '@routine-flow/routines': [original],
+    '@routine-flow/progress': { [day]: { 'morning-reset:morning-water': true } },
+    '@routine-flow/playlists': [{
+      id: 'morning-list',
+      title: 'Morning list',
+      routineIds: ['morning-reset'],
+      skillIds: ['me-focus'],
+      rateSkillsAtPlaylistEnd: true,
+    }],
+    '@routine-flow/schedules': [],
+    '@routine-flow/skills': [{
+      id: 'me-focus',
+      name: 'Focus',
+      ratings: [{
+        id: 'me-focus-rating',
+        rating: 6,
+        ratedAt: `${day}T09:00:00.000Z`,
+        routineTitle: 'Morning Reset',
+        note: 'Keep the plan visible.',
+      }],
+    }],
+    '@routine-flow/skill-rating-window': '5',
+    '@routine-flow/appearance': 'routine-flow',
+    '@routine-flow/person/alex/@routine-flow/routines': [second],
+    '@routine-flow/person/alex/@routine-flow/progress': { [day]: { 'travel-reset:unpack': true } },
+    '@routine-flow/person/alex/@routine-flow/playlists': [{
+      id: 'travel-list',
+      title: 'Travel list',
+      routineIds: ['travel-reset'],
+      skillIds: ['alex-calm'],
+      rateSkillsAtPlaylistEnd: false,
+    }],
+    '@routine-flow/person/alex/@routine-flow/schedules': [],
+    '@routine-flow/person/alex/@routine-flow/skills': [{
+      id: 'alex-calm',
+      name: 'Calm',
+      ratings: [{
+        id: 'alex-calm-rating',
+        rating: 9,
+        ratedAt: `${day}T10:00:00.000Z`,
+        routineTitle: 'Travel Reset',
+        note: 'Pause before the next step.',
+      }],
+    }],
+    '@routine-flow/person/alex/@routine-flow/skill-rating-window': '12',
+    '@routine-flow/person/alex/@routine-flow/appearance': 'routine-flow',
+  };
+  await page.addInitScript(storage => {
+    if (localStorage.getItem('@routine-flow/people') === null) {
+      for (const [key, value] of Object.entries(storage)) {
+        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+      }
+    }
+  }, storage);
+
+  await page.goto('/');
+  await expect(page.getByLabel('Open Travel Reset')).toBeVisible();
+  await page.getByTestId('include-daily-progress').click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByTestId('export-all-people-data').click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const exported = JSON.parse(readFileSync(path!, 'utf8'));
+
+  expect(exported).toMatchObject({
+    format: 'routine-flow-all-people',
+    version: 1,
+    activePersonId: 'alex',
+  });
+  expect(exported.people.map((entry: { profile: { id: string } }) => entry.profile.id)).toEqual(['me', 'alex']);
+  const meBackup = exported.people[0].backup;
+  const alexBackup = exported.people[1].backup;
+  expect(meBackup.routines.map((routine: { id: string }) => routine.id)).toEqual(['morning-reset']);
+  expect(meBackup.skills[0].ratings[0]).toMatchObject({
+    rating: 6,
+    note: 'Keep the plan visible.',
+  });
+  expect(meBackup.personData.playlists[0].title).toBe('Morning list');
+  expect(meBackup.personData.skillRatingWindow).toBe(5);
+  expect(meBackup.progress[day]['morning-reset:morning-water']).toBe(true);
+  expect(alexBackup.routines.map((routine: { id: string }) => routine.id)).toEqual(['travel-reset']);
+  expect(alexBackup.skills[0].ratings[0]).toMatchObject({
+    rating: 9,
+    note: 'Pause before the next step.',
+  });
+  expect(alexBackup.personData.playlists[0].title).toBe('Travel list');
+  expect(alexBackup.personData.skillRatingWindow).toBe(12);
+  expect(alexBackup.progress[day]['travel-reset:unpack']).toBe(true);
+});
+
 async function importBackup(page: Page, contents: string, includeProgress: boolean) {
   const chooserPromise = page.waitForEvent('filechooser');
   await page.getByTestId('import-routines').click();
@@ -130,9 +244,11 @@ async function storedBackup(page: Page) {
 
 async function expectRemovedHistory(page: Page) {
   await page.goto('/history');
-  await expect(page.getByText('Past days', { exact: true })).toBeVisible();
+  await expect(page.getByText('RECORDED PROGRESS', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('history-older-day')).toBeEnabled();
+  await page.getByTestId('history-older-day').click();
   await expect(page.getByText('3 steps completed', { exact: true })).toBeVisible();
-  await expect(page.getByText('1 of 1', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 of 2', { exact: true })).toBeVisible();
   await expect(page.getByText('Deleted morning', { exact: true })).toHaveCount(1);
   await expect(page.getByText('Old water', { exact: true })).toBeVisible();
   await expect(page.getByText('Removed step (legacy)', { exact: true })).toBeVisible();
@@ -212,7 +328,7 @@ for (const [label, includeProgress] of [
     if (!includeProgress) {
       await page.goto('/history');
       await page.reload();
-      await expect(page.getByText('No past progress yet', { exact: true })).toBeVisible();
+      await expect(page.getByText('No recorded progress yet', { exact: true })).toBeVisible();
       await expect(page.getByText('Deleted morning', { exact: true })).toHaveCount(0);
       await expect(page.getByText(/No longer in your routines/)).toHaveCount(0);
       expect(await storedBackup(page)).toEqual({ routines: [customized], progress: liveProgress });
@@ -237,13 +353,13 @@ for (const [label, includeProgress] of [
     await expect(page.getByLabel('Open My own reset')).toBeVisible();
     await page.getByTestId('include-daily-progress').click();
     const downloadPromise = page.waitForEvent('download');
-    await page.getByTestId('export-routines').click();
+    await page.getByTestId('export-person-data').click();
     const download = await downloadPromise;
     const path = await download.path();
     expect(path).not.toBeNull();
     const exportedContents = readFileSync(path!, 'utf8');
     const exported = JSON.parse(exportedContents);
-    expect(exported.version).toBe(5);
+    expect(exported.version).toBe(7);
     expect(exported.routines).toEqual([customized]);
     // Export omits incomplete entries, but retains both archive value formats.
     expect(exported.progress).toEqual({
@@ -251,7 +367,7 @@ for (const [label, includeProgress] of [
       [pastDay]: expectedProgress[pastDay],
     });
     await importBackup(page, exportedContents, true);
-    await expect(page.getByText(/1 already present · 0 completed steps added \(4 local entries kept\)/)).toBeVisible();
+    await expect(page.getByText(/1 already present · 0 playlists imported · Shared skill-average window restored · 0 completed steps added \(4 local entries kept\)/)).toBeVisible();
     await page.reload();
     await expect(page.getByLabel('Open My own reset')).toBeVisible();
     await expect(page.getByText('Choose a routine and get started.', { exact: true })).toBeVisible();
