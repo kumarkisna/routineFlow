@@ -27,6 +27,12 @@ Reflection notes are attached to individual skill ratings after routine completi
 
 **How to apply:** Persist an optional note on the rating record and keep it with the rating through person backups and imports.
 
+Ratings added later from History must use the completion date the app actually retained, rather than inventing a completion time. Backfill IDs stay stable for that routine or playlist on that day so adding remaining ratings does not create duplicate sessions.
+
+**Why:** Legacy progress is stored at day-and-routine granularity and does not retain an exact completion timestamp or an individual playlist-run identifier.
+
+**How to apply:** Keep retrospective ratings attached to the recorded day and mark the rating time separately. Do not split legacy same-day records into fabricated run instances.
+
 Full-person exports must include that person's routines, playlists, schedules, and selected theme.
 
 **Why:** The user explicitly requested those four sections in each person's export.

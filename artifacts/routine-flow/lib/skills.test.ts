@@ -94,6 +94,25 @@ test('run time and skill sequence metadata survive skill backup parsing', () => 
     ...skill,
     ratings: [{ ...skill.ratings[0], completedAt: undefined }],
   }])), /could not be read/);
+
+  const historicalSkill = {
+    ...skill,
+    ratings: [{
+      ...skill.ratings[0],
+      id: 'rating-history-1',
+      runId: 'history-routine-20300611-test',
+      completedAt: undefined,
+      completedDay: '2030-06-11',
+    }],
+  };
+  const [parsedHistoricalSkill] = parseSkills(JSON.stringify([historicalSkill]));
+  assert.equal(parsedHistoricalSkill.ratings?.[0].runId, 'history-routine-20300611-test');
+  assert.equal(parsedHistoricalSkill.ratings?.[0].completedAt, undefined);
+  assert.equal(parsedHistoricalSkill.ratings?.[0].completedDay, '2030-06-11');
+  assert.throws(() => parseSkills(JSON.stringify([{
+    ...historicalSkill,
+    ratings: [{ ...historicalSkill.ratings[0], completedDay: '2030-02-30' }],
+  }])), /could not be read/);
 });
 
 test('a completed routine rates unique skills from visible steps only', () => {

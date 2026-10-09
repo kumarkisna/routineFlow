@@ -12,6 +12,7 @@ test('speech text reads each run rating and reflection in displayed order', () =
     ratings: [
       {
         id: 'rating-planning',
+        skillId: 'planning',
         skillName: 'Planning',
         rating: 8,
         ratedAt: '2026-10-05T10:31:00.000Z',
@@ -20,6 +21,7 @@ test('speech text reads each run rating and reflection in displayed order', () =
       },
       {
         id: 'rating-focus',
+        skillId: 'focus',
         skillName: 'Focus',
         rating: 6,
         ratedAt: '2026-10-05T10:31:00.000Z',
@@ -44,6 +46,7 @@ test('speech text identifies a manually recorded rating session', () => {
     isRunTime: false,
     ratings: [{
       id: 'rating-focus',
+      skillId: 'focus',
       skillName: 'Focus',
       rating: 7,
       ratedAt: '2026-10-05T10:30:00.000Z',

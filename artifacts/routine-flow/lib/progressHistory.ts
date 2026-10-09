@@ -28,7 +28,6 @@ export type SkillRatingEvent = {
 };
 export type HistoryRoutine = {
   id: string;
-  day: string;
   title: string;
   hidden: boolean;
   removed: boolean;
@@ -191,7 +190,6 @@ export function getHistoryForDay(
     if (!group) {
       group = {
         id: routineId,
-        day,
         title: typeof completed === 'object' ? completed.routineTitle : routine?.title ?? `Removed routine (${historySourceId(routineId)})`,
         hidden: routine?.hidden ?? false,
         removed: !routine,

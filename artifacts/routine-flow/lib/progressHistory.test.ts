@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import type { Routine } from '@/types/routines';
 import type { RoutineSkill } from './skills';
 import {
-  formatHistoryDay, getHistoryForDay, groupSkillRatingEvents, playlistHistoryOptions, recordCompletion,
+  createHistorySkillRatingRun, formatHistoryDay, getHistoryForDay, getUnratedSkillIds,
+  groupSkillRatingEvents, playlistHistoryOptions, playlistHistoryRatingAnchorId, recordCompletion,
   recordedHistoryDays, recordedPastDays, routineHistoryOptions,
 } from './progressHistory';
 
@@ -74,15 +75,15 @@ test('history includes today so a completed run can be reviewed and exported imm
 test('skill ratings group by run and stay in the order presented for rating', () => {
   const ratings = [
     {
-      id: 'balance', skillName: 'Balance', rating: 7, ratedAt: '2030-06-12T12:05:00.000Z',
+      id: 'balance', skillId: 'balance-id', skillName: 'Balance', rating: 7, ratedAt: '2030-06-12T12:05:00.000Z',
       runId: 'run-one', completedAt: '2030-06-12T12:00:00.000Z', sequence: 1,
     },
     {
-      id: 'breathing', skillName: 'Breathing', rating: 8, ratedAt: '2030-06-12T12:05:00.000Z',
+      id: 'breathing', skillId: 'breathing-id', skillName: 'Breathing', rating: 8, ratedAt: '2030-06-12T12:05:00.000Z',
       runId: 'run-one', completedAt: '2030-06-12T12:00:00.000Z', sequence: 0,
     },
     {
-      id: 'older-run', skillName: 'Focus', rating: 6, ratedAt: '2030-06-11T12:05:00.000Z',
+      id: 'older-run', skillId: 'focus-id', skillName: 'Focus', rating: 6, ratedAt: '2030-06-11T12:05:00.000Z',
       runId: 'run-older', completedAt: '2030-06-11T12:00:00.000Z', sequence: 0,
     },
   ];
@@ -91,6 +92,43 @@ test('skill ratings group by run and stay in the order presented for rating', ()
   assert.deepEqual(events[1].ratings.map(rating => rating.skillName), ['Breathing', 'Balance']);
   assert.equal(events[1].dateTime, '2030-06-12T12:00:00.000Z');
   assert.equal(events[1].isRunTime, true);
+});
+
+test('history rating IDs stay stable for a backfilled routine or playlist day', () => {
+  const routineRun = createHistorySkillRatingRun('2030-06-12', 'routine', 'morning');
+  assert.deepEqual(routineRun, createHistorySkillRatingRun('2030-06-12', 'routine', 'morning'));
+  assert.equal(routineRun.completedDay, '2030-06-12');
+  assert.ok(!routineRun.runId.includes(':'));
+  assert.notEqual(
+    routineRun.runId,
+    createHistorySkillRatingRun('2030-06-12', 'playlist', 'morning').runId,
+  );
+  assert.notEqual(
+    routineRun.runId,
+    createHistorySkillRatingRun('2030-06-13', 'routine', 'morning').runId,
+  );
+  assert.throws(() => createHistorySkillRatingRun('2030-02-30', 'routine', 'morning'));
+});
+
+test('history rating choices exclude skills already rated for that entry', () => {
+  assert.deepEqual(
+    getUnratedSkillIds(['balance', 'focus', 'balance', 'breathing'], [
+      { id: 'focus:1', skillId: 'focus', skillName: 'Focus', rating: 8, ratedAt: '2030-06-12T12:00:00Z' },
+    ]),
+    ['balance', 'breathing'],
+  );
+});
+
+test('playlist history has one rating anchor at the last completed routine in playlist order', () => {
+  const playlistRuns = [{ playlistId: 'weekday', playlistTitle: 'Weekday start' }];
+  const groups = [
+    { id: 'first', title: 'First', hidden: false, removed: false, steps: [], playlistRuns },
+    { id: 'unrelated', title: 'Other', hidden: false, removed: false, steps: [] },
+    { id: 'last', title: 'Last', hidden: false, removed: false, steps: [], playlistRuns },
+  ];
+  assert.equal(playlistHistoryRatingAnchorId(groups, 'weekday', ['first', 'last']), 'last');
+  assert.equal(playlistHistoryRatingAnchorId(groups, 'weekday'), 'last');
+  assert.equal(playlistHistoryRatingAnchorId(groups, 'missing'), null);
 });
 
 test('routine and playlist filters return only dates belonging to the selected item', () => {
@@ -176,6 +214,7 @@ test('routine event history shows all same-day skill ratings with optional refle
   assert.deepEqual(groups[0].skillRatings, [
     {
       id: 'focus:focus-good',
+      skillId: 'focus',
       skillName: 'Focus',
       rating: 8,
       ratedAt: ratedAt.toISOString(),
@@ -183,11 +222,38 @@ test('routine event history shows all same-day skill ratings with optional refle
     },
     {
       id: 'focus:focus-no-note',
+      skillId: 'focus',
       skillName: 'Focus',
       rating: 6,
       ratedAt: ratedAt.toISOString(),
     },
   ]);
+});
+
+test('ratings added from history stay attached to the completed day, not the later recording day', () => {
+  const skills: RoutineSkill[] = [{
+    id: 'focus',
+    name: 'Focus',
+    ratings: [{
+      id: 'historical-rating',
+      rating: 8,
+      ratedAt: '2030-06-14T12:00:00.000Z',
+      routineTitle: 'Morning',
+      runId: 'history-routine-20300612-test',
+      completedDay: '2030-06-12',
+      note: 'I stayed with the task.',
+    }],
+  }];
+  const progress = {
+    '2030-06-12': { 'morning:water': true },
+    '2030-06-14': { 'morning:water': true },
+  };
+
+  const completedDay = getHistoryForDay(progress, [routine], '2030-06-12', skills);
+  const recordedDay = getHistoryForDay(progress, [routine], '2030-06-14', skills);
+  assert.deepEqual(completedDay[0].skillRatings?.map(item => item.skillId), ['focus']);
+  assert.equal(completedDay[0].skillRatings?.[0].note, 'I stayed with the task.');
+  assert.equal(recordedDay[0].skillRatings, undefined);
 });
 
 test('history filter choices retain deleted routine and playlist labels', () => {

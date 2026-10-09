@@ -1,0 +1,199 @@
+import { expect, test } from '@playwright/test';
+import { existsSync } from 'node:fs';
+
+const baseURL = process.env.RESTORE_TEST_BASE_URL
+  ?? (process.env.REPLIT_EXPO_DEV_DOMAIN ? `https://${process.env.REPLIT_EXPO_DEV_DOMAIN}` : undefined);
+
+test.use({
+  baseURL,
+  timezoneId: 'UTC',
+  viewport: { width: 400, height: 820 },
+  launchOptions: {
+    ...(process.env.CHROMIUM_PATH || existsSync('/repl/tools/bin/chromium')
+      ? { executablePath: process.env.CHROMIUM_PATH ?? '/repl/tools/bin/chromium' }
+      : {}),
+  },
+});
+
+test('history can add a missing routine skill rating and reflection without duplicating saved ratings', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const day = '2020-01-02';
+  const routines = [{
+    id: 'morning',
+    title: 'Morning routine',
+    subtitle: '',
+    icon: 'sunny-outline',
+    tone: 'coral',
+    createdAt: '2020-01-01T00:00:00.000Z',
+    skillIds: ['focus', 'breathing'],
+    steps: [{ id: 'water', title: 'Drink water', durationSeconds: 60 }],
+  }];
+  const progress = {
+    [day]: {
+      'morning:water': { routineTitle: 'Morning routine', stepTitle: 'Drink water' },
+    },
+  };
+  const skills = [
+    {
+      id: 'focus',
+      name: 'Focus',
+      ratings: [{
+        id: 'existing-focus-rating',
+        rating: 6,
+        ratedAt: '2020-01-02T10:00:00.000Z',
+        routineTitle: 'Morning routine',
+        note: 'Already saved.',
+      }],
+    },
+    { id: 'breathing', name: 'Breathing' },
+  ];
+
+  await page.addInitScript(({ routines, progress, skills }) => {
+    if (localStorage.getItem('@routine-flow/routines') === null) {
+      localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+      localStorage.setItem('@routine-flow/progress', JSON.stringify(progress));
+      localStorage.setItem('@routine-flow/skills', JSON.stringify(skills));
+      localStorage.setItem('@routine-flow/playlists', JSON.stringify([]));
+    }
+  }, { routines, progress, skills });
+
+  await page.goto('/history');
+  await page.getByTestId('history-filter-routine').click();
+  await page.getByTestId('history-routine-morning').click();
+  await expect(page.getByTestId('history-add-skill-ratings-morning')).toBeVisible();
+  await page.getByTestId('history-add-skill-ratings-morning').click();
+  await expect(page.getByText('Routine: Morning routine')).toBeVisible();
+  await expect(page.getByTestId('rate-skill-focus-8')).toHaveCount(0);
+  await page.getByTestId('rate-skill-breathing-8').click();
+  await page.getByTestId('skill-note-breathing').fill('Keep a steady pace.');
+  await page.getByTestId('save-skill-ratings').click();
+
+  await expect(page.getByText('Breathing', { exact: true })).toBeVisible();
+  await expect(page.getByText('Keep a steady pace.')).toBeVisible();
+  await expect(page.getByTestId('history-add-skill-ratings-morning')).toHaveCount(0);
+  await page.reload();
+  await page.getByTestId('history-filter-routine').click();
+  await page.getByTestId('history-routine-morning').click();
+  await expect(page.getByText('Keep a steady pace.')).toBeVisible();
+  await expect(page.getByTestId('history-add-skill-ratings-morning')).toHaveCount(0);
+
+  const storedSkills = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
+      id: string;
+      ratings?: { rating: number; note?: string; runId?: string; completedDay?: string }[];
+    }[],
+  );
+  const focus = storedSkills.find(skill => skill.id === 'focus');
+  const breathing = storedSkills.find(skill => skill.id === 'breathing');
+  expect(focus?.ratings).toHaveLength(1);
+  expect(focus?.ratings?.[0].note).toBe('Already saved.');
+  expect(breathing?.ratings).toHaveLength(1);
+  expect(breathing?.ratings?.[0]).toMatchObject({
+    rating: 8,
+    note: 'Keep a steady pace.',
+    completedDay: day,
+  });
+  expect(breathing?.ratings?.[0].runId).toMatch(/^history-routine-/);
+});
+
+test('playlist history offers one end-of-run rating action for playlist and routine skills', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const day = '2020-02-03';
+  const routines = [
+    {
+      id: 'first',
+      title: 'First routine',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'coral',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      skillIds: ['first-skill'],
+      steps: [{ id: 'start', title: 'Get ready', durationSeconds: 60 }],
+    },
+    {
+      id: 'last',
+      title: 'Last routine',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'sage',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      steps: [{ id: 'finish', title: 'Wrap up', durationSeconds: 60, skillIds: ['last-skill'] }],
+    },
+  ];
+  const progress = {
+    [day]: {
+      'first:start': {
+        routineTitle: 'First routine',
+        stepTitle: 'Get ready',
+        playlistRuns: [{ playlistId: 'daily', playlistTitle: 'Daily flow' }],
+      },
+      'last:finish': {
+        routineTitle: 'Last routine',
+        stepTitle: 'Wrap up',
+        playlistRuns: [{ playlistId: 'daily', playlistTitle: 'Daily flow' }],
+      },
+    },
+  };
+  const playlists = [{
+    id: 'daily',
+    title: 'Daily flow',
+    routineIds: ['first', 'last'],
+    skillIds: ['playlist-skill'],
+    rateSkillsAtPlaylistEnd: true,
+  }];
+  const skills = [
+    { id: 'first-skill', name: 'Preparation' },
+    { id: 'last-skill', name: 'Reflection' },
+    { id: 'playlist-skill', name: 'Consistency' },
+  ];
+
+  await page.addInitScript(({ routines, progress, playlists, skills }) => {
+    if (localStorage.getItem('@routine-flow/routines') === null) {
+      localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+      localStorage.setItem('@routine-flow/progress', JSON.stringify(progress));
+      localStorage.setItem('@routine-flow/playlists', JSON.stringify(playlists));
+      localStorage.setItem('@routine-flow/skills', JSON.stringify(skills));
+    }
+  }, { routines, progress, playlists, skills });
+
+  await page.goto('/history');
+  await page.getByTestId('history-filter-playlist').click();
+  await page.getByTestId('history-playlist-daily').click();
+  await expect(page.getByTestId('history-add-skill-ratings-last')).toBeVisible();
+  await expect(page.getByTestId('history-add-skill-ratings-first')).toHaveCount(0);
+  await page.getByTestId('history-add-skill-ratings-last').click();
+  await expect(page.getByText('Playlist: Daily flow', { exact: true })).toBeVisible();
+
+  for (const [skillId, score] of [
+    ['first-skill', 7],
+    ['last-skill', 8],
+    ['playlist-skill', 9],
+  ] as const) {
+    await page.getByTestId(`rate-skill-${skillId}-${score}`).click();
+    await page.getByTestId(`skill-note-${skillId}`).fill(`Reflection for ${skillId}.`);
+  }
+  await page.getByTestId('save-skill-ratings').click();
+  await expect(page.getByText('Reflection for playlist-skill.')).toBeVisible();
+  await expect(page.getByTestId('history-add-skill-ratings-last')).toHaveCount(0);
+  await page.reload();
+  await page.getByTestId('history-filter-playlist').click();
+  await page.getByTestId('history-playlist-daily').click();
+  await expect(page.getByText('Reflection for playlist-skill.')).toBeVisible();
+  await expect(page.getByTestId('history-add-skill-ratings-last')).toHaveCount(0);
+
+  const storedSkills = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
+      id: string;
+      ratings?: { runId?: string; completedDay?: string; note?: string }[];
+    }[],
+  );
+  const ratings = storedSkills.flatMap(skill => skill.ratings ?? []);
+  expect(ratings).toHaveLength(3);
+  expect(new Set(ratings.map(rating => rating.runId)).size).toBe(1);
+  expect(ratings.every(rating => rating.completedDay === day)).toBe(true);
+  expect(ratings.map(rating => rating.note)).toEqual([
+    'Reflection for first-skill.',
+    'Reflection for last-skill.',
+    'Reflection for playlist-skill.',
+  ]);
+});
