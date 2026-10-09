@@ -8,7 +8,7 @@ import type { Person } from '@/types/people';
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
-const ALL_PEOPLE_FILE_FORMAT = 'routine-flow-all-people';
+export const ALL_PEOPLE_FILE_FORMAT = 'routine-flow-all-people';
 export const ROUTINE_BACKUP_VERSION = 7;
 export const ALL_PEOPLE_BACKUP_VERSION = 1;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
@@ -31,6 +31,10 @@ export type AllPeopleBackupEntry = {
   routines: Routine[];
   personData: PersonBackupData;
   progress?: CompletionMap;
+};
+export type AllPeopleBackup = {
+  activePersonId: string;
+  people: { profile: Person; backup: RoutineBackup }[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -293,6 +297,64 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
     ...(value.progress !== undefined ? { progress: parseProgress(value.progress, routines, value.version as number) } : {}),
     ...(personData ? { personData } : {}),
   };
+}
+
+export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
+  if (contents.length > MAX_ROUTINE_FILE_BYTES) {
+    throw new Error('This file is too large to import (5 MB maximum).');
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(contents);
+  } catch {
+    throw new Error('This is not a valid JSON file.');
+  }
+  if (!isRecord(value) || value.format !== ALL_PEOPLE_FILE_FORMAT
+    || value.version !== ALL_PEOPLE_BACKUP_VERSION || typeof value.activePersonId !== 'string'
+    || !/^[A-Za-z0-9_-]{1,160}$/.test(value.activePersonId)
+    || !Array.isArray(value.people) || value.people.length === 0 || value.people.length > 100) {
+    throw new Error('Choose an all-profiles JSON backup exported from Routine Flow.');
+  }
+
+  const people = value.people.map((entry, index) => {
+    if (!isRecord(entry) || !isRecord(entry.profile) || !isRecord(entry.backup)) {
+      throw new Error(`Profile ${index + 1} in this backup is incomplete.`);
+    }
+    const profileValue = entry.profile;
+    const reminderSettings = profileValue.defaultPlaylistReminderSettings;
+    if (typeof profileValue.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileValue.id)
+      || !isText(profileValue.name) || profileValue.name.trim().length > 50
+      || typeof profileValue.defaultRateSkillsAtPlaylistEnd !== 'boolean'
+      || !isRecord(reminderSettings)
+      || typeof reminderSettings.stepCompletion !== 'boolean'
+      || typeof reminderSettings.routineCompletion !== 'boolean'
+      || !Array.isArray(entry.backup.skills) || !isRecord(entry.backup.personData)) {
+      throw new Error(`Profile ${index + 1} in this backup has invalid profile settings or saved data.`);
+    }
+    const profile: Person = {
+      id: profileValue.id,
+      name: profileValue.name.trim(),
+      defaultRateSkillsAtPlaylistEnd: profileValue.defaultRateSkillsAtPlaylistEnd,
+      defaultPlaylistReminderSettings: {
+        stepCompletion: reminderSettings.stepCompletion,
+        routineCompletion: reminderSettings.routineCompletion,
+      },
+    };
+    const backup = parseRoutinesFile(JSON.stringify(entry.backup));
+    if (!backup.personData || !backup.skills) {
+      throw new Error(`Profile ${profile.name} is missing its full profile backup data.`);
+    }
+    return { profile, backup };
+  });
+  const ids = people.map(({ profile }) => profile.id);
+  if (new Set(ids).size !== ids.length || !ids.includes(value.activePersonId)) {
+    throw new Error('This all-profiles backup has duplicate profiles or an invalid active profile.');
+  }
+  const me = people.find(({ profile }) => profile.id === 'me');
+  if (!me || me.profile.name !== 'Me') {
+    throw new Error('This backup is missing the required Me profile.');
+  }
+  return { activePersonId: value.activePersonId, people };
 }
 
 export function repairStoredRoutineDurations(contents: string): { serialized: string; repairedSteps: number } {

@@ -6,6 +6,7 @@ import {
   MAX_ROUTINE_FILE_BYTES,
   mergeImportedProgress,
   mergeImportedRoutines,
+  parseAllPeopleBackup,
   parseRoutinesFile,
   persistImportedBackup,
   repairStoredRoutineDurations,
@@ -344,6 +345,16 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   assert.equal(alexBackup.skills?.[0].ratings?.[0].note, 'Reflection for alex-focus.');
   assert.equal(alexBackup.personData?.skillRatingWindow, 12);
   assert.equal(alexBackup.progress, undefined);
+
+  const parsedAllPeople = parseAllPeopleBackup(contents);
+  assert.equal(parsedAllPeople.activePersonId, 'alex');
+  assert.deepEqual(parsedAllPeople.people.map(entry => entry.profile.name), ['Me', 'Alex']);
+  assert.equal(parsedAllPeople.people[0].backup.skills?.[0].ratings?.[0].note, 'Reflection for me-focus.');
+  assert.equal(parsedAllPeople.people[1].backup.personData?.skillRatingWindow, 12);
+
+  const duplicate = JSON.parse(contents);
+  duplicate.people[1].profile.id = 'me';
+  assert.throws(() => parseAllPeopleBackup(JSON.stringify(duplicate)), /duplicate profiles/);
 });
 
 test('all-people backup rejects duplicate profiles or a missing active profile', () => {

@@ -1,14 +1,34 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme } from '@/lib/appThemes';
-import { buildPersonCopy, readPersonSnapshot, repairPersonRoutineDurations } from '@/lib/personCopy';
+import {
+  buildPersonCopy, readPersonExportSnapshot, readPersonSnapshot, repairPersonRoutineDurations,
+} from '@/lib/personCopy';
 import { initialPeopleRegistry, parsePeopleRegistry, type PeopleRegistry } from '@/lib/peopleRegistry';
+import { createScheduleReminderService } from '@/lib/scheduleReminderService';
+import { persistScheduleChange, type RoutineSchedule } from '@/lib/schedules';
+import { futureScheduleAlerts } from '@/lib/scheduleAlerts';
 import { DEFAULT_SKILL_RATING_WINDOW } from '@/lib/skills';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
+import { mergePersonRestore, type PersonRestoreSnapshot } from '@/lib/personRestore';
+import type { AllPeopleBackup } from '@/lib/routineTransfer';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
+
+export type AllProfilesRestoreSummary = {
+  profilesAdded: number;
+  profilesMerged: number;
+  routinesAdded: number;
+  playlistsAdded: number;
+  skillsAdded: number;
+  ratingsAdded: number;
+  schedulesAdded: number;
+  progressAdded: number;
+  progressKept: number;
+  remindersLeftOff: number;
+};
 
 type PeopleContextValue = {
   people: Person[];
@@ -21,9 +41,24 @@ type PeopleContextValue = {
   switchPerson: (id: string) => Promise<void>;
   loadPerson: (id: string) => Promise<PersonSnapshot>;
   copyFromPerson: (sourceId: string, selection: PersonCopySelection) => Promise<PersonCopySummary>;
+  restoreAllProfiles: (backup: AllPeopleBackup, restoreHistory: boolean) => Promise<AllProfilesRestoreSummary>;
 };
 const PeopleContext = createContext<PeopleContextValue | null>(null);
 const colors = APP_THEMES[0].colors;
+
+function uniqueImportedName(name: string, usedNames: Set<string>) {
+  const key = (value: string) => value.toLocaleLowerCase();
+  if (!usedNames.has(key(name))) return name;
+  const suffix = ' (imported)';
+  const base = name.slice(0, 50 - suffix.length).trimEnd();
+  let candidate = `${base}${suffix}`;
+  let index = 2;
+  while (usedNames.has(key(candidate))) {
+    const numberedSuffix = ` (imported ${index++})`;
+    candidate = `${name.slice(0, 50 - numberedSuffix.length).trimEnd()}${numberedSuffix}`;
+  }
+  return candidate;
+}
 
 async function saveRegistry(registry: PeopleRegistry) {
   const serialized = JSON.stringify(registry);
@@ -246,12 +281,166 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     return result.summary;
   }), [runOperation]);
 
+  const restoreAllProfiles = useCallback((backup: AllPeopleBackup, restoreHistory: boolean) => runOperation(async () => {
+    const previous = current.current;
+    const allIds = [...new Set([
+      ...previous.people.map(person => person.id),
+      ...backup.people.map(entry => entry.profile.id),
+    ])];
+    await Promise.all(allIds.map(waitForPersonWrites));
+
+    const snapshots = new Map<string, PersonRestoreSnapshot>();
+    await Promise.all(allIds.map(async id => {
+      snapshots.set(id, await readPersonExportSnapshot(id));
+    }));
+
+    const usedNames = new Set(previous.people.map(person => person.name.toLocaleLowerCase()));
+    const addedProfileIds = new Set<string>();
+    const mergedProfiles = backup.people.map(entry => {
+      const local = previous.people.find(person => person.id === entry.profile.id);
+      const name = local ? local.name : uniqueImportedName(entry.profile.name, usedNames);
+      usedNames.add(name.toLocaleLowerCase());
+      const profile: Person = { ...entry.profile, name };
+      if (!local) addedProfileIds.add(profile.id);
+      if (!findAppTheme(entry.backup.personData?.selectedThemeId ?? '')) {
+        throw new Error(`The saved theme for ${profile.name} is not supported by this version.`);
+      }
+      const snapshot = snapshots.get(profile.id);
+      if (!snapshot) throw new Error(`The saved data for ${profile.name} could not be loaded.`);
+      return mergePersonRestore(snapshot, profile, entry, restoreHistory);
+    });
+
+    const mergedById = new Map(mergedProfiles.map(result => [result.profile.id, result.profile]));
+    const nextPeople = [
+      ...previous.people.map(person => mergedById.get(person.id) ?? person),
+      ...mergedProfiles.filter(result => addedProfileIds.has(result.profile.id)).map(result => result.profile),
+    ];
+    const expectedValues = new Map<string, string>();
+    for (const result of mergedProfiles) {
+      const { profile, snapshot } = result;
+      expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.routines), JSON.stringify(snapshot.routines));
+      expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.progress), JSON.stringify(snapshot.progress));
+      expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.playlists), JSON.stringify(snapshot.playlists));
+      expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.schedules), JSON.stringify(snapshot.schedules));
+      expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.skills), JSON.stringify(snapshot.skills));
+      expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.skillRatingWindow), String(snapshot.skillRatingWindow));
+      expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.appearance), snapshot.selectedThemeId);
+    }
+
+    try {
+      await AsyncStorage.multiSet([...expectedValues.entries()]);
+    } catch {
+      let confirmed;
+      try {
+        confirmed = await AsyncStorage.multiGet([...expectedValues.keys()]);
+      } catch {
+        throw new Error('The all-profiles restore could not be confirmed. Existing data was not removed; retry the same backup.');
+      }
+      const actual = new Map(confirmed);
+      if ([...expectedValues].some(([key, value]) => actual.get(key) !== value)) {
+        throw new Error('The all-profiles restore could not be confirmed. Existing data was not removed; retry the same backup.');
+      }
+    }
+
+    const next: PeopleRegistry = {
+      version: 1,
+      people: nextPeople,
+      activePersonId: backup.activePersonId,
+    };
+    await saveRegistry(next);
+
+    const schedulesToEnable = mergedProfiles.flatMap(result => result.schedulesToEnable);
+    const importedFutureAlerts = schedulesToEnable.reduce((total, schedule) => total + futureScheduleAlerts(schedule).length, 0);
+    const existingFutureAlerts = [...snapshots.values()]
+      .reduce((total, snapshot) => total + snapshot.schedules.reduce(
+        (count, schedule) => count + futureScheduleAlerts(schedule).length, 0,
+      ), 0);
+    let remindersLeftOff = 0;
+    if (Platform.OS === 'web') {
+      remindersLeftOff = schedulesToEnable.length;
+    } else if (Platform.OS === 'ios' && existingFutureAlerts + importedFutureAlerts > 60) {
+      remindersLeftOff = schedulesToEnable.length;
+    } else {
+      const schedulesByPerson = new Map(mergedProfiles.map(result => [
+        result.profile.id,
+        [...result.snapshot.schedules],
+      ]));
+      let reminderSetupBlocked = false;
+      for (const result of mergedProfiles) {
+        let personSchedules = schedulesByPerson.get(result.profile.id) ?? [];
+        const storage = createPersonStorage(result.profile.id);
+        for (const schedule of result.schedulesToEnable) {
+          if (!futureScheduleAlerts(schedule).length || reminderSetupBlocked) {
+            remindersLeftOff++;
+            continue;
+          }
+          try {
+            personSchedules = await persistScheduleChange(
+              storage,
+              PERSON_DATA_KEYS.schedules,
+              personSchedules,
+              { ...schedule, reminder: true },
+              schedule.id,
+              createScheduleReminderService(result.profile.id),
+            );
+            schedulesByPerson.set(result.profile.id, personSchedules);
+          } catch {
+            reminderSetupBlocked = true;
+            remindersLeftOff++;
+          }
+        }
+      }
+    }
+
+    const summary = mergedProfiles.reduce<AllProfilesRestoreSummary>((total, result) => ({
+      profilesAdded: total.profilesAdded + Number(addedProfileIds.has(result.profile.id)),
+      profilesMerged: total.profilesMerged + Number(!addedProfileIds.has(result.profile.id)),
+      routinesAdded: total.routinesAdded + result.counts.routinesAdded,
+      playlistsAdded: total.playlistsAdded + result.counts.playlistsAdded,
+      skillsAdded: total.skillsAdded + result.counts.skillsAdded,
+      ratingsAdded: total.ratingsAdded + result.counts.ratingsAdded,
+      schedulesAdded: total.schedulesAdded + result.counts.schedulesAdded,
+      progressAdded: total.progressAdded + result.counts.progressAdded,
+      progressKept: total.progressKept + result.counts.progressKept,
+      remindersLeftOff: total.remindersLeftOff,
+    }), {
+      profilesAdded: 0,
+      profilesMerged: 0,
+      routinesAdded: 0,
+      playlistsAdded: 0,
+      skillsAdded: 0,
+      ratingsAdded: 0,
+      schedulesAdded: 0,
+      progressAdded: 0,
+      progressKept: 0,
+      remindersLeftOff,
+    });
+
+    const noticeDetails = [
+      `${summary.profilesAdded} new ${summary.profilesAdded === 1 ? 'profile' : 'profiles'} added`,
+      `${summary.profilesMerged} matching ${summary.profilesMerged === 1 ? 'profile' : 'profiles'} merged`,
+      `${summary.routinesAdded} routines and ${summary.playlistsAdded} playlists added`,
+      `${summary.skillsAdded} skills and ${summary.ratingsAdded} ratings/reflections merged`,
+      `${summary.schedulesAdded} schedules added`,
+      restoreHistory ? `${summary.progressAdded} completed steps added` : 'Existing daily progress left unchanged',
+      summary.remindersLeftOff
+        ? `${summary.remindersLeftOff} imported schedule reminders left off`
+        : null,
+    ].filter(Boolean).join(' · ');
+    current.current = next;
+    setRegistry(next);
+    setRevision(value => value + 1);
+    setNotice(noticeDetails);
+    router.replace('/');
+    return summary;
+  }), [runOperation]);
+
   const activePerson = registry.people.find(person => person.id === registry.activePersonId)!;
   const canRepairDurations = repairPersonId !== null && /needs a valid duration|invalid legacy duration/.test(error);
   const value = useMemo(() => ({
     people: registry.people, activePerson, revision, busy, notice,
-    addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson,
-  }), [registry.people, activePerson, revision, busy, notice, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson]);
+    addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles,
+  }), [registry.people, activePerson, revision, busy, notice, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
 
   if (loading || error) {
     return <View style={styles.loading} testID="people-startup">

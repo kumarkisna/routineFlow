@@ -47,9 +47,9 @@ Full-person exports must include that person's routines, playlists, schedules, a
 
 All-profile backups should be one file containing a separate full backup for every local profile, preserving each person's own skill history and the active profile selection.
 
-**Why:** The user asked for a backup covering all profiles in one file after confirming that an active-profile-only export was insufficient.
+**Why:** The user asked for a backup covering all profiles in one file and for imports to keep past data intact.
 
-**How to apply:** Snapshot each person independently; do not merge routines, ratings, notes, or progress between profiles.
+**How to apply:** Snapshot each person independently. On restore, match by profile ID, add missing profiles, and merge matching profiles without deleting local records; remap related IDs, keep each person's ratings and notes with that profile, and restore the archive's active profile and settings. Recreate schedule alerts only when the platform and permissions allow; otherwise leave imported alerts off.
 
 Routine Flow intentionally has no backup email feature or per-person email settings. Backup files are generated locally for users to save or share.
 

@@ -28,8 +28,8 @@ import { remapRoutineSkillIds } from '@/lib/skills';
 import { remapPlaylistReferences } from '@/lib/playlists';
 import { readPersonExportSnapshot } from '@/lib/personCopy';
 import {
-  MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializeAllPeopleBackup, serializePersonBackup,
-  type RoutineBackup,
+  ALL_PEOPLE_FILE_FORMAT, MAX_ROUTINE_FILE_BYTES, parseAllPeopleBackup, parseRoutinesFile,
+  serializeAllPeopleBackup, serializePersonBackup, type AllPeopleBackup, type RoutineBackup,
 } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
 
@@ -39,7 +39,7 @@ function formatDate() {
 
 export default function HomeScreen() {
   const colors = useColors();
-  const { people, activePerson, busy: peopleBusy } = usePeople();
+  const { people, activePerson, busy: peopleBusy, restoreAllProfiles } = usePeople();
   const insets = useSafeAreaInsets();
   const {
     routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine,
@@ -66,6 +66,10 @@ export default function HomeScreen() {
   const transferLock = React.useRef(false);
   const [includeHistory, setIncludeHistory] = React.useState(false);
   const [pendingBackup, setPendingBackup] = React.useState<RoutineBackup | null>(null);
+  const [pendingAllProfilesBackup, setPendingAllProfilesBackup] = React.useState<AllPeopleBackup | null>(null);
+  const importPending = pendingBackup !== null || pendingAllProfilesBackup !== null;
+  const pendingAllHasProgress = pendingAllProfilesBackup?.people.some(({ backup }) =>
+    Object.values(backup.progress ?? {}).some(entries => Object.keys(entries).length > 0)) ?? false;
   const visibleRoutines = loading ? [] : routines.filter((routine) => !routine.hidden);
   const categories = listRoutineCategories(routines);
   const activeCategory = categoryFilter !== null && categoryFilter !== '' &&
@@ -87,7 +91,7 @@ export default function HomeScreen() {
 
   async function saveCategoryRename() {
     if (!selectedCategory || renameDraft === null || renameLock.current) return;
-    if (transferLock.current || visibilityLock.current || orderLock.current || pendingBackup || loading) {
+    if (transferLock.current || visibilityLock.current || orderLock.current || importPending || loading) {
       setRenameError('Wait for the current routine change to finish.');
       return;
     }
@@ -114,7 +118,7 @@ export default function HomeScreen() {
 
   async function confirmCategoryRemoval() {
     if (!pendingCategoryRemoval || renameLock.current) return;
-    if (transferLock.current || visibilityLock.current || orderLock.current || pendingBackup || loading) {
+    if (transferLock.current || visibilityLock.current || orderLock.current || importPending || loading) {
       setRenameError('Wait for the current routine change to finish.');
       return;
     }
@@ -151,7 +155,7 @@ export default function HomeScreen() {
   }
 
   async function changeOrder(index: number, direction: -1 | 1) {
-    if (orderLock.current || visibilityLock.current || transferLock.current || renameLock.current || pendingBackup) return;
+    if (orderLock.current || visibilityLock.current || transferLock.current || renameLock.current || importPending) return;
     const routine = displayedRoutines[index];
     const adjacent = displayedRoutines[index + direction];
     if (!routine || !adjacent) return;
@@ -349,7 +353,7 @@ export default function HomeScreen() {
   }
 
   async function importRoutinesFile() {
-    if (transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading || pendingBackup) return;
+    if (transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading || importPending) return;
     transferLock.current = true;
     setTransferBusy('import');
     setTransferStatus(null);
@@ -377,11 +381,24 @@ export default function HomeScreen() {
           throw new Error('Could not access that file. Save the JSON backup on this device and try selecting it again.');
         }
       }
-      const imported = parseRoutinesFile(contents);
-      if (imported.progress !== undefined) {
-        setPendingBackup(imported);
+      let format: unknown;
+      try {
+        const parsed: unknown = JSON.parse(contents);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          format = (parsed as { format?: unknown }).format;
+        }
+      } catch {
+        // The format-specific parser below returns the user-facing JSON error.
+      }
+      if (format === ALL_PEOPLE_FILE_FORMAT) {
+        setPendingAllProfilesBackup(parseAllPeopleBackup(contents));
       } else {
-        await applyImport(imported, false);
+        const imported = parseRoutinesFile(contents);
+        if (imported.progress !== undefined) {
+          setPendingBackup(imported);
+        } else {
+          await applyImport(imported, false);
+        }
       }
     } catch (error) {
       setTransferStatus({ message: error instanceof Error ? error.message : 'Could not import routines.', error: true });
@@ -429,7 +446,7 @@ export default function HomeScreen() {
   }
 
   async function confirmImport(restoreHistory: boolean) {
-    if (!pendingBackup || transferLock.current || orderLock.current || renameLock.current) return;
+    if (!pendingBackup || pendingAllProfilesBackup || transferLock.current || orderLock.current || renameLock.current) return;
     transferLock.current = true;
     setTransferBusy('import');
     setTransferStatus(null);
@@ -441,6 +458,29 @@ export default function HomeScreen() {
     } finally {
       transferLock.current = false;
       setTransferBusy(null);
+    }
+  }
+
+  async function confirmAllProfilesImport(restoreHistory: boolean) {
+    if (!pendingAllProfilesBackup || pendingBackup || transferLock.current || orderLock.current || renameLock.current || peopleBusy) return;
+    transferLock.current = true;
+    setTransferBusy('import');
+    setTransferStatus(null);
+    let restored = false;
+    try {
+      const result = await restoreAllProfiles(pendingAllProfilesBackup, restoreHistory);
+      restored = true;
+      if (result.profilesAdded || result.routinesAdded || result.progressAdded || result.playlistsAdded) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      setTransferStatus({
+        message: error instanceof Error ? error.message : 'Could not import the all-profiles backup.',
+        error: true,
+      });
+    } finally {
+      transferLock.current = false;
+      if (!restored) setTransferBusy(null);
     }
   }
 
@@ -506,7 +546,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={reordering ? 'Done reordering routines' : 'Reorder routines'}
                     testID="toggle-reorder-routines"
-                    disabled={orderBusy || transferBusy !== null || visibilityBusyId !== null || renameBusy || pendingBackup !== null}
+                    disabled={orderBusy || transferBusy !== null || visibilityBusyId !== null || renameBusy || importPending}
                     onPress={() => {
                       setReordering((current) => !current);
                       setOrderError('');
@@ -608,7 +648,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={`Rename category ${selectedCategory}`}
                     testID="rename-category"
-                    disabled={loading || renameBusy || transferBusy !== null || orderBusy || visibilityBusyId !== null || pendingBackup !== null}
+                    disabled={loading || renameBusy || transferBusy !== null || orderBusy || visibilityBusyId !== null || importPending}
                     onPress={() => { setRenameDraft(selectedCategory); setRenameError(''); }}
                     style={({ pressed }) => [styles.renameTrigger, pressed && styles.pressed]}
                   >
@@ -618,7 +658,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={`Remove category ${selectedCategory}`}
                     testID="remove-category"
-                    disabled={loading || renameBusy || transferBusy !== null || orderBusy || visibilityBusyId !== null || pendingBackup !== null}
+                    disabled={loading || renameBusy || transferBusy !== null || orderBusy || visibilityBusyId !== null || importPending}
                     onPress={() => { setPendingCategoryRemoval(selectedCategory); setRenameError(''); }}
                     style={({ pressed }) => [styles.renameTrigger, pressed && styles.pressed]}
                   >
@@ -649,7 +689,7 @@ export default function HomeScreen() {
                       <Pressable
                         accessibilityLabel="Cancel category rename"
                         testID="cancel-category-rename"
-                        disabled={renameBusy || transferBusy !== null || orderBusy || visibilityBusyId !== null || pendingBackup !== null}
+                        disabled={renameBusy || transferBusy !== null || orderBusy || visibilityBusyId !== null || importPending}
                         onPress={() => { setRenameDraft(null); setRenameError(''); }}
                         style={({ pressed }) => [styles.renameAction, pressed && styles.pressed]}
                       >
@@ -755,7 +795,7 @@ export default function HomeScreen() {
                 <Pressable
                   accessibilityLabel={`${item.hidden ? 'Show' : 'Hide'} ${item.title}`}
                   testID={`toggle-routine-visibility-${item.id}`}
-                   disabled={visibilityBusyId !== null || transferBusy !== null || renameBusy || pendingBackup !== null}
+                   disabled={visibilityBusyId !== null || transferBusy !== null || renameBusy || importPending}
                   onPress={() => void changeVisibility(item)}
                   style={({ pressed }) => [styles.visibilityButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -790,7 +830,7 @@ export default function HomeScreen() {
                 accessibilityState={{ checked: includeHistory }}
                 accessibilityLabel="Include daily progress in export"
                 testID="include-daily-progress"
-                disabled={transferBusy !== null || renameBusy || pendingBackup !== null}
+                disabled={transferBusy !== null || renameBusy || importPending}
                 onPress={() => setIncludeHistory((current) => !current)}
                 style={styles.historyOption}
               >
@@ -802,7 +842,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={`Save all data for ${activePerson.name} on this device`}
                     testID="save-person-data"
-                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || importPending}
                     onPress={() => void savePersonFileLocally()}
                     style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                   >
@@ -815,7 +855,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={`Export all data for ${activePerson.name}`}
                     testID="export-person-data"
-                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || importPending}
                     onPress={() => void exportPersonFile()}
                     style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                   >
@@ -828,7 +868,7 @@ export default function HomeScreen() {
                 <Pressable
                   accessibilityLabel="Import routines"
                   testID="import-routines"
-                  disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                  disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || importPending}
                   onPress={() => void importRoutinesFile()}
                   style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                 >
@@ -843,7 +883,7 @@ export default function HomeScreen() {
                   <Pressable
                     accessibilityLabel={`Share all data for ${activePerson.name}`}
                     testID="export-person-data"
-                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                    disabled={loading || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || importPending}
                     onPress={() => void exportPersonFile()}
                     style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                   >
@@ -857,7 +897,7 @@ export default function HomeScreen() {
               <View style={[styles.allProfilesSection, { borderTopColor: colors.border }]}>
                 <Text style={[styles.transferTitle, { color: colors.foreground }]}>Back up all profiles</Text>
                 <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
-                  Export every profile saved on this device in one JSON file. Each profile keeps its own routines, playlists, schedules, skills, ratings, preferences, and theme. Daily progress follows the checkbox above. Import JSON still handles a single profile at a time.
+                  Export every profile saved on this device in one JSON file. Each profile keeps its own routines, playlists, schedules, skills, ratings, preferences, and theme. Daily progress follows the checkbox above. Import JSON can restore this archive without removing local history.
                 </Text>
                 <View style={styles.transferActions}>
                   {Platform.OS === 'android' ? (
@@ -865,7 +905,7 @@ export default function HomeScreen() {
                       accessibilityRole="button"
                       accessibilityLabel="Save backup for all profiles on this device"
                       testID="save-all-people-data"
-                      disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                      disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || importPending}
                       onPress={() => void saveAllPeopleFileLocally()}
                       style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                     >
@@ -879,7 +919,7 @@ export default function HomeScreen() {
                       accessibilityRole="button"
                       accessibilityLabel="Export backup for all profiles"
                       testID="export-all-people-data"
-                      disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                      disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || importPending}
                       onPress={() => void exportAllPeopleFile()}
                       style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                     >
@@ -894,7 +934,7 @@ export default function HomeScreen() {
                       accessibilityRole="button"
                       accessibilityLabel="Share backup for all profiles"
                       testID="share-all-people-data"
-                      disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || pendingBackup !== null}
+                      disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || importPending}
                       onPress={() => void exportAllPeopleFile()}
                       style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
                     >
@@ -942,6 +982,66 @@ export default function HomeScreen() {
                     accessibilityLabel="Cancel import"
                     disabled={transferBusy !== null}
                     onPress={() => { setPendingBackup(null); setTransferStatus(null); }}
+                    style={styles.cancelImport}
+                  >
+                    <Text style={[styles.transferButtonText, { color: colors.mutedForeground }]}>Cancel import</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {pendingAllProfilesBackup ? (
+                <View style={[styles.importChoice, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.historyLabel, { color: colors.foreground }]}>
+                    Restore {pendingAllProfilesBackup.people.length} profiles?
+                  </Text>
+                  <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                    {pendingAllProfilesBackup.people.filter(entry => !people.some(person => person.id === entry.profile.id)).length} profiles will be added; matching profile IDs will be merged. Existing routines, playlists, skills, ratings, reflections, schedules, and progress are kept. Backup settings, themes, rolling-average windows, and the active profile are restored.
+                  </Text>
+                  <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                    Phone reminders are recreated when permissions allow. Web imports leave phone reminders off.
+                  </Text>
+                  <View style={styles.transferActions}>
+                    {pendingAllHasProgress ? (
+                      <>
+                        <Pressable
+                          accessibilityRole="button"
+                          testID="import-all-with-progress"
+                          accessibilityLabel="Import all profiles and merge daily progress"
+                          disabled={transferBusy !== null || peopleBusy}
+                          onPress={() => void confirmAllProfilesImport(true)}
+                          style={[styles.transferButton, { borderColor: colors.primary }]}
+                        >
+                          <Text style={[styles.transferButtonText, { color: colors.primary }]}>Include progress</Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          testID="import-all-without-progress"
+                          accessibilityLabel="Import all profiles without daily progress"
+                          disabled={transferBusy !== null || peopleBusy}
+                          onPress={() => void confirmAllProfilesImport(false)}
+                          style={[styles.transferButton, { borderColor: colors.border }]}
+                        >
+                          <Text style={[styles.transferButtonText, { color: colors.foreground }]}>Skip progress</Text>
+                        </Pressable>
+                      </>
+                    ) : (
+                      <Pressable
+                        accessibilityRole="button"
+                        testID="import-all-profiles"
+                        accessibilityLabel="Import all profiles"
+                        disabled={transferBusy !== null || peopleBusy}
+                        onPress={() => void confirmAllProfilesImport(false)}
+                        style={[styles.transferButton, { borderColor: colors.primary }]}
+                      >
+                        <Text style={[styles.transferButtonText, { color: colors.primary }]}>Import all profiles</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                  <Pressable
+                    testID="cancel-all-profiles-import"
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel all-profiles import"
+                    disabled={transferBusy !== null}
+                    onPress={() => { setPendingAllProfilesBackup(null); setTransferStatus(null); }}
                     style={styles.cancelImport}
                   >
                     <Text style={[styles.transferButtonText, { color: colors.mutedForeground }]}>Cancel import</Text>

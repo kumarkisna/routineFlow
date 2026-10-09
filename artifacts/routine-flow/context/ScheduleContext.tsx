@@ -6,8 +6,8 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { playablePlaylistIds } from '@/lib/playlists';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { createPersonStorage } from '@/lib/personStorage';
-import { Notifications } from '@/lib/localNotifications';
-import { alertDate, futureScheduleAlerts, scheduleAlertContent, scheduleAlertOffsets, validateAlertOffsets } from '@/lib/scheduleAlerts';
+import { alertDate, futureScheduleAlerts, scheduleAlertOffsets, validateAlertOffsets } from '@/lib/scheduleAlerts';
+import { createScheduleReminderService } from '@/lib/scheduleReminderService';
 import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, parseSchedules, persistScheduleChange,
   scheduledPlaylistSource, type RoutineSchedule, type ScheduleTargetType } from '@/lib/schedules';
 import type { RoutineNotificationSettings } from '@/types/routines';
@@ -30,34 +30,10 @@ type ScheduleContextValue = {
 };
 const ScheduleContext = createContext<ScheduleContextValue | null>(null);
 
-function createReminderService(personId: string) {
-  return {
-    create: async (schedule: RoutineSchedule, offsetMinutes = 0): Promise<string> => {
-      if (Platform.OS === 'web') throw new Error('Phone reminders are unavailable in the web preview. Turn off the reminder to save.');
-      let permission = await Notifications.getPermissionsAsync();
-      if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
-      if (!permission.granted) throw new Error('Enable notifications in your phone settings, or turn off the reminder to save.');
-      const notificationAt = alertDate(schedule, offsetMinutes);
-      if (!Number.isFinite(notificationAt.getTime()) || notificationAt.getTime() <= Date.now()) {
-        throw new Error('An alert time has passed. Choose a later date or a shorter lead time.');
-      }
-      const alertContent = scheduleAlertContent(schedule, offsetMinutes);
-      return Notifications.scheduleNotificationAsync({
-        ...(schedule.notificationId ? { identifier: schedule.notificationId } : {}),
-        content: { ...alertContent, data: { ...alertContent.data, personId } },
-        trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: notificationAt },
-      });
-    },
-    cancel: async (id: string) => {
-      if (Platform.OS !== 'web') await Notifications.cancelScheduledNotificationAsync(id);
-    },
-  };
-}
-
 export function ScheduleProvider({ children }: { children: React.ReactNode }) {
   const { activePerson, people } = usePeople();
   const AsyncStorage = usePersonStorage();
-  const reminderService = useMemo(() => createReminderService(activePerson.id), [activePerson.id]);
+  const reminderService = useMemo(() => createScheduleReminderService(activePerson.id), [activePerson.id]);
   const { routines, loading: routinesLoading } = useRoutines();
   const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
   const [schedules, setSchedules] = useState<RoutineSchedule[]>([]);

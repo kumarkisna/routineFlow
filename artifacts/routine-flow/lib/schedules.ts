@@ -163,6 +163,81 @@ export function parseSchedules(value: string): RoutineSchedule[] {
   return parsed;
 }
 
+export function mergeImportedSchedules(
+  existing: RoutineSchedule[],
+  imported: RoutineSchedule[],
+  routineIdMap: Record<string, string>,
+  playlistIdMap: Record<string, string>,
+  skillIdMap: Record<string, string>,
+  createId: (usedIds: Set<string>) => string = (usedIds) => {
+    let id: string;
+    do { id = `schedule-import-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`; }
+    while (usedIds.has(id));
+    return id;
+  },
+): { schedules: RoutineSchedule[]; added: RoutineSchedule[]; skipped: number; renamed: number } {
+  const schedules = [...existing];
+  const usedIds = new Set(schedules.map(schedule => schedule.id));
+  const signature = (schedule: RoutineSchedule) => JSON.stringify([
+    schedule.targetType,
+    schedule.targetId,
+    schedule.scheduledAt,
+    schedule.playlistOverride ? [
+      schedule.playlistOverride.title,
+      schedule.playlistOverride.routineIds,
+      schedule.playlistOverride.skillIds ?? [],
+    ] : null,
+  ]);
+  const signatures = new Set(schedules.map(signature));
+  const added: RoutineSchedule[] = [];
+  let skipped = 0;
+  let renamed = 0;
+
+  for (const incoming of imported) {
+    const targetId = incoming.targetType === 'routine'
+      ? routineIdMap[incoming.targetId] ?? incoming.targetId
+      : playlistIdMap[incoming.targetId] ?? incoming.targetId;
+    const remapped: RoutineSchedule = {
+      ...incoming,
+      targetId,
+      notificationId: undefined,
+      notifications: undefined,
+      ...(incoming.playlistOverride ? {
+        playlistOverride: {
+          ...incoming.playlistOverride,
+          routineIds: incoming.playlistOverride.routineIds.map(id => routineIdMap[id] ?? id),
+          ...(incoming.playlistOverride.skillIds ? {
+            skillIds: incoming.playlistOverride.skillIds.map(id => skillIdMap[id] ?? id),
+          } : {}),
+        },
+      } : {}),
+    };
+    const contentKey = signature(remapped);
+    if (signatures.has(contentKey)) {
+      skipped++;
+      continue;
+    }
+
+    let id = remapped.id;
+    if (usedIds.has(id)) {
+      id = createId(usedIds);
+      while (!id || usedIds.has(id)) id = createId(usedIds);
+      renamed++;
+    }
+    usedIds.add(id);
+    signatures.add(contentKey);
+    const staged = {
+      ...remapped,
+      id,
+      reminder: false,
+    };
+    schedules.push(staged);
+    added.push({ ...staged, reminder: incoming.reminder });
+  }
+
+  return { schedules, added, skipped, renamed };
+}
+
 type ScheduleStorage = { getItem: (key: string) => Promise<string | null>; setItem: (key: string, value: string) => Promise<void> };
 type ReminderService = {
   create: (schedule: RoutineSchedule, offsetMinutes?: number) => Promise<string>;

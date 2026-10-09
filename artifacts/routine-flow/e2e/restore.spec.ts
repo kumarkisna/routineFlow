@@ -220,6 +220,215 @@ test('all-profiles export keeps each profile and its skill history together', as
   expect(alexBackup.progress[day]['travel-reset:unpack']).toBe(true);
 });
 
+test('all-profiles import adds profiles and merges saved history without replacing local records', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const day = new Date().toISOString().slice(0, 10);
+  const localProfile = {
+    id: 'me',
+    name: 'Me',
+    defaultRateSkillsAtPlaylistEnd: true,
+    defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+  };
+  const incomingRoutine = {
+    ...original,
+    skillIds: ['backup-focus'],
+    steps: [{ ...original.steps[0], skillIds: ['backup-focus'] }],
+  };
+  const incomingSkill = {
+    id: 'backup-focus',
+    name: 'Focus',
+    ratings: [{
+      id: 'backup-focus-rating',
+      rating: 8,
+      ratedAt: `${day}T12:00:00.000Z`,
+      routineTitle: 'Morning Reset',
+      note: 'Backup reflection stays with this profile.',
+    }],
+  };
+  const localStorageSeed = {
+    '@routine-flow/people': {
+      version: 1,
+      activePersonId: 'me',
+      people: [localProfile],
+    },
+    '@routine-flow/routines': [customized],
+    '@routine-flow/progress': { [day]: { 'morning-reset:morning-water': true } },
+    '@routine-flow/playlists': [],
+    '@routine-flow/schedules': [],
+    '@routine-flow/skills': [{
+      id: 'local-focus',
+      name: 'Focus',
+      ratings: [{
+        id: 'local-focus-rating',
+        rating: 4,
+        ratedAt: `${day}T09:00:00.000Z`,
+        routineTitle: 'My own reset',
+        note: 'Local reflection stays intact.',
+      }],
+    }],
+    '@routine-flow/skill-rating-window': '3',
+    '@routine-flow/appearance': 'routine-flow',
+  };
+  const allPeopleBackup = JSON.stringify({
+    format: 'routine-flow-all-people',
+    version: 1,
+    activePersonId: 'alex',
+    people: [
+      {
+        profile: {
+          ...localProfile,
+          defaultRateSkillsAtPlaylistEnd: false,
+          defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
+        },
+        backup: {
+          format: 'routine-flow-routines',
+          version: 7,
+          exportedAt: new Date().toISOString(),
+          routines: [incomingRoutine],
+          skills: [incomingSkill],
+          progress: { [day]: { 'morning-reset:morning-water': true } },
+          personData: {
+            playlists: [{
+              id: 'morning-list',
+              title: 'Morning list',
+              routineIds: ['morning-reset'],
+              skillIds: ['backup-focus'],
+              rateSkillsAtPlaylistEnd: true,
+              reminderSettings: { stepCompletion: false, routineCompletion: false },
+            }],
+            schedules: [],
+            selectedThemeId: 'routine-flow',
+            skillRatingWindow: 7,
+          },
+        },
+      },
+      {
+        profile: {
+          id: 'alex',
+          name: 'Alex',
+          defaultRateSkillsAtPlaylistEnd: true,
+          defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
+        },
+        backup: {
+          format: 'routine-flow-routines',
+          version: 7,
+          exportedAt: new Date().toISOString(),
+          routines: [second],
+          skills: [{
+            id: 'alex-calm',
+            name: 'Calm',
+            ratings: [{
+              id: 'alex-calm-rating',
+              rating: 9,
+              ratedAt: `${day}T10:00:00.000Z`,
+              routineTitle: 'Travel Reset',
+              note: 'Pause before the next step.',
+            }],
+          }],
+          progress: { [day]: { 'travel-reset:unpack': true } },
+          personData: {
+            playlists: [{
+              id: 'travel-list',
+              title: 'Travel list',
+              routineIds: ['travel-reset'],
+              skillIds: ['alex-calm'],
+              rateSkillsAtPlaylistEnd: true,
+              reminderSettings: { stepCompletion: true, routineCompletion: false },
+            }],
+            schedules: [{
+              id: 'travel-schedule',
+              targetType: 'routine',
+              targetId: 'travel-reset',
+              targetTitle: 'Travel Reset',
+              scheduledAt: '2090-06-01T10:00:00.000Z',
+              reminder: true,
+              alertOffsetsMinutes: [0],
+              notificationId: 'old-device-notification',
+              notifications: [{ id: 'old-device-notification', offsetMinutes: 0 }],
+            }],
+            selectedThemeId: 'routine-flow',
+            skillRatingWindow: 12,
+          },
+        },
+      },
+    ],
+  });
+  await page.addInitScript(seed => {
+    if (localStorage.getItem('@routine-flow/people') === null) {
+      for (const [key, value] of Object.entries(seed)) {
+        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+      }
+    }
+  }, localStorageSeed);
+
+  await page.goto('/');
+  await expect(page.getByLabel('Open My own reset')).toBeVisible();
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('import-routines').click();
+  await (await chooserPromise).setFiles({
+    name: 'routine-flow-all-profiles.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(allPeopleBackup),
+  });
+  await expect(page.getByText('Restore 2 profiles?')).toBeVisible();
+  await page.getByTestId('import-all-with-progress').click();
+  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
+  await expect(page.getByLabel('Open Travel Reset')).toBeVisible();
+
+  const restored = await page.evaluate(() => ({
+    registry: JSON.parse(localStorage.getItem('@routine-flow/people') ?? 'null'),
+    meRoutines: JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]'),
+    meProgress: JSON.parse(localStorage.getItem('@routine-flow/progress') ?? '{}'),
+    meSkills: JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]'),
+    mePlaylists: JSON.parse(localStorage.getItem('@routine-flow/playlists') ?? '[]'),
+    meWindow: localStorage.getItem('@routine-flow/skill-rating-window'),
+    alexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines') ?? '[]'),
+    alexProgress: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/progress') ?? '{}'),
+    alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
+    alexPlaylists: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/playlists') ?? '[]'),
+    alexSchedules: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/schedules') ?? '[]'),
+    alexWindow: localStorage.getItem('@routine-flow/person/alex/@routine-flow/skill-rating-window'),
+  }));
+
+  expect(restored.registry.activePersonId).toBe('alex');
+  expect(restored.registry.people).toHaveLength(2);
+  expect(restored.registry.people.find((person: { id: string }) => person.id === 'me')).toMatchObject({
+    defaultRateSkillsAtPlaylistEnd: false,
+    defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
+  });
+  const localAndImported = restored.meRoutines as Array<{
+    id: string;
+    title: string;
+    steps: Array<{ skillIds?: string[] }>;
+  }>;
+  expect(localAndImported.find(routine => routine.title === customized.title)).toEqual(customized);
+  const mergedRoutine = localAndImported.find(routine => routine.title === original.title)!;
+  expect(mergedRoutine.id).not.toBe(original.id);
+  expect(mergedRoutine.steps[0].skillIds).toEqual(['local-focus']);
+  expect(restored.meProgress[day]['morning-reset:morning-water']).toBe(true);
+  expect(restored.meProgress[day][`${mergedRoutine.id}:morning-water`]).toBe(true);
+  expect(restored.meSkills).toHaveLength(1);
+  expect(restored.meSkills[0].ratings.map((rating: { note: string }) => rating.note)).toEqual([
+    'Local reflection stays intact.',
+    'Backup reflection stays with this profile.',
+  ]);
+  expect(restored.mePlaylists[0].routineIds).toEqual([mergedRoutine.id]);
+  expect(restored.mePlaylists[0].skillIds).toEqual(['local-focus']);
+  expect(restored.meWindow).toBe('7');
+  expect(restored.alexRoutines.map((routine: { id: string }) => routine.id)).toEqual(['travel-reset']);
+  expect(restored.alexProgress[day]['travel-reset:unpack']).toBe(true);
+  expect(restored.alexSkills[0].ratings[0].note).toBe('Pause before the next step.');
+  expect(restored.alexPlaylists[0].title).toBe('Travel list');
+  expect(restored.alexWindow).toBe('12');
+  expect(restored.alexSchedules).toHaveLength(1);
+  expect(restored.alexSchedules[0]).toMatchObject({
+    targetId: 'travel-reset',
+    reminder: false,
+  });
+  expect(restored.alexSchedules[0].notificationId).toBeUndefined();
+  expect(restored.alexSchedules[0].notifications).toBeUndefined();
+});
+
 async function importBackup(page: Page, contents: string, includeProgress: boolean) {
   const chooserPromise = page.waitForEvent('filechooser');
   await page.getByTestId('import-routines').click();
