@@ -45,7 +45,6 @@ for (const [label, includeProgress] of [
 ] as const) {
   test(`restoring daily progress ${label} survives a reload`, async ({ page }) => {
     if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
-
     const day = new Date().toISOString().slice(0, 10);
     const backup = JSON.stringify({
       format: 'routine-flow-routines',
@@ -428,6 +427,202 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.alexSchedules[0].notificationId).toBeUndefined();
   expect(restored.alexSchedules[0].notifications).toBeUndefined();
 });
+
+test('cancelling an all-profiles import leaves every profile and reminder unchanged', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const day = new Date().toISOString().slice(0, 10);
+  type TestProfile = {
+    id: string;
+    name: string;
+    defaultRateSkillsAtPlaylistEnd: boolean;
+    defaultPlaylistReminderSettings: { stepCompletion: boolean; routineCompletion: boolean };
+  };
+  const me: TestProfile = {
+    id: 'me',
+    name: 'Me',
+    defaultRateSkillsAtPlaylistEnd: true,
+    defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+  };
+  const alex: TestProfile = {
+    id: 'alex',
+    name: 'Alex',
+    defaultRateSkillsAtPlaylistEnd: false,
+    defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: false },
+  };
+  const taylor: TestProfile = {
+    id: 'taylor',
+    name: 'Taylor',
+    defaultRateSkillsAtPlaylistEnd: true,
+    defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+  };
+  const makeSchedule = (id: string, targetId: string, targetTitle: string, notificationId: string) => ({
+    id,
+    targetType: 'routine',
+    targetId,
+    targetTitle,
+    scheduledAt: '2090-06-01T10:00:00.000Z',
+    reminder: true,
+    alertOffsetsMinutes: [0],
+    notificationId,
+    notifications: [{ id: notificationId, offsetMinutes: 0 }],
+  });
+  const localSchedules = [
+    makeSchedule('me-schedule', 'morning-reset', 'My own reset', 'me-existing-native-reminder'),
+    makeSchedule('alex-schedule', 'travel-reset', 'Travel Reset', 'alex-existing-native-reminder'),
+  ];
+  const storageSeed: Record<string, unknown> = {
+    '@routine-flow/people': { version: 1, activePersonId: 'alex', people: [me, alex] },
+    '@routine-flow/routines': [customized],
+    '@routine-flow/progress': { [day]: { 'morning-reset:morning-water': false } },
+    '@routine-flow/playlists': [{
+      id: 'me-local-playlist',
+      title: 'Me local playlist',
+      routineIds: ['morning-reset'],
+      skillIds: ['me-local-skill'],
+      rateSkillsAtPlaylistEnd: false,
+      reminderSettings: { stepCompletion: false, routineCompletion: true },
+    }],
+    '@routine-flow/schedules': [localSchedules[0]],
+    '@routine-flow/skills': [{
+      id: 'me-local-skill',
+      name: 'Me local skill',
+      ratings: [{
+        id: 'me-local-rating',
+        rating: 4,
+        ratedAt: `${day}T08:00:00.000Z`,
+        routineTitle: 'My own reset',
+        note: 'Me local reflection.',
+      }],
+    }],
+    '@routine-flow/skill-rating-window': '3',
+    '@routine-flow/appearance': 'routine-flow',
+    '@routine-flow/person/alex/@routine-flow/routines': [second],
+    '@routine-flow/person/alex/@routine-flow/progress': { [day]: { 'travel-reset:unpack': true } },
+    '@routine-flow/person/alex/@routine-flow/playlists': [{
+      id: 'alex-local-playlist',
+      title: 'Alex local playlist',
+      routineIds: ['travel-reset'],
+      skillIds: ['alex-local-skill'],
+      rateSkillsAtPlaylistEnd: true,
+      reminderSettings: { stepCompletion: true, routineCompletion: false },
+    }],
+    '@routine-flow/person/alex/@routine-flow/schedules': [localSchedules[1]],
+    '@routine-flow/person/alex/@routine-flow/skills': [{
+      id: 'alex-local-skill',
+      name: 'Alex local skill',
+      ratings: [{
+        id: 'alex-local-rating',
+        rating: 9,
+        ratedAt: `${day}T09:00:00.000Z`,
+        routineTitle: 'Travel Reset',
+        note: 'Alex local reflection.',
+      }],
+    }],
+    '@routine-flow/person/alex/@routine-flow/skill-rating-window': '12',
+    '@routine-flow/person/alex/@routine-flow/appearance': 'routine-flow',
+  };
+  const makeBackupEntry = (profile: TestProfile, routine: typeof original, skillId: string) => ({
+    profile: {
+      ...profile,
+      defaultRateSkillsAtPlaylistEnd: !profile.defaultRateSkillsAtPlaylistEnd,
+      defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
+    },
+    backup: {
+      format: 'routine-flow-routines',
+      version: 7,
+      exportedAt: new Date().toISOString(),
+      routines: [routine],
+      skills: [{
+        id: skillId,
+        name: `${profile.name} backup skill`,
+        ratings: [{
+          id: `${skillId}-rating`,
+          rating: 7,
+          ratedAt: `${day}T12:00:00.000Z`,
+          routineTitle: routine.title,
+          note: `${profile.name} backup reflection.`,
+        }],
+      }],
+      progress: { [day]: { [`${routine.id}:${routine.steps[0].id}`]: true } },
+      personData: {
+        playlists: [{
+          id: `${profile.id}-backup-playlist`,
+          title: `${profile.name} backup playlist`,
+          routineIds: [routine.id],
+          skillIds: [skillId],
+          rateSkillsAtPlaylistEnd: false,
+          reminderSettings: { stepCompletion: false, routineCompletion: true },
+        }],
+        schedules: [makeSchedule(
+          `${profile.id}-backup-schedule`, routine.id, routine.title, `${profile.id}-backup-native-reminder`,
+        )],
+        selectedThemeId: 'routine-flow',
+        skillRatingWindow: 15,
+      },
+    },
+  });
+  const taylorRoutine = { ...second, id: 'taylor-routine', title: 'Taylor routine' };
+  const allProfilesBackup = JSON.stringify({
+    format: 'routine-flow-all-people',
+    version: 1,
+    activePersonId: 'taylor',
+    people: [
+      makeBackupEntry(me, original, 'me-backup-skill'),
+      makeBackupEntry(alex, second, 'alex-backup-skill'),
+      makeBackupEntry(taylor, taylorRoutine, 'taylor-backup-skill'),
+    ],
+  });
+
+  await page.addInitScript(seed => {
+    if (localStorage.getItem('@routine-flow/people') === null) {
+      for (const [key, value] of Object.entries(seed)) {
+        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+      }
+    }
+  }, storageSeed);
+  await page.goto('/');
+  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
+  await expect(page.getByLabel('Open Travel Reset')).toBeVisible();
+  const before = await storedRoutineFlowData(page);
+
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('import-routines').click();
+  await (await chooserPromise).setFiles({
+    name: 'routine-flow-all-profiles-to-cancel.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(allProfilesBackup),
+  });
+  await expect(page.getByText('Restore 3 profiles?')).toBeVisible();
+  await page.getByTestId('cancel-all-profiles-import').click();
+  await expect(page.getByText('Restore 3 profiles?')).toHaveCount(0);
+  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
+  await expect(page.getByLabel('Open Travel Reset')).toBeVisible();
+
+  const afterCancel = await storedRoutineFlowData(page);
+  expect(afterCancel).toEqual(before);
+  expect(JSON.parse(afterCancel['@routine-flow/person/alex/@routine-flow/schedules']!))
+    .toEqual([localSchedules[1]]);
+  expect(JSON.stringify(afterCancel)).not.toContain('taylor');
+  expect(JSON.stringify(afterCancel)).not.toContain('backup-native-reminder');
+
+  await page.reload();
+  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
+  await expect(page.getByLabel('Open Travel Reset')).toBeVisible();
+  const afterReload = await storedRoutineFlowData(page);
+  expect(afterReload).toEqual(before);
+  const registry = JSON.parse(afterReload['@routine-flow/people']!);
+  expect(registry.activePersonId).toBe('alex');
+  expect(registry.people.map((person: { id: string }) => person.id)).toEqual(['me', 'alex']);
+  expect(JSON.parse(afterReload['@routine-flow/schedules']!)).toEqual([localSchedules[0]]);
+});
+
+async function storedRoutineFlowData(page: Page) {
+  return page.evaluate(() => Object.fromEntries(
+    Object.entries(localStorage)
+      .filter(([key]) => key.startsWith('@routine-flow/'))
+      .sort(([left], [right]) => left.localeCompare(right)),
+  ));
+}
 
 async function importBackup(page: Page, contents: string, includeProgress: boolean) {
   const chooserPromise = page.waitForEvent('filechooser');
