@@ -27,7 +27,10 @@ import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/r
 import { remapRoutineSkillIds } from '@/lib/skills';
 import { remapPlaylistReferences } from '@/lib/playlists';
 import { readPersonExportSnapshot } from '@/lib/personCopy';
-import { MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializePersonBackup, type RoutineBackup } from '@/lib/routineTransfer';
+import {
+  MAX_ROUTINE_FILE_BYTES, parseRoutinesFile, serializeAllPeopleBackup, serializePersonBackup,
+  type RoutineBackup,
+} from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
 
 function formatDate() {
@@ -36,7 +39,7 @@ function formatDate() {
 
 export default function HomeScreen() {
   const colors = useColors();
-  const { activePerson } = usePeople();
+  const { people, activePerson, busy: peopleBusy } = usePeople();
   const insets = useSafeAreaInsets();
   const {
     routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine,
@@ -58,7 +61,7 @@ export default function HomeScreen() {
   const [visibilityBusyId, setVisibilityBusyId] = React.useState<string | null>(null);
   const [visibilityError, setVisibilityError] = React.useState('');
   const visibilityLock = React.useRef(false);
-  const [transferBusy, setTransferBusy] = React.useState<'export' | 'import' | null>(null);
+  const [transferBusy, setTransferBusy] = React.useState<'export' | 'export-all' | 'import' | null>(null);
   const [transferStatus, setTransferStatus] = React.useState<{ message: string; error: boolean } | null>(null);
   const transferLock = React.useRef(false);
   const [includeHistory, setIncludeHistory] = React.useState(false);
@@ -186,6 +189,35 @@ export default function HomeScreen() {
     return { filename, personData, contents };
   }
 
+  async function buildAllPeopleBackupFile(includeProgress = includeHistory) {
+    if (!people.length) throw new Error('No profiles are available to export.');
+    const filename = `routine-flow-all-profiles-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const entries = await Promise.all(people.map(async person => {
+      const snapshot = await readPersonExportSnapshot(person.id);
+      return {
+        person,
+        routines: snapshot.routines,
+        personData: {
+          playlists: snapshot.playlists,
+          schedules: snapshot.schedules,
+          selectedThemeId: snapshot.selectedThemeId,
+          skills: snapshot.skills,
+          skillRatingWindow: snapshot.skillRatingWindow,
+        },
+        ...(includeProgress ? { progress: snapshot.progress } : {}),
+      };
+    }));
+    const contents = serializeAllPeopleBackup(activePerson.id, entries);
+    if (new Blob([contents]).size > MAX_ROUTINE_FILE_BYTES) {
+      throw new Error('This all-profiles backup exceeds 5 MB. Try omitting daily progress or reducing the saved data.');
+    }
+    return {
+      filename,
+      profileCount: entries.length,
+      contents,
+    };
+  }
+
   async function exportPersonFile() {
     if (transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading) return;
     transferLock.current = true;
@@ -222,6 +254,43 @@ export default function HomeScreen() {
     }
   }
 
+  async function exportAllPeopleFile() {
+    if (transferLock.current || visibilityLock.current || orderLock.current || renameLock.current
+      || loading || peopleBusy) return;
+    transferLock.current = true;
+    setTransferBusy('export-all');
+    setTransferStatus(null);
+    try {
+      const { filename, profileCount, contents } = await buildAllPeopleBackupFile();
+      if (Platform.OS === 'web') {
+        const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      } else {
+        if (!await Sharing.isAvailableAsync() || !FileSystem.cacheDirectory) {
+          throw new Error('File sharing is unavailable on this device.');
+        }
+        const uri = `${FileSystem.cacheDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(uri, contents, { encoding: FileSystem.EncodingType.UTF8 });
+        await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export all profiles backup' });
+      }
+      setTransferStatus({
+        message: `All-profiles backup ready: ${profileCount} profiles, including their routines, playlists, schedules, skills, ratings, and settings${includeHistory ? ' with daily progress' : ''}.`,
+        error: false,
+      });
+    } catch (error) {
+      setTransferStatus({ message: error instanceof Error ? error.message : 'Could not export all profiles.', error: true });
+    } finally {
+      transferLock.current = false;
+      setTransferBusy(null);
+    }
+  }
+
   async function savePersonFileLocally() {
     if (Platform.OS !== 'android' || transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading) return;
     transferLock.current = true;
@@ -244,6 +313,35 @@ export default function HomeScreen() {
       });
     } catch (error) {
       setTransferStatus({ message: error instanceof Error ? error.message : 'Could not save the backup to this device.', error: true });
+    } finally {
+      transferLock.current = false;
+      setTransferBusy(null);
+    }
+  }
+
+  async function saveAllPeopleFileLocally() {
+    if (Platform.OS !== 'android' || transferLock.current || visibilityLock.current || orderLock.current
+      || renameLock.current || loading || peopleBusy) return;
+    transferLock.current = true;
+    setTransferBusy('export-all');
+    setTransferStatus(null);
+    try {
+      const { filename, profileCount, contents } = await buildAllPeopleBackupFile();
+      let directory: Directory;
+      try {
+        directory = await Directory.pickDirectoryAsync();
+      } catch (error) {
+        if (error instanceof Error && error.message.toLowerCase().includes('file picker was cancelled')) return;
+        throw error;
+      }
+      const backupFile = directory.createFile(filename, 'application/json');
+      backupFile.write(contents);
+      setTransferStatus({
+        message: `All-profiles backup saved to the selected folder: ${profileCount} profiles${includeHistory ? ' with daily progress' : ''}.`,
+        error: false,
+      });
+    } catch (error) {
+      setTransferStatus({ message: error instanceof Error ? error.message : 'Could not save the all-profiles backup.', error: true });
     } finally {
       transferLock.current = false;
       setTransferBusy(null);

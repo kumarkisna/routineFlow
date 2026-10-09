@@ -4,10 +4,13 @@ import { detachedHistoryId, progressRoutineIds, splitProgressKey } from '@/lib/h
 import { parsePlaylists, type RoutinePlaylist } from './playlists';
 import { parseSchedules, type RoutineSchedule } from './schedules';
 import { parseSkillRatingWindow, parseSkills, type RoutineSkill } from './skills';
+import type { Person } from '@/types/people';
 
 export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
+const ALL_PEOPLE_FILE_FORMAT = 'routine-flow-all-people';
 export const ROUTINE_BACKUP_VERSION = 7;
+export const ALL_PEOPLE_BACKUP_VERSION = 1;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
 
 export type PersonBackupData = {
@@ -22,6 +25,12 @@ export type RoutineBackup = {
   progress?: CompletionMap;
   personData?: Omit<PersonBackupData, 'skills'>;
   skills?: RoutineSkill[];
+};
+export type AllPeopleBackupEntry = {
+  person: Person;
+  routines: Routine[];
+  personData: PersonBackupData;
+  progress?: CompletionMap;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -230,6 +239,27 @@ export function serializePersonBackup(
   return JSON.stringify({
     ...createRoutineBackup(routines, progress, skills),
     personData: parsePersonBackupData(otherData),
+  }, null, 2);
+}
+
+export function serializeAllPeopleBackup(activePersonId: string, entries: AllPeopleBackupEntry[]): string {
+  const personIds = entries.map(({ person }) => person.id);
+  if (!entries.length || new Set(personIds).size !== personIds.length || !personIds.includes(activePersonId)) {
+    throw new Error('An all-profiles backup needs unique profiles and a valid active profile.');
+  }
+  return JSON.stringify({
+    format: ALL_PEOPLE_FILE_FORMAT,
+    version: ALL_PEOPLE_BACKUP_VERSION,
+    activePersonId,
+    people: entries.map(({ person, routines, personData, progress }) => ({
+      profile: {
+        id: person.id,
+        name: person.name,
+        defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd,
+        defaultPlaylistReminderSettings: person.defaultPlaylistReminderSettings,
+      },
+      backup: JSON.parse(serializePersonBackup(routines, personData, progress)) as RoutineBackup,
+    })),
   }, null, 2);
 }
 

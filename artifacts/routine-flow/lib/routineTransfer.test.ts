@@ -9,6 +9,7 @@ import {
   parseRoutinesFile,
   persistImportedBackup,
   repairStoredRoutineDurations,
+  serializeAllPeopleBackup,
   serializePersonBackup,
   serializeRoutines,
 } from './routineTransfer';
@@ -269,6 +270,101 @@ test('person backup includes playlists, schedules, selected theme, and optional 
   });
   assert.deepEqual(imported.skills, personData.skills);
   assert.deepEqual(imported.progress, progress);
+});
+
+test('all-people backup keeps each profile, skill history, settings, and optional progress separate', () => {
+  const profile = (id: string, name: string, defaultRateSkillsAtPlaylistEnd: boolean) => ({
+    id,
+    name,
+    defaultRateSkillsAtPlaylistEnd,
+    defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
+  });
+  const personData = (skillId: string, rating: number, skillRatingWindow: number) => ({
+    playlists: [],
+    schedules: [],
+    selectedThemeId: 'routine-flow',
+    skills: [{
+      id: skillId,
+      name: skillId,
+      ratings: [{
+        id: `rating-${skillId}`,
+        rating,
+        ratedAt: '2030-06-12T12:00:00.000Z',
+        routineTitle: 'Morning',
+        note: `Reflection for ${skillId}.`,
+      }],
+    }],
+    skillRatingWindow,
+  });
+  const contents = serializeAllPeopleBackup('alex', [
+    {
+      person: profile('me', 'Me', true),
+      routines: [routine('me-morning')],
+      personData: personData('me-focus', 6, 5),
+      progress: { [day]: { 'me-morning:water': true } },
+    },
+    {
+      person: profile('alex', 'Alex', false),
+      routines: [routine('alex-morning')],
+      personData: personData('alex-focus', 9, 12),
+    },
+  ]);
+  const allPeople = JSON.parse(contents) as {
+    format: string;
+    version: number;
+    activePersonId: string;
+    people: { profile: { id: string; name: string; defaultRateSkillsAtPlaylistEnd: boolean }; backup: unknown }[];
+  };
+
+  assert.equal(allPeople.format, 'routine-flow-all-people');
+  assert.equal(allPeople.version, 1);
+  assert.equal(allPeople.activePersonId, 'alex');
+  assert.deepEqual(allPeople.people.map(entry => entry.profile), [
+    {
+      id: 'me',
+      name: 'Me',
+      defaultRateSkillsAtPlaylistEnd: true,
+      defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
+    },
+    {
+      id: 'alex',
+      name: 'Alex',
+      defaultRateSkillsAtPlaylistEnd: false,
+      defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
+    },
+  ]);
+
+  const meBackup = parseRoutinesFile(JSON.stringify(allPeople.people[0].backup));
+  const alexBackup = parseRoutinesFile(JSON.stringify(allPeople.people[1].backup));
+  assert.equal(meBackup.routines[0].id, 'me-morning');
+  assert.equal(meBackup.skills?.[0].ratings?.[0].note, 'Reflection for me-focus.');
+  assert.equal(meBackup.personData?.skillRatingWindow, 5);
+  assert.deepEqual(meBackup.progress, { [day]: { 'me-morning:water': true } });
+  assert.equal(alexBackup.routines[0].id, 'alex-morning');
+  assert.equal(alexBackup.skills?.[0].ratings?.[0].note, 'Reflection for alex-focus.');
+  assert.equal(alexBackup.personData?.skillRatingWindow, 12);
+  assert.equal(alexBackup.progress, undefined);
+});
+
+test('all-people backup rejects duplicate profiles or a missing active profile', () => {
+  const entry = {
+    person: {
+      id: 'me',
+      name: 'Me',
+      defaultRateSkillsAtPlaylistEnd: true,
+      defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+    },
+    routines: [routine()],
+    personData: {
+      playlists: [],
+      schedules: [],
+      selectedThemeId: 'routine-flow',
+      skills: [],
+      skillRatingWindow: 7,
+    },
+  };
+  assert.throws(() => serializeAllPeopleBackup('missing', [entry]), /unique profiles and a valid active profile/);
+  assert.throws(() => serializeAllPeopleBackup('me', [entry, entry]), /unique profiles and a valid active profile/);
 });
 
 test('completed removed steps survive export, import, routine ID remapping, and repeat import', () => {
