@@ -297,7 +297,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
     }],
     skillRatingWindow,
   });
-  const contents = serializeAllPeopleBackup('alex', [
+  const entries = [
     {
       person: profile('me', 'Me', true),
       routines: [routine('me-morning')],
@@ -309,12 +309,13 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
       routines: [routine('alex-morning')],
       personData: personData('alex-focus', 9, 12),
     },
-  ]);
+  ];
+  const contents = serializeAllPeopleBackup('alex', entries);
   const allPeople = JSON.parse(contents) as {
     format: string;
     version: number;
     activePersonId: string;
-    people: { profile: { id: string; name: string; defaultRateSkillsAtPlaylistEnd: boolean }; backup: unknown }[];
+    people: { profile: { id: string; name: string; profileNumber: string; defaultRateSkillsAtPlaylistEnd: boolean }; backup: unknown }[];
   };
 
   assert.equal(allPeople.format, 'routine-flow-all-people');
@@ -324,16 +325,24 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
     {
       id: 'me',
       name: 'Me',
+      profileNumber: 'me',
       defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
     },
     {
       id: 'alex',
       name: 'Alex',
+      profileNumber: 'alex',
       defaultRateSkillsAtPlaylistEnd: false,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
     },
   ]);
+  const repeatedExport = JSON.parse(serializeAllPeopleBackup('alex', entries));
+  assert.deepEqual(
+    repeatedExport.people.map((entry: { profile: { name: string; profileNumber: string } }) =>
+      [entry.profile.name, entry.profile.profileNumber]),
+    [['Me', 'me'], ['Alex', 'alex']],
+  );
 
   const meBackup = parseRoutinesFile(JSON.stringify(allPeople.people[0].backup));
   const alexBackup = parseRoutinesFile(JSON.stringify(allPeople.people[1].backup));
@@ -354,7 +363,11 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
 
   const duplicate = JSON.parse(contents);
   duplicate.people[1].profile.id = 'me';
+  duplicate.people[1].profile.profileNumber = 'me';
   assert.throws(() => parseAllPeopleBackup(JSON.stringify(duplicate)), /duplicate profiles/);
+  const mismatchedNumber = JSON.parse(contents);
+  mismatchedNumber.people[1].profile.profileNumber = 'different-profile';
+  assert.throws(() => parseAllPeopleBackup(JSON.stringify(mismatchedNumber)), /invalid profile number/);
 });
 
 test('all-people backup rejects duplicate profiles or a missing active profile', () => {

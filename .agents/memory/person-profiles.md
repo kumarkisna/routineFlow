@@ -49,7 +49,7 @@ All-profile backups should be one file containing a separate full backup for eve
 
 **Why:** The user asked for a backup covering all profiles in one file and for imports to keep past data intact.
 
-**How to apply:** Snapshot each person independently. On restore, match by profile ID, add missing profiles, and merge matching profiles without deleting local records; remap related IDs, keep each person's ratings and notes with that profile, and restore the archive's active profile and settings. Recreate schedule alerts only when the platform and permissions allow; otherwise leave imported alerts off.
+**How to apply:** Snapshot each person independently. Export the persisted profile ID as `profileNumber` beside the name and match imports by this stable identifier, never by name; older archives may fall back to `id`. Add missing profiles and merge matching profiles without deleting local records; remap related IDs, keep each person's ratings and notes with that profile, and restore the archive's active profile and settings. Recreate schedule alerts only when the platform and permissions allow; otherwise leave imported alerts off.
 
 Routine Flow intentionally has no backup email feature or per-person email settings. Backup files are generated locally for users to save or share.
 

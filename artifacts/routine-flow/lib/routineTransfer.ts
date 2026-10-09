@@ -259,6 +259,7 @@ export function serializeAllPeopleBackup(activePersonId: string, entries: AllPeo
       profile: {
         id: person.id,
         name: person.name,
+        profileNumber: person.id,
         defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd,
         defaultPlaylistReminderSettings: person.defaultPlaylistReminderSettings,
       },
@@ -322,17 +323,20 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
     }
     const profileValue = entry.profile;
     const reminderSettings = profileValue.defaultPlaylistReminderSettings;
+    const profileNumber = profileValue.profileNumber ?? profileValue.id;
     if (typeof profileValue.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileValue.id)
+      || typeof profileNumber !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileNumber)
+      || profileNumber !== profileValue.id
       || !isText(profileValue.name) || profileValue.name.trim().length > 50
       || typeof profileValue.defaultRateSkillsAtPlaylistEnd !== 'boolean'
       || !isRecord(reminderSettings)
       || typeof reminderSettings.stepCompletion !== 'boolean'
       || typeof reminderSettings.routineCompletion !== 'boolean'
       || !Array.isArray(entry.backup.skills) || !isRecord(entry.backup.personData)) {
-      throw new Error(`Profile ${index + 1} in this backup has invalid profile settings or saved data.`);
+      throw new Error(`Profile ${index + 1} in this backup has an invalid profile number, settings, or saved data.`);
     }
     const profile: Person = {
-      id: profileValue.id,
+      id: profileNumber,
       name: profileValue.name.trim(),
       defaultRateSkillsAtPlaylistEnd: profileValue.defaultRateSkillsAtPlaylistEnd,
       defaultPlaylistReminderSettings: {
