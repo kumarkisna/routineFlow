@@ -2,7 +2,7 @@ import {
   isCompleted, type CompletionMap, type CompletionValue, type PlaylistCompletionSource, type Routine,
 } from '@/types/routines';
 import { historySourceId, splitProgressKey } from '@/lib/historyIdentity';
-import type { RoutineSkill } from '@/lib/skills';
+import type { RoutineSkill, SkillRatingRun } from '@/lib/skills';
 import type { RoutinePlaylist } from '@/lib/playlists';
 
 export type HistoryFilter =
@@ -11,6 +11,7 @@ export type HistoryFilter =
 export type HistoryFilterOption = { id: string; title: string; archived: boolean };
 export type HistorySkillRating = {
   id: string;
+  skillId: string;
   skillName: string;
   rating: number;
   ratedAt: string;
@@ -27,6 +28,7 @@ export type SkillRatingEvent = {
 };
 export type HistoryRoutine = {
   id: string;
+  day: string;
   title: string;
   hidden: boolean;
   removed: boolean;
@@ -61,6 +63,48 @@ function isValidDay(day: string): boolean {
 
 export function localDayKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** Create a repeatable identifier for a historical completion that had no run ID. */
+export function createHistorySkillRatingRun(
+  day: string,
+  scope: 'routine' | 'playlist',
+  sourceId: string,
+): SkillRatingRun {
+  if (!isValidDay(day) || !sourceId.trim()) throw new Error('The selected history entry is invalid.');
+  const key = `${scope}|${day}|${sourceId}`;
+  let first = 0x811c9dc5;
+  let second = 0x517cc1b7;
+  for (let index = 0; index < key.length; index += 1) {
+    const code = key.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x01000193);
+  }
+  return {
+    runId: `history-${scope}-${day.replace(/-/g, '')}-${(first >>> 0).toString(36)}${(second >>> 0).toString(36)}`,
+    completedDay: day,
+  };
+}
+
+export function getUnratedSkillIds(skillIds: string[], ratings: HistorySkillRating[]): string[] {
+  const rated = new Set(ratings.map(rating => rating.skillId));
+  return [...new Set(skillIds)].filter(skillId => !rated.has(skillId));
+}
+
+export function playlistHistoryRatingAnchorId(
+  groups: HistoryRoutine[],
+  playlistId: string,
+  routineOrder: string[] = [],
+): string | null {
+  const matching = groups.filter(group =>
+    group.playlistRuns?.some(run => run.playlistId === playlistId));
+  if (!matching.length) return null;
+  const matchingIds = new Set(matching.map(group => group.id));
+  let anchorId: string | undefined;
+  for (const routineId of routineOrder) {
+    if (matchingIds.has(routineId)) anchorId = routineId;
+  }
+  return anchorId ?? matching[matching.length - 1].id;
 }
 
 function completionMatchesFilter(
@@ -147,6 +191,7 @@ export function getHistoryForDay(
     if (!group) {
       group = {
         id: routineId,
+        day,
         title: typeof completed === 'object' ? completed.routineTitle : routine?.title ?? `Removed routine (${historySourceId(routineId)})`,
         hidden: routine?.hidden ?? false,
         removed: !routine,
@@ -183,9 +228,12 @@ export function getHistoryForDay(
   for (const group of history) {
     const ratings = skills.flatMap(skill => (skill.ratings ?? [])
       .filter(rating => rating.routineTitle === group.title
-        && localDayKey(new Date(rating.completedAt ?? rating.ratedAt)) === day)
+        && (rating.completedDay
+          ? rating.completedDay === day
+          : localDayKey(new Date(rating.completedAt ?? rating.ratedAt)) === day))
       .map(rating => ({
         id: `${skill.id}:${rating.id}`,
+        skillId: skill.id,
         skillName: skill.name,
         rating: rating.rating,
         ratedAt: rating.ratedAt,

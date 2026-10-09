@@ -6,16 +6,20 @@ import * as Speech from 'expo-speech';
 import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSkills } from '@/context/SkillContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import {
-  formatHistoryDay, getHistoryForDay, groupSkillRatingEvents, localDayKey, playlistHistoryOptions,
+  createHistorySkillRatingRun, formatHistoryDay, getHistoryForDay, getUnratedSkillIds,
+  groupSkillRatingEvents, localDayKey, playlistHistoryOptions, playlistHistoryRatingAnchorId,
   recordedHistoryDays, routineHistoryOptions, type HistoryFilter, type SkillRatingEvent,
 } from '@/lib/progressHistory';
 import { buildSkillRatingReportHtml, formatSkillRatingDateTime } from '@/lib/skillRatingReport';
 import { buildSkillRatingSpeechText } from '@/lib/skillRatingSpeech';
+import { getPlaylistSkillIds, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
+import { playablePlaylistIds } from '@/lib/playlists';
 
 export default function HistoryScreen() {
   const colors = useColors();
@@ -31,6 +35,12 @@ export default function HistoryScreen() {
   const [exportError, setExportError] = React.useState<{ runId: string; message: string } | null>(null);
   const [speakingEventKey, setSpeakingEventKey] = React.useState<string | null>(null);
   const [speechError, setSpeechError] = React.useState<{ eventKey: string; message: string } | null>(null);
+  const [ratingPrompt, setRatingPrompt] = React.useState<{
+    skillIds: string[];
+    routineTitle: string;
+    contextLabel: string;
+    run: SkillRatingRun;
+  } | null>(null);
   const exportLock = React.useRef(false);
   const speechSessionRef = React.useRef(0);
   const speechEventKeyRef = React.useRef<string | null>(null);
@@ -49,6 +59,24 @@ export default function HistoryScreen() {
   const activeDay = selectedDay && days.includes(selectedDay) ? selectedDay : days[0];
   const activeIndex = days.indexOf(activeDay);
   const groups = activeDay ? getHistoryForDay(progress, routines, activeDay, skills, activeFilter) : [];
+  const selectedPlaylistData = playlists.find(item => item.id === selectedPlaylist?.id);
+  const playlistRunGroups = activeFilter?.kind === 'playlist'
+    ? groups.filter(group => group.playlistRuns?.some(run => run.playlistId === activeFilter.id))
+    : [];
+  const playlistRatingAnchorId = activeFilter?.kind === 'playlist'
+    ? playlistHistoryRatingAnchorId(groups, activeFilter.id, selectedPlaylistData?.routineIds)
+    : null;
+  const playlistRatingSkillIds = selectedPlaylistData
+    ? getPlaylistSkillIds(
+      playablePlaylistIds(selectedPlaylistData.routineIds, routines),
+      routines,
+      selectedPlaylistData.skillIds,
+    )
+    : playlistRunGroups.flatMap(group => {
+      const routine = routines.find(item => item.id === group.id);
+      return routine ? getRoutineSkillIds(routine) : [];
+    });
+  const playlistRatings = playlistRunGroups.flatMap(group => group.skillRatings ?? []);
   const total = groups.reduce((sum, group) => sum + group.steps.length, 0);
   const isLoading = loading || skillsLoading || playlistsLoading;
 
@@ -165,6 +193,25 @@ export default function HistoryScreen() {
       exportLock.current = false;
       setExportingRunId(null);
     }
+  }
+
+  function openHistoryRatingPrompt(
+    routineTitle: string,
+    skillIds: string[],
+    ratings: ReturnType<typeof getHistoryForDay>[number]['skillRatings'],
+    scope: 'routine' | 'playlist',
+    sourceId: string,
+    contextLabel: string,
+  ) {
+    if (!activeDay) return;
+    const missingSkillIds = getUnratedSkillIds(skillIds, ratings ?? []);
+    if (!missingSkillIds.length) return;
+    setRatingPrompt({
+      skillIds: missingSkillIds,
+      routineTitle,
+      contextLabel,
+      run: createHistorySkillRatingRun(activeDay, scope, sourceId),
+    });
   }
 
   return (
@@ -318,7 +365,24 @@ export default function HistoryScreen() {
             </View>
           </View>
 
-          {groups.map((group) => (
+          {groups.map((group) => {
+            const routine = routines.find(item => item.id === group.id);
+            const isPlaylistRunEntry = activeFilter?.kind === 'playlist'
+              && group.id === playlistRatingAnchorId;
+            const ratingSkillIds = activeFilter?.kind === 'playlist'
+              ? isPlaylistRunEntry ? playlistRatingSkillIds : []
+              : routine ? getRoutineSkillIds(routine) : [];
+            const existingRatings = isPlaylistRunEntry ? playlistRatings : group.skillRatings ?? [];
+            const unratedSkillIds = getUnratedSkillIds(ratingSkillIds, existingRatings);
+            const ratingScope = isPlaylistRunEntry ? 'playlist' : 'routine';
+            const ratingSourceId = ratingScope === 'playlist' && activeFilter?.kind === 'playlist'
+              ? activeFilter.id
+              : group.id;
+            const ratingContext = ratingScope === 'playlist'
+              ? `Playlist: ${selectedPlaylist?.title ?? group.playlistRuns?.find(run => run.playlistId === ratingSourceId)?.playlistTitle ?? 'Playlist'}`
+              : `Routine: ${group.title}`;
+
+            return (
             <View key={group.id} style={[styles.routineCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.routineHeader}>
                 <View style={[styles.routineIcon, { backgroundColor: colors.sageSoft }]}>
@@ -345,6 +409,33 @@ export default function HistoryScreen() {
                   </View>
                 </View>
               ))}
+              {unratedSkillIds.length ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add skill ratings and notes for ${ratingScope} ${ratingContext.replace(/^(Routine|Playlist): /, '')}`}
+                  testID={`history-add-skill-ratings-${group.id}`}
+                  onPress={() => openHistoryRatingPrompt(
+                    group.title,
+                    ratingSkillIds,
+                    existingRatings,
+                    ratingScope,
+                    ratingSourceId,
+                    ratingContext,
+                  )}
+                  style={({ pressed }) => [
+                    styles.ratingAction,
+                    { backgroundColor: colors.sageSoft },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="star-outline" size={17} color={colors.success} />
+                  <Text style={[styles.ratingActionText, { color: colors.success }]}>
+                    {unratedSkillIds.length === ratingSkillIds.length
+                      ? 'Add skill ratings and notes'
+                      : 'Rate remaining skills'}
+                  </Text>
+                </Pressable>
+              ) : null}
           {group.skillRatings?.length ? (
                 <View style={[styles.skillNotes, { borderTopColor: colors.border }]}>
                   <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Skill ratings &amp; reflections</Text>
@@ -436,7 +527,8 @@ export default function HistoryScreen() {
                 </View>
               ) : null}
             </View>
-          ))}
+          );
+          })}
         </>
       ) : (
         <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -459,6 +551,15 @@ export default function HistoryScreen() {
           </Text>
         </View>
       )}
+      <SkillRatingPrompt
+        visible={ratingPrompt !== null}
+        skillIds={ratingPrompt?.skillIds ?? []}
+        routineTitle={ratingPrompt?.routineTitle ?? ''}
+        contextLabel={ratingPrompt?.contextLabel}
+        run={ratingPrompt?.run}
+        onSkip={() => setRatingPrompt(null)}
+        onSaved={() => setRatingPrompt(null)}
+      />
     </ScrollView>
   );
 }
@@ -498,6 +599,8 @@ const styles = StyleSheet.create({
   stepTitle: { fontFamily: 'Inter_500Medium', fontSize: 13, lineHeight: 19 },
   stepNote: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   skillHistoryError: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginBottom: 12 },
+  ratingAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderRadius: 12, marginTop: 10 },
+  ratingActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   skillNotes: { borderTopWidth: 1, paddingTop: 13, marginTop: 4 },
   skillNotesHeading: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 6 },
   skillEvent: { borderWidth: 1, borderRadius: 13, padding: 10, marginTop: 7 },

@@ -2,7 +2,13 @@ import type { Routine } from '@/types/routines';
 import type { RoutinePlaylist } from './playlists';
 
 export type RoutineSkill = { id: string; name: string; ratings?: SkillRating[] };
-export type SkillRatingRun = { runId: string; completedAt: string };
+export type SkillRatingRun = {
+  runId: string;
+  /** Exact completion time for ratings entered during a run. */
+  completedAt?: string;
+  /** Calendar day only for a rating added later from history. */
+  completedDay?: string;
+};
 export type SkillRating = {
   id: string;
   rating: number;
@@ -10,6 +16,7 @@ export type SkillRating = {
   routineTitle: string;
   runId?: string;
   completedAt?: string;
+  completedDay?: string;
   sequence?: number;
   note?: string;
 };
@@ -105,15 +112,20 @@ function parseRatings(value: unknown): SkillRating[] {
   for (const item of value) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Saved skills could not be read.');
     const rating = item as Record<string, unknown>;
+    const hasRunId = rating.runId !== undefined;
+    const hasCompletionTime = rating.completedAt !== undefined;
+    const hasCompletionDay = rating.completedDay !== undefined;
     if (typeof rating.id !== 'string' || !rating.id.trim() || rating.id.length > 160 || rating.id.includes(':')
       || typeof rating.rating !== 'number' || !Number.isInteger(rating.rating) || rating.rating < 1 || rating.rating > 10
       || typeof rating.ratedAt !== 'string' || !Number.isFinite(Date.parse(rating.ratedAt))
       || typeof rating.routineTitle !== 'string' || !rating.routineTitle.trim() || rating.routineTitle.length > 200
-      || ((rating.runId === undefined) !== (rating.completedAt === undefined))
+      || (hasRunId !== (hasCompletionTime || hasCompletionDay))
+      || (hasCompletionTime && hasCompletionDay)
       || (rating.runId !== undefined
         && (typeof rating.runId !== 'string' || !rating.runId.trim() || rating.runId.length > 160 || rating.runId.includes(':')))
       || (rating.completedAt !== undefined
         && (typeof rating.completedAt !== 'string' || !Number.isFinite(Date.parse(rating.completedAt))))
+      || (rating.completedDay !== undefined && !isValidSkillRatingDay(rating.completedDay))
       || (rating.sequence !== undefined
         && (!Number.isInteger(rating.sequence) || (rating.sequence as number) < 0 || (rating.sequence as number) > 999))
       || (rating.note !== undefined
@@ -129,11 +141,18 @@ function parseRatings(value: unknown): SkillRating[] {
       routineTitle: rating.routineTitle.trim(),
       ...(typeof rating.runId === 'string' ? { runId: rating.runId } : {}),
       ...(typeof rating.completedAt === 'string' ? { completedAt: rating.completedAt } : {}),
+      ...(typeof rating.completedDay === 'string' ? { completedDay: rating.completedDay } : {}),
       ...(typeof rating.sequence === 'number' ? { sequence: rating.sequence } : {}),
       ...(note ? { note } : {}),
     });
   }
   return ratings;
+}
+
+export function isValidSkillRatingDay(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T12:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 function makeSkillId(usedIds: Set<string>) {

@@ -8,6 +8,7 @@ import {
   MAX_SKILLS,
   MAX_SKILL_RATING_WINDOW,
   MIN_SKILL_RATING_WINDOW,
+  isValidSkillRatingDay,
   mergeSkillCatalog,
   normalizeSkillName,
   parseSkillRatingWindow,
@@ -133,9 +134,17 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
         throw new Error('One or more skills were removed. Refresh the skill list and try again.');
       }
       if (!entries.length) return;
-      if (!run || typeof run.runId !== 'string' || !run.runId.trim() || run.runId.length > 160
-        || typeof run.completedAt !== 'string' || !Number.isFinite(Date.parse(run.completedAt))) {
-        throw new Error('The routine completion time could not be verified. Please retry the rating.');
+      if (!run || typeof run.runId !== 'string' || !run.runId.trim()
+        || run.runId.length > 160 || run.runId.includes(':')) {
+        throw new Error('The routine completion could not be verified. Please retry the rating.');
+      }
+      const hasCompletionTime = run.completedAt !== undefined;
+      const hasCompletionDay = run.completedDay !== undefined;
+      if (hasCompletionTime === hasCompletionDay
+        || (hasCompletionTime
+          && (typeof run.completedAt !== 'string' || !Number.isFinite(Date.parse(run.completedAt))))
+        || (hasCompletionDay && !isValidSkillRatingDay(run.completedDay))) {
+        throw new Error('The routine completion date could not be verified. Please retry the rating.');
       }
       if (entries.some(entry => !Number.isInteger(entry.sequence) || entry.sequence < 0 || entry.sequence > 999)
         || new Set(entries.map(entry => entry.sequence)).size !== entries.length) {
@@ -153,7 +162,8 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
           ratedAt,
           routineTitle: title,
           runId: run.runId,
-          completedAt: run.completedAt,
+          ...(run.completedAt ? { completedAt: run.completedAt } : {}),
+          ...(run.completedDay ? { completedDay: run.completedDay } : {}),
           sequence: entry.sequence,
           ...(note ? { note } : {}),
         }];
