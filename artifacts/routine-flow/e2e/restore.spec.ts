@@ -222,6 +222,9 @@ test('all-profiles export keeps each profile and its skill history together', as
 test('all-profiles import adds profiles and merges saved history without replacing local records', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   const day = new Date().toISOString().slice(0, 10);
+  const localThemeId = 'sandstone';
+  const meThemeId = 'porcelain';
+  const alexThemeId = 'nordic';
   const localProfile = {
     id: 'me',
     name: 'Me',
@@ -266,7 +269,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
       }],
     }],
     '@routine-flow/skill-rating-window': '3',
-    '@routine-flow/appearance': 'routine-flow',
+    '@routine-flow/appearance': localThemeId,
   };
   const allPeopleBackup = JSON.stringify({
     format: 'routine-flow-all-people',
@@ -296,7 +299,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
               reminderSettings: { stepCompletion: false, routineCompletion: false },
             }],
             schedules: [],
-            selectedThemeId: 'routine-flow',
+            selectedThemeId: meThemeId,
             skillRatingWindow: 7,
           },
         },
@@ -345,7 +348,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
               notificationId: 'old-device-notification',
               notifications: [{ id: 'old-device-notification', offsetMinutes: 0 }],
             }],
-            selectedThemeId: 'routine-flow',
+            selectedThemeId: alexThemeId,
             skillRatingWindow: 12,
           },
         },
@@ -381,12 +384,14 @@ test('all-profiles import adds profiles and merges saved history without replaci
     meSkills: JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]'),
     mePlaylists: JSON.parse(localStorage.getItem('@routine-flow/playlists') ?? '[]'),
     meWindow: localStorage.getItem('@routine-flow/skill-rating-window'),
+    meTheme: localStorage.getItem('@routine-flow/appearance'),
     alexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines') ?? '[]'),
     alexProgress: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/progress') ?? '{}'),
     alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
     alexPlaylists: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/playlists') ?? '[]'),
     alexSchedules: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/schedules') ?? '[]'),
     alexWindow: localStorage.getItem('@routine-flow/person/alex/@routine-flow/skill-rating-window'),
+    alexTheme: localStorage.getItem('@routine-flow/person/alex/@routine-flow/appearance'),
   }));
 
   expect(restored.registry.activePersonId).toBe('alex');
@@ -414,11 +419,13 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.mePlaylists[0].routineIds).toEqual([mergedRoutine.id]);
   expect(restored.mePlaylists[0].skillIds).toEqual(['local-focus']);
   expect(restored.meWindow).toBe('7');
+  expect(restored.meTheme).toBe(meThemeId);
   expect(restored.alexRoutines.map((routine: { id: string }) => routine.id)).toEqual(['travel-reset']);
   expect(restored.alexProgress[day]['travel-reset:unpack']).toBe(true);
   expect(restored.alexSkills[0].ratings[0].note).toBe('Pause before the next step.');
   expect(restored.alexPlaylists[0].title).toBe('Travel list');
   expect(restored.alexWindow).toBe('12');
+  expect(restored.alexTheme).toBe(alexThemeId);
   expect(restored.alexSchedules).toHaveLength(1);
   expect(restored.alexSchedules[0]).toMatchObject({
     targetId: 'travel-reset',
@@ -426,6 +433,22 @@ test('all-profiles import adds profiles and merges saved history without replaci
   });
   expect(restored.alexSchedules[0].notificationId).toBeUndefined();
   expect(restored.alexSchedules[0].notifications).toBeUndefined();
+
+  await page.reload();
+  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
+  await page.getByRole('tab', { name: 'Themes' }).click();
+  await expect(page.getByTestId('theme-summary')).toContainText('Active: Nordic');
+  await page.reload();
+  await expect(page.getByTestId('theme-summary')).toContainText('Active: Nordic');
+
+  await page.getByRole('tab', { name: 'Today' }).click();
+  await page.getByLabel('Active person: Alex. Open people').click();
+  await page.getByLabel('Switch to Me').click();
+  await expect(page.getByLabel('Active person: Me. Open people')).toBeVisible();
+  await page.getByRole('tab', { name: 'Themes' }).click();
+  await expect(page.getByTestId('theme-summary')).toContainText('Active: Porcelain');
+  await page.reload();
+  await expect(page.getByTestId('theme-summary')).toContainText('Active: Porcelain');
 });
 
 test('cancelling an all-profiles import leaves every profile and reminder unchanged', async ({ page }) => {
