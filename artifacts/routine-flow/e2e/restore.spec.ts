@@ -219,6 +219,179 @@ test('all-profiles export keeps each profile and its skill history together', as
   expect(alexBackup.progress[day]['travel-reset:unpack']).toBe(true);
 });
 
+test('all-profile restore keeps same-named skill assignments with their own profile through export and re-import', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const profiles = [
+    {
+      id: 'me',
+      name: 'Me',
+      defaultRateSkillsAtPlaylistEnd: true,
+      defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+    },
+    {
+      id: 'alex',
+      name: 'Alex',
+      defaultRateSkillsAtPlaylistEnd: false,
+      defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: false },
+    },
+  ];
+  const entries = [
+    { profile: profiles[0], backupSkillId: 'me-backup-focus', localSkillId: 'me-local-focus', prefix: 'me' },
+    { profile: profiles[1], backupSkillId: 'alex-backup-focus', localSkillId: 'alex-local-focus', prefix: 'alex' },
+  ];
+  const backupRoutine = (prefix: string, skillId: string) => ({
+    id: `${prefix}-focus-routine`,
+    title: `${prefix} Focus routine`,
+    subtitle: '',
+    icon: 'sunny-outline',
+    tone: 'coral',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    skillIds: [skillId],
+    steps: [{
+      id: `${prefix}-focus-step`,
+      title: 'Practice focus',
+      durationSeconds: 60,
+      skillIds: [skillId],
+    }],
+  });
+  const allProfilesBackup = {
+    format: 'routine-flow-all-people',
+    version: 1,
+    activePersonId: 'alex',
+    people: entries.map(({ profile, backupSkillId, prefix }) => {
+      const routine = backupRoutine(prefix, backupSkillId);
+      return {
+        profile,
+        backup: {
+          format: 'routine-flow-routines',
+          version: 7,
+          exportedAt: '2026-10-01T08:00:00.000Z',
+          routines: [routine],
+          skills: [{ id: backupSkillId, name: 'Focus' }],
+          personData: {
+            playlists: [{
+              id: `${prefix}-focus-playlist`,
+              title: `${prefix} Focus playlist`,
+              routineIds: [routine.id],
+              skillIds: [backupSkillId],
+              rateSkillsAtPlaylistEnd: true,
+            }],
+            schedules: [],
+            selectedThemeId: 'routine-flow',
+            skillRatingWindow: 5,
+          },
+        },
+      };
+    }),
+  };
+  const localStorageSeed = {
+    '@routine-flow/people': { version: 1, activePersonId: 'me', people: profiles },
+    '@routine-flow/routines': [],
+    '@routine-flow/progress': {},
+    '@routine-flow/playlists': [],
+    '@routine-flow/schedules': [],
+    '@routine-flow/skills': [{ id: 'me-local-focus', name: 'Focus' }],
+    '@routine-flow/skill-rating-window': '5',
+    '@routine-flow/appearance': 'routine-flow',
+    '@routine-flow/person/alex/@routine-flow/routines': [],
+    '@routine-flow/person/alex/@routine-flow/progress': {},
+    '@routine-flow/person/alex/@routine-flow/playlists': [],
+    '@routine-flow/person/alex/@routine-flow/schedules': [],
+    '@routine-flow/person/alex/@routine-flow/skills': [{ id: 'alex-local-focus', name: 'Focus' }],
+    '@routine-flow/person/alex/@routine-flow/skill-rating-window': '5',
+    '@routine-flow/person/alex/@routine-flow/appearance': 'routine-flow',
+  };
+  await page.addInitScript(storage => {
+    if (localStorage.getItem('@routine-flow/people') === null) {
+      for (const [key, value] of Object.entries(storage)) {
+        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+      }
+    }
+  }, localStorageSeed);
+
+  await page.goto('/');
+  await expect(page.getByLabel('Active person: Me. Open people')).toBeVisible();
+  const restoreChooser = page.waitForEvent('filechooser');
+  await page.getByTestId('import-routines').click();
+  await (await restoreChooser).setFiles({
+    name: 'same-named-profile-skills.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(allProfilesBackup)),
+  });
+  await expect(page.getByText('Restore 2 profiles?')).toBeVisible();
+  await page.getByTestId('import-all-profiles').click();
+  await expect(page.getByText('Restore 2 profiles?')).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
+
+  const readAssignments = () => page.evaluate(() => {
+    const read = (key: string) => JSON.parse(localStorage.getItem(key) ?? '[]');
+    return {
+      meRoutines: read('@routine-flow/routines'),
+      mePlaylists: read('@routine-flow/playlists'),
+      meSkills: read('@routine-flow/skills'),
+      alexRoutines: read('@routine-flow/person/alex/@routine-flow/routines'),
+      alexPlaylists: read('@routine-flow/person/alex/@routine-flow/playlists'),
+      alexSkills: read('@routine-flow/person/alex/@routine-flow/skills'),
+    };
+  });
+  const afterRestore = await readAssignments();
+  expect(afterRestore.meSkills.map((skill: { id: string; name: string }) => [skill.id, skill.name]))
+    .toEqual([['me-local-focus', 'Focus']]);
+  expect(afterRestore.alexSkills.map((skill: { id: string; name: string }) => [skill.id, skill.name]))
+    .toEqual([['alex-local-focus', 'Focus']]);
+  expect(afterRestore.meRoutines[0]).toMatchObject({
+    id: 'me-focus-routine',
+    skillIds: ['me-local-focus'],
+    steps: [{ id: 'me-focus-step', skillIds: ['me-local-focus'] }],
+  });
+  expect(afterRestore.alexRoutines[0]).toMatchObject({
+    id: 'alex-focus-routine',
+    skillIds: ['alex-local-focus'],
+    steps: [{ id: 'alex-focus-step', skillIds: ['alex-local-focus'] }],
+  });
+  expect(afterRestore.mePlaylists[0].skillIds).toEqual(['me-local-focus']);
+  expect(afterRestore.alexPlaylists[0].skillIds).toEqual(['alex-local-focus']);
+
+  const exportPromise = page.waitForEvent('download');
+  await page.getByTestId('export-all-people-data').click();
+  const exportedFile = await exportPromise;
+  const exportedPath = await exportedFile.path();
+  expect(exportedPath).not.toBeNull();
+  const exportedContents = readFileSync(exportedPath!, 'utf8');
+  const exported = JSON.parse(exportedContents);
+  expect(exported.people[0].backup.routines[0]).toMatchObject({
+    skillIds: ['me-local-focus'],
+    steps: [{ skillIds: ['me-local-focus'] }],
+  });
+  expect(exported.people[0].backup.personData.playlists[0].skillIds).toEqual(['me-local-focus']);
+  expect(exported.people[1].backup.routines[0]).toMatchObject({
+    skillIds: ['alex-local-focus'],
+    steps: [{ skillIds: ['alex-local-focus'] }],
+  });
+  expect(exported.people[1].backup.personData.playlists[0].skillIds).toEqual(['alex-local-focus']);
+
+  const reimportChooser = page.waitForEvent('filechooser');
+  await page.getByTestId('import-routines').click();
+  await (await reimportChooser).setFiles({
+    name: 'same-named-profile-skills-round-trip.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(exportedContents),
+  });
+  await expect(page.getByText('Restore 2 profiles?')).toBeVisible();
+  await page.getByTestId('import-all-profiles').click();
+  await expect(page.getByText('Restore 2 profiles?')).toHaveCount(0);
+  await page.reload();
+
+  const afterReimport = await readAssignments();
+  expect(afterReimport.meRoutines[0].skillIds).toEqual(['me-local-focus']);
+  expect(afterReimport.meRoutines[0].steps[0].skillIds).toEqual(['me-local-focus']);
+  expect(afterReimport.mePlaylists[0].skillIds).toEqual(['me-local-focus']);
+  expect(afterReimport.alexRoutines[0].skillIds).toEqual(['alex-local-focus']);
+  expect(afterReimport.alexRoutines[0].steps[0].skillIds).toEqual(['alex-local-focus']);
+  expect(afterReimport.alexPlaylists[0].skillIds).toEqual(['alex-local-focus']);
+});
+
 test('all-profiles import adds profiles and merges saved history without replacing local records', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   const day = new Date().toISOString().slice(0, 10);
