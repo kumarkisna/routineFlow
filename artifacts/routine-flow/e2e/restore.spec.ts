@@ -219,7 +219,7 @@ test('all-profiles export keeps each profile and its skill history together', as
   expect(alexBackup.progress[day]['travel-reset:unpack']).toBe(true);
 });
 
-test('all-profile restore keeps same-named skill assignments with their own profile through export and re-import', async ({ page }) => {
+test('all-profile restore remaps colliding routine IDs without crossing same-named skill assignments through export and re-import', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   const profiles = [
     {
@@ -239,8 +239,9 @@ test('all-profile restore keeps same-named skill assignments with their own prof
     { profile: profiles[0], backupSkillId: 'me-backup-focus', localSkillId: 'me-local-focus', prefix: 'me' },
     { profile: profiles[1], backupSkillId: 'alex-backup-focus', localSkillId: 'alex-local-focus', prefix: 'alex' },
   ];
+  const conflictingRoutineId = 'shared-focus-routine';
   const backupRoutine = (prefix: string, skillId: string) => ({
-    id: `${prefix}-focus-routine`,
+    id: conflictingRoutineId,
     title: `${prefix} Focus routine`,
     subtitle: '',
     icon: 'sunny-outline',
@@ -251,6 +252,21 @@ test('all-profile restore keeps same-named skill assignments with their own prof
       id: `${prefix}-focus-step`,
       title: 'Practice focus',
       durationSeconds: 60,
+      skillIds: [skillId],
+    }],
+  });
+  const localConflictRoutine = (prefix: string, skillId: string) => ({
+    id: conflictingRoutineId,
+    title: `${prefix} local routine`,
+    subtitle: 'Saved on this device',
+    icon: 'sunny-outline',
+    tone: 'coral',
+    createdAt: '2026-09-02T08:00:00.000Z',
+    skillIds: [skillId],
+    steps: [{
+      id: `${prefix}-local-step`,
+      title: 'Keep the local version',
+      durationSeconds: 90,
       skillIds: [skillId],
     }],
   });
@@ -286,14 +302,14 @@ test('all-profile restore keeps same-named skill assignments with their own prof
   };
   const localStorageSeed = {
     '@routine-flow/people': { version: 1, activePersonId: 'me', people: profiles },
-    '@routine-flow/routines': [],
+    '@routine-flow/routines': [localConflictRoutine('me', 'me-local-focus')],
     '@routine-flow/progress': {},
     '@routine-flow/playlists': [],
     '@routine-flow/schedules': [],
     '@routine-flow/skills': [{ id: 'me-local-focus', name: 'Focus' }],
     '@routine-flow/skill-rating-window': '5',
     '@routine-flow/appearance': 'routine-flow',
-    '@routine-flow/person/alex/@routine-flow/routines': [],
+    '@routine-flow/person/alex/@routine-flow/routines': [localConflictRoutine('alex', 'alex-local-focus')],
     '@routine-flow/person/alex/@routine-flow/progress': {},
     '@routine-flow/person/alex/@routine-flow/playlists': [],
     '@routine-flow/person/alex/@routine-flow/schedules': [],
@@ -340,18 +356,32 @@ test('all-profile restore keeps same-named skill assignments with their own prof
     .toEqual([['me-local-focus', 'Focus']]);
   expect(afterRestore.alexSkills.map((skill: { id: string; name: string }) => [skill.id, skill.name]))
     .toEqual([['alex-local-focus', 'Focus']]);
-  expect(afterRestore.meRoutines[0]).toMatchObject({
-    id: 'me-focus-routine',
+  const meRestoredRoutine = afterRestore.meRoutines.find((routine: { title: string }) => routine.title === 'me Focus routine');
+  const alexRestoredRoutine = afterRestore.alexRoutines.find((routine: { title: string }) => routine.title === 'alex Focus routine');
+  expect(meRestoredRoutine).toMatchObject({
     skillIds: ['me-local-focus'],
     steps: [{ id: 'me-focus-step', skillIds: ['me-local-focus'] }],
   });
-  expect(afterRestore.alexRoutines[0]).toMatchObject({
-    id: 'alex-focus-routine',
+  expect(meRestoredRoutine.id).not.toBe(conflictingRoutineId);
+  expect(afterRestore.meRoutines.find((routine: { title: string }) => routine.title === 'me local routine')).toEqual(
+    localConflictRoutine('me', 'me-local-focus'),
+  );
+  expect(alexRestoredRoutine).toMatchObject({
     skillIds: ['alex-local-focus'],
     steps: [{ id: 'alex-focus-step', skillIds: ['alex-local-focus'] }],
   });
-  expect(afterRestore.mePlaylists[0].skillIds).toEqual(['me-local-focus']);
-  expect(afterRestore.alexPlaylists[0].skillIds).toEqual(['alex-local-focus']);
+  expect(alexRestoredRoutine.id).not.toBe(conflictingRoutineId);
+  expect(afterRestore.alexRoutines.find((routine: { title: string }) => routine.title === 'alex local routine')).toEqual(
+    localConflictRoutine('alex', 'alex-local-focus'),
+  );
+  expect(afterRestore.mePlaylists[0]).toMatchObject({
+    routineIds: [meRestoredRoutine.id],
+    skillIds: ['me-local-focus'],
+  });
+  expect(afterRestore.alexPlaylists[0]).toMatchObject({
+    routineIds: [alexRestoredRoutine.id],
+    skillIds: ['alex-local-focus'],
+  });
 
   const exportPromise = page.waitForEvent('download');
   await page.getByTestId('export-all-people-data').click();
@@ -360,16 +390,32 @@ test('all-profile restore keeps same-named skill assignments with their own prof
   expect(exportedPath).not.toBeNull();
   const exportedContents = readFileSync(exportedPath!, 'utf8');
   const exported = JSON.parse(exportedContents);
-  expect(exported.people[0].backup.routines[0]).toMatchObject({
+  const exportedMeBackup = exported.people[0].backup;
+  const exportedAlexBackup = exported.people[1].backup;
+  const exportedMeRoutine = exportedMeBackup.routines.find((routine: { title: string }) => routine.title === 'me Focus routine');
+  const exportedAlexRoutine = exportedAlexBackup.routines.find((routine: { title: string }) => routine.title === 'alex Focus routine');
+  expect(exportedMeRoutine).toMatchObject({
+    id: meRestoredRoutine.id,
     skillIds: ['me-local-focus'],
     steps: [{ skillIds: ['me-local-focus'] }],
   });
-  expect(exported.people[0].backup.personData.playlists[0].skillIds).toEqual(['me-local-focus']);
-  expect(exported.people[1].backup.routines[0]).toMatchObject({
+  expect(exportedMeBackup.routines.find((routine: { title: string }) => routine.title === 'me local routine'))
+    .toEqual(localConflictRoutine('me', 'me-local-focus'));
+  expect(exportedMeBackup.personData.playlists[0]).toMatchObject({
+    routineIds: [meRestoredRoutine.id],
+    skillIds: ['me-local-focus'],
+  });
+  expect(exportedAlexRoutine).toMatchObject({
+    id: alexRestoredRoutine.id,
     skillIds: ['alex-local-focus'],
     steps: [{ skillIds: ['alex-local-focus'] }],
   });
-  expect(exported.people[1].backup.personData.playlists[0].skillIds).toEqual(['alex-local-focus']);
+  expect(exportedAlexBackup.routines.find((routine: { title: string }) => routine.title === 'alex local routine'))
+    .toEqual(localConflictRoutine('alex', 'alex-local-focus'));
+  expect(exportedAlexBackup.personData.playlists[0]).toMatchObject({
+    routineIds: [alexRestoredRoutine.id],
+    skillIds: ['alex-local-focus'],
+  });
 
   const reimportChooser = page.waitForEvent('filechooser');
   await page.getByTestId('import-routines').click();
@@ -384,12 +430,32 @@ test('all-profile restore keeps same-named skill assignments with their own prof
   await page.reload();
 
   const afterReimport = await readAssignments();
-  expect(afterReimport.meRoutines[0].skillIds).toEqual(['me-local-focus']);
-  expect(afterReimport.meRoutines[0].steps[0].skillIds).toEqual(['me-local-focus']);
-  expect(afterReimport.mePlaylists[0].skillIds).toEqual(['me-local-focus']);
-  expect(afterReimport.alexRoutines[0].skillIds).toEqual(['alex-local-focus']);
-  expect(afterReimport.alexRoutines[0].steps[0].skillIds).toEqual(['alex-local-focus']);
-  expect(afterReimport.alexPlaylists[0].skillIds).toEqual(['alex-local-focus']);
+  expect(afterReimport.meRoutines).toHaveLength(2);
+  expect(afterReimport.alexRoutines).toHaveLength(2);
+  const meReimportedRoutine = afterReimport.meRoutines.find((routine: { title: string }) => routine.title === 'me Focus routine');
+  const alexReimportedRoutine = afterReimport.alexRoutines.find((routine: { title: string }) => routine.title === 'alex Focus routine');
+  expect(meReimportedRoutine).toMatchObject({
+    id: meRestoredRoutine.id,
+    skillIds: ['me-local-focus'],
+    steps: [{ id: 'me-focus-step', skillIds: ['me-local-focus'] }],
+  });
+  expect(afterReimport.meRoutines.find((routine: { title: string }) => routine.title === 'me local routine'))
+    .toEqual(localConflictRoutine('me', 'me-local-focus'));
+  expect(afterReimport.mePlaylists[0]).toMatchObject({
+    routineIds: [meRestoredRoutine.id],
+    skillIds: ['me-local-focus'],
+  });
+  expect(alexReimportedRoutine).toMatchObject({
+    id: alexRestoredRoutine.id,
+    skillIds: ['alex-local-focus'],
+    steps: [{ id: 'alex-focus-step', skillIds: ['alex-local-focus'] }],
+  });
+  expect(afterReimport.alexRoutines.find((routine: { title: string }) => routine.title === 'alex local routine'))
+    .toEqual(localConflictRoutine('alex', 'alex-local-focus'));
+  expect(afterReimport.alexPlaylists[0]).toMatchObject({
+    routineIds: [alexRestoredRoutine.id],
+    skillIds: ['alex-local-focus'],
+  });
 });
 
 test('all-profiles import adds profiles and merges saved history without replacing local records', async ({ page }) => {
