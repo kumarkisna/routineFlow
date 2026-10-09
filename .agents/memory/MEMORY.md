@@ -19,3 +19,4 @@
 - [Locked-run platform behavior](android-locked-runs.md) — Android keeps active runs alive with a foreground service; iOS alerts and resumes; Expo Go cannot exercise the native service.
 - [Android backup files](android-backup-imports.md) — use Expo FileSystem pickers for provider-backed imports and local folder saves; sharing opens an app chooser, not a save dialog.
 - [Local person profiles](person-profiles.md) — skill ratings, reflections, and their shared average window belong to the person; cross-person copies do not transfer ratings.
+- [Post-merge setup duration](post-merge-setup.md) — workspace dependency linking can exceed two minutes; retain a generous post-merge timeout and verify the full setup.
