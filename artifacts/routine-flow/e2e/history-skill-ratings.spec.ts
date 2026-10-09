@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { existsSync } from 'node:fs';
+import type { Page } from '@playwright/test';
 
 const baseURL = process.env.RESTORE_TEST_BASE_URL
   ?? (process.env.REPLIT_EXPO_DEV_DOMAIN ? `https://${process.env.REPLIT_EXPO_DEV_DOMAIN}` : undefined);
@@ -234,4 +235,168 @@ test('playlist history offers one end-of-run rating action for playlist and rout
     'Reflection for last-skill.',
     'Reflection for playlist-skill.',
   ]);
+});
+
+const reflectionFixtures = {
+  day: '2020-03-04',
+  routines: [{
+    id: 'morning',
+    title: 'Morning routine',
+    subtitle: '',
+    icon: 'sunny-outline',
+    tone: 'coral',
+    createdAt: '2020-01-01T00:00:00.000Z',
+    steps: [{ id: 'water', title: 'Drink water', durationSeconds: 60 }],
+  }],
+  playlists: [{
+    id: 'daily',
+    title: 'Daily flow',
+    routineIds: ['morning'],
+    rateSkillsAtPlaylistEnd: true,
+  }],
+  get progress() {
+    return {
+      [this.day]: {
+        'morning:water': {
+          routineTitle: 'Morning routine',
+          stepTitle: 'Drink water',
+          playlistRuns: [{ playlistId: 'daily', playlistTitle: 'Daily flow' }],
+        },
+      },
+    };
+  },
+  skills: [
+    {
+      id: 'focus',
+      name: 'Focus',
+      ratings: [{
+        id: 'routine-reflection',
+        rating: 8,
+        ratedAt: '2020-03-04T09:15:00.000Z',
+        routineTitle: 'Morning routine',
+        runId: 'routine-run',
+        completedAt: '2020-03-04T09:00:00.000Z',
+        sequence: 0,
+        note: 'Original routine reflection',
+      }],
+    },
+    {
+      id: 'planning',
+      name: 'Planning',
+      ratings: [{
+        id: 'playlist-reflection',
+        rating: 6,
+        ratedAt: '2020-03-04T10:15:00.000Z',
+        routineTitle: 'Morning routine',
+        runId: 'playlist-run',
+        completedAt: '2020-03-04T10:00:00.000Z',
+        sequence: 1,
+        note: 'Original playlist reflection',
+      }],
+    },
+  ],
+};
+
+async function seedSavedReflections(page: Page) {
+  await page.addInitScript(({ routines, progress, playlists, skills }) => {
+    if (localStorage.getItem('@routine-flow/routines') === null) {
+      localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+      localStorage.setItem('@routine-flow/progress', JSON.stringify(progress));
+      localStorage.setItem('@routine-flow/playlists', JSON.stringify(playlists));
+      localStorage.setItem('@routine-flow/skills', JSON.stringify(skills));
+    }
+  }, reflectionFixtures);
+}
+
+test('routine history can cancel or save a reflection edit without changing its rating event', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await seedSavedReflections(page);
+  await page.goto('/history');
+  await page.getByTestId('history-filter-routine').click();
+  await page.getByTestId('history-routine-morning').click();
+
+  await page.getByTestId('history-edit-reflection-routine-reflection').click();
+  await expect(page.getByTestId('save-reflection-edit')).toBeVisible();
+  const input = page.getByTestId('edit-skill-note-focus-routine-reflection');
+  await expect(input).toHaveValue('Original routine reflection');
+  await input.fill('An unsaved correction');
+  await page.getByTestId('cancel-edit-reflection').click();
+  await expect(page.getByText('Original routine reflection')).toBeVisible();
+
+  const beforeSave = await page.evaluate(() =>
+    (JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
+      id: string;
+      ratings?: Record<string, unknown>[];
+    }[]).find(skill => skill.id === 'focus')?.ratings?.[0],
+  );
+  await page.getByTestId('history-edit-reflection-routine-reflection').click();
+  await page.getByTestId('edit-skill-note-focus-routine-reflection').fill('Corrected routine reflection');
+  await page.getByTestId('save-reflection-edit').click();
+  await expect(page.getByText('Corrected routine reflection')).toBeVisible();
+
+  const afterSave = await page.evaluate(() =>
+    (JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
+      id: string;
+      ratings?: Record<string, unknown>[];
+    }[]).find(skill => skill.id === 'focus')?.ratings?.[0],
+  );
+  expect(beforeSave).toEqual({
+    id: 'routine-reflection',
+    rating: 8,
+    ratedAt: '2020-03-04T09:15:00.000Z',
+    routineTitle: 'Morning routine',
+    runId: 'routine-run',
+    completedAt: '2020-03-04T09:00:00.000Z',
+    sequence: 0,
+    note: 'Original routine reflection',
+  });
+  expect(afterSave).toEqual({ ...beforeSave, note: 'Corrected routine reflection' });
+});
+
+test('playlist history can edit a saved reflection for that playlist run', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await seedSavedReflections(page);
+  await page.goto('/history');
+  await page.getByTestId('history-filter-playlist').click();
+  await page.getByTestId('history-playlist-daily').click();
+
+  await page.getByTestId('history-edit-reflection-playlist-reflection').click();
+  await expect(page.getByText('Planning · Playlist: Daily flow')).toBeVisible();
+  await page.getByTestId('edit-skill-note-planning-playlist-reflection').fill('Updated playlist reflection');
+  await page.getByTestId('save-reflection-edit').click();
+  await expect(page.getByText('Updated playlist reflection')).toBeVisible();
+
+  const savedRating = await page.evaluate(() =>
+    (JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
+      id: string;
+      ratings?: { id: string; rating: number; ratedAt: string; runId?: string; completedAt?: string; note?: string }[];
+    }[]).find(skill => skill.id === 'planning')?.ratings?.[0],
+  );
+  expect(savedRating).toEqual({
+    id: 'playlist-reflection',
+    rating: 6,
+    ratedAt: '2020-03-04T10:15:00.000Z',
+    routineTitle: 'Morning routine',
+    runId: 'playlist-run',
+    completedAt: '2020-03-04T10:00:00.000Z',
+    sequence: 1,
+    note: 'Updated playlist reflection',
+  });
+});
+
+test('skill history can edit a reflection and the corrected note appears in routine history', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await seedSavedReflections(page);
+  await page.goto('/skills');
+  await page.getByTestId('skill-rating-history-toggle-focus').click();
+
+  await page.getByTestId('skill-edit-reflection-focus-routine-reflection').click();
+  await expect(page.getByText('Focus · Morning routine')).toBeVisible();
+  await page.getByTestId('edit-skill-note-focus-routine-reflection').fill('Updated from skill history');
+  await page.getByTestId('save-reflection-edit').click();
+  await expect(page.getByText('Updated from skill history')).toBeVisible();
+
+  await page.goto('/history');
+  await page.getByTestId('history-edit-reflection-routine-reflection').waitFor({ state: 'visible' });
+  await expect(page.getByText('Updated from skill history')).toBeVisible();
 });

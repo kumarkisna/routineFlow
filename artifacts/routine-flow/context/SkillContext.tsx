@@ -39,6 +39,7 @@ type SkillContextValue = {
     run: SkillRatingRun,
   ) => Promise<void>;
   addRatingNotes: (notes: { skillId: string; ratingId: string; note: string }[]) => Promise<void>;
+  updateRatingNote: (skillId: string, ratingId: string, note: string) => Promise<void>;
   mergeImportedSkills: (skills: RoutineSkill[]) => Promise<Record<string, string>>;
 };
 
@@ -222,6 +223,35 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
     setSkills(next);
   }), [error, loading, runWrite, storage]);
 
+  const updateRatingNote = useCallback((skillId: string, ratingId: string, value: string) => runWrite(async () => {
+    if (loading || error) throw new Error('Wait for skills to load successfully before editing reflections.');
+    if (typeof skillId !== 'string' || !skillId.trim()
+      || typeof ratingId !== 'string' || !ratingId.trim()
+      || typeof value !== 'string' || value.length > MAX_SKILL_NOTE_LENGTH) {
+      throw new Error('Enter a valid reflection note.');
+    }
+    const skill = current.current.find(item => item.id === skillId);
+    const rating = skill?.ratings?.find(item => item.id === ratingId);
+    if (!rating) throw new Error('This skill rating could not be found. Refresh and try again.');
+
+    const note = value.trim();
+    if ((rating.note?.trim() ?? '') === note) return;
+
+    const next = current.current.map(item => {
+      if (item.id !== skillId || !item.ratings) return item;
+      const ratings = item.ratings.map(entry => {
+        if (entry.id !== ratingId) return entry;
+        if (note) return { ...entry, note };
+        const { note: _note, ...withoutNote } = entry;
+        return withoutNote;
+      });
+      return { ...item, ratings };
+    });
+    await storage.setItem(KEY, JSON.stringify(next));
+    current.current = next;
+    setSkills(next);
+  }), [error, loading, runWrite, storage]);
+
   const deleteSkill = useCallback((id: string) => runWrite(async () => {
     if (loading || error) throw new Error('Wait for skills to load successfully before making changes.');
     if (!current.current.some(skill => skill.id === id)) throw new Error('Skill not found.');
@@ -254,7 +284,7 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
   return (
     <SkillContext.Provider value={{
       skills, ratingWindow, loading, error, reload, createSkill, updateSkill, deleteSkill,
-      setRatingWindow, recordRatings, addRatingNotes, mergeImportedSkills,
+      setRatingWindow, recordRatings, addRatingNotes, updateRatingNote, mergeImportedSkills,
     }}>
       {children}
     </SkillContext.Provider>

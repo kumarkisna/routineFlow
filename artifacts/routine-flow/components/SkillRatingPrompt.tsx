@@ -12,6 +12,18 @@ type RatingPromptItem = {
   skill: RoutineSkill;
   key: string;
   noteTarget?: MissingSkillRatingNote;
+  editTarget?: SkillRatingNoteEditTarget;
+};
+
+export type SkillRatingNoteEditTarget = {
+  skillId: string;
+  ratingId: string;
+  rating: number;
+  note: string;
+  ratedAt: string;
+  completedDay?: string;
+  completedAt?: string;
+  contextLabel?: string;
 };
 
 export function SkillRatingPrompt({
@@ -21,6 +33,7 @@ export function SkillRatingPrompt({
   contextLabel,
   run,
   noteTargets,
+  editTarget,
   onSkip,
   onSaved,
 }: {
@@ -32,13 +45,21 @@ export function SkillRatingPrompt({
   run?: SkillRatingRun;
   /** Existing ratings can be given a missing note without changing the saved score. */
   noteTargets?: MissingSkillRatingNote[];
+  /** An existing reflection can be updated without changing its score or history entry. */
+  editTarget?: SkillRatingNoteEditTarget;
   onSkip: () => void;
   onSaved: () => void;
 }) {
   const colors = useColors();
-  const { skills, recordRatings, addRatingNotes } = useSkills();
+  const { skills, recordRatings, addRatingNotes, updateRatingNote } = useSkills();
   const noteOnly = noteTargets !== undefined;
-  const items: RatingPromptItem[] = noteOnly
+  const editing = editTarget !== undefined;
+  const items: RatingPromptItem[] = editing
+    ? (() => {
+      const skill = skills.find(item => item.id === editTarget.skillId);
+      return skill ? [{ skill, key: editTarget.ratingId, editTarget }] : [];
+    })()
+    : noteOnly
     ? (noteTargets ?? []).flatMap(noteTarget => {
       const skill = skills.find(item => item.id === noteTarget.skillId);
       return skill ? [{ skill, key: noteTarget.ratingId, noteTarget }] : [];
@@ -57,10 +78,10 @@ export function SkillRatingPrompt({
   React.useEffect(() => {
     if (visible) {
       setSelected({});
-      setNotes({});
+      setNotes(editTarget ? { [editTarget.ratingId]: editTarget.note } : {});
       setError('');
     }
-  }, [visible, itemKey]);
+  }, [visible, itemKey, editTarget?.note, editTarget?.ratingId]);
 
   async function save() {
     if (lock.current) return;
@@ -80,8 +101,8 @@ export function SkillRatingPrompt({
       if (!target || !note) return [];
       return [{ skillId: skill.id, ratingId: target.ratingId, note }];
     });
-    if (noteOnly ? !noteEntries.length : !ratingEntries.length) return;
-    if (!noteOnly && !run) {
+    if (noteOnly ? !noteEntries.length : !editing && !ratingEntries.length) return;
+    if (!noteOnly && !editing && !run) {
       setError('Could not find this routine’s completion time. Please close and try again.');
       return;
     }
@@ -89,7 +110,9 @@ export function SkillRatingPrompt({
     setSaving(true);
     setError('');
     try {
-      if (noteOnly) {
+      if (editing && editTarget) {
+        await updateRatingNote(editTarget.skillId, editTarget.ratingId, notes[editTarget.ratingId] ?? '');
+      } else if (noteOnly) {
         await addRatingNotes(noteEntries);
       } else {
         await recordRatings(routineTitle, ratingEntries, run!);
@@ -103,9 +126,9 @@ export function SkillRatingPrompt({
     }
   }
 
-  const canSave = noteOnly
+  const canSave = editing || (noteOnly
     ? Object.values(notes).some(note => note.trim().length > 0)
-    : Object.keys(selected).length > 0;
+    : Object.keys(selected).length > 0);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onSkip}>
@@ -123,13 +146,17 @@ export function SkillRatingPrompt({
             </View>
             <View style={styles.headerText}>
               <Text style={[styles.title, { color: colors.foreground }]}>
-                {noteOnly ? 'Add notes to past ratings' : 'Rate the skills you used'}
+                {editing ? 'Edit reflection' : noteOnly ? 'Add notes to past ratings' : 'Rate the skills you used'}
               </Text>
-              <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={2}>{contextLabel ?? routineTitle}</Text>
+              <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={2}>
+                {editTarget?.contextLabel ?? contextLabel ?? routineTitle}
+              </Text>
             </View>
           </View>
           <Text style={[styles.note, { color: colors.mutedForeground }]}>
-            {noteOnly
+            {editing
+              ? 'Update your reflection. The saved score and original history entry will stay unchanged.'
+              : noteOnly
               ? 'Add a reflection to the saved rating. The score will stay unchanged.'
               : 'Choose a score from 1 to 10 for any skill. Add an optional note to remember what went well or what to work on.'}
           </Text>
@@ -137,18 +164,18 @@ export function SkillRatingPrompt({
             {items.map(({ skill, key, noteTarget }) => (
               <View key={key} style={[styles.skillRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[styles.skillName, { color: colors.foreground }]}>{skill.name}</Text>
-                {noteOnly ? (
+                {noteOnly || editing ? (
                   <>
                     <Text style={[styles.savedScore, { color: colors.primary }]}>
-                      Saved score · {noteTarget?.rating}/10
+                      Saved score · {noteTarget?.rating ?? editTarget?.rating}/10
                     </Text>
-                    {noteTarget ? (
+                    {noteTarget || editTarget ? (
                       <Text style={[styles.targetDate, { color: colors.mutedForeground }]}>
-                        {noteTarget.completedAt
-                          ? new Date(noteTarget.completedAt).toLocaleString()
-                          : noteTarget.completedDay
-                            ? `Completed ${formatHistoryDay(noteTarget.completedDay)}`
-                            : `Rated ${new Date(noteTarget.ratedAt).toLocaleString()}`}
+                        {(noteTarget?.completedAt ?? editTarget?.completedAt)
+                          ? new Date(noteTarget?.completedAt ?? editTarget?.completedAt ?? '').toLocaleString()
+                          : (noteTarget?.completedDay ?? editTarget?.completedDay)
+                            ? `Completed ${formatHistoryDay((noteTarget?.completedDay ?? editTarget?.completedDay)!)}`
+                            : `Rated ${new Date(noteTarget?.ratedAt ?? editTarget?.ratedAt ?? '').toLocaleString()}`}
                       </Text>
                     ) : null}
                   </>
@@ -181,20 +208,22 @@ export function SkillRatingPrompt({
                   </View>
                 )}
                 <Text style={[styles.noteLabel, { color: colors.inkSoft }]}>
-                  {noteOnly ? 'Add reflection note' : 'Reflection note · optional'}
+                  {editing ? 'Reflection note' : noteOnly ? 'Add reflection note' : 'Reflection note · optional'}
                 </Text>
                 <TextInput
                   accessibilityLabel={`Note about ${skill.name}${noteTarget ? `, rating ${noteTarget.rating} out of 10` : ''}`}
-                  testID={noteTarget ? `skill-note-${skill.id}-${noteTarget.ratingId}` : `skill-note-${skill.id}`}
+                  testID={editing
+                    ? `edit-skill-note-${skill.id}-${editTarget?.ratingId}`
+                    : noteTarget ? `skill-note-${skill.id}-${noteTarget.ratingId}` : `skill-note-${skill.id}`}
                   value={notes[key] ?? ''}
                   onChangeText={value => {
                     setNotes(previous => ({ ...previous, [key]: value }));
                     setError('');
                   }}
-                  editable={!saving && (noteOnly || selected[skill.id] !== undefined)}
+                  editable={!saving && (noteOnly || editing || selected[skill.id] !== undefined)}
                   maxLength={MAX_SKILL_NOTE_LENGTH}
                   multiline
-                  placeholder={noteOnly || selected[skill.id] !== undefined
+                  placeholder={noteOnly || editing || selected[skill.id] !== undefined
                     ? 'What did you notice? What could you improve?'
                     : 'Choose a score to add a note'}
                   placeholderTextColor={colors.mutedForeground}
@@ -218,18 +247,20 @@ export function SkillRatingPrompt({
           <View style={styles.actions}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={noteOnly ? 'Close note editor' : 'Skip skill ratings'}
-              testID="skip-skill-ratings"
+              accessibilityLabel={editing ? 'Cancel reflection edit' : noteOnly ? 'Close note editor' : 'Skip skill ratings'}
+              testID={editing ? 'cancel-edit-reflection' : 'skip-skill-ratings'}
               disabled={saving}
               onPress={onSkip}
               style={({ pressed }) => [styles.skip, pressed && styles.pressed]}
             >
-              <Text style={[styles.skipText, { color: colors.inkSoft }]}>{noteOnly ? 'Close' : 'Not now'}</Text>
+              <Text style={[styles.skipText, { color: colors.inkSoft }]}>
+                {editing ? 'Cancel' : noteOnly ? 'Close' : 'Not now'}
+              </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={noteOnly ? 'Save reflection notes' : 'Save skill ratings'}
-              testID={noteOnly ? 'save-skill-notes' : 'save-skill-ratings'}
+              accessibilityLabel={editing ? 'Save reflection' : noteOnly ? 'Save reflection notes' : 'Save skill ratings'}
+              testID={editing ? 'save-reflection-edit' : noteOnly ? 'save-skill-notes' : 'save-skill-ratings'}
               disabled={saving || !canSave}
               onPress={() => void save()}
               style={({ pressed }) => [
@@ -240,7 +271,7 @@ export function SkillRatingPrompt({
             >
               {saving ? <ActivityIndicator color={colors.primaryForeground} size="small" /> : null}
               <Text style={[styles.saveText, { color: saving || !canSave ? colors.mutedForeground : colors.primaryForeground }]}>
-                {saving ? 'Saving…' : noteOnly ? 'Save notes' : 'Save ratings and notes'}
+                {saving ? 'Saving…' : editing ? 'Save reflection' : noteOnly ? 'Save notes' : 'Save ratings and notes'}
               </Text>
             </Pressable>
           </View>

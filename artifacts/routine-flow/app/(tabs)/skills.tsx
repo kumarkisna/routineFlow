@@ -9,6 +9,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import { getSkillAssociations, getSkillAverage, MAX_SKILL_NAME } from '@/lib/skills';
 import { SkillRatingChart } from '@/components/SkillRatingChart';
+import { SkillRatingPrompt, type SkillRatingNoteEditTarget } from '@/components/SkillRatingPrompt';
 
 function formatRatingTimestamp(value: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -35,6 +36,7 @@ export default function SkillsScreen() {
   const [expandedUsageId, setExpandedUsageId] = React.useState<string | null>(null);
   const [expandedRatingHistoryId, setExpandedRatingHistoryId] = React.useState<string | null>(null);
   const [ratingHistoryLimits, setRatingHistoryLimits] = React.useState<Record<string, number>>({});
+  const [reflectionEditTarget, setReflectionEditTarget] = React.useState<SkillRatingNoteEditTarget | null>(null);
   const lock = React.useRef(false);
   const windowLock = React.useRef(false);
   const associations = React.useMemo(() => new Map(
@@ -330,6 +332,28 @@ export default function SkillsScreen() {
                               <Text style={[styles.ratingHistoryNote, { color: colors.inkSoft }]}>
                                 {rating.note || 'No note added.'}
                               </Text>
+                              {rating.note?.trim() ? (
+                                <Pressable
+                                  accessibilityRole="button"
+                                  accessibilityLabel={`Edit reflection for ${item.name}`}
+                                  testID={`skill-edit-reflection-${item.id}-${rating.id}`}
+                                  disabled={busy}
+                                  onPress={() => setReflectionEditTarget({
+                                    skillId: item.id,
+                                    ratingId: rating.id,
+                                    rating: rating.rating,
+                                    note: rating.note ?? '',
+                                    ratedAt: rating.ratedAt,
+                                    ...(rating.completedDay ? { completedDay: rating.completedDay } : {}),
+                                    ...(rating.completedAt ? { completedAt: rating.completedAt } : {}),
+                                    contextLabel: `${item.name} · ${rating.routineTitle}`,
+                                  })}
+                                  style={({ pressed }) => [styles.editReflection, pressed && styles.pressed]}
+                                >
+                                  <Ionicons name="pencil-outline" size={15} color={colors.primary} />
+                                  <Text style={[styles.editReflectionText, { color: colors.primary }]}>Edit reflection</Text>
+                                </Pressable>
+                              ) : null}
                             </View>
                           ))}
                           {visibleRatingHistory.length < ratingHistory.length ? (
@@ -448,6 +472,14 @@ export default function SkillsScreen() {
           );
         }}
       />
+      <SkillRatingPrompt
+        visible={reflectionEditTarget !== null}
+        skillIds={[]}
+        routineTitle=""
+        editTarget={reflectionEditTarget ?? undefined}
+        onSkip={() => setReflectionEditTarget(null)}
+        onSaved={() => setReflectionEditTarget(null)}
+      />
     </View>
   );
 }
@@ -478,6 +510,8 @@ const styles = StyleSheet.create({
   ratingHistoryDate: { fontFamily: 'Inter_400Regular', fontSize: 11 },
   ratingHistoryRoutine: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 4 },
   ratingHistoryNote: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  editReflection: { minHeight: 36, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5, marginTop: 3, paddingRight: 8 },
+  editReflectionText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   historyMore: { minHeight: 42, alignItems: 'center', justifyContent: 'center' },
   historyMoreText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   usageToggle: { minHeight: 54, marginTop: 10, paddingVertical: 9, paddingHorizontal: 10, borderWidth: 1, borderRadius: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },

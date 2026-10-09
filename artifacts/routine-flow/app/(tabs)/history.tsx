@@ -6,7 +6,7 @@ import * as Speech from 'expo-speech';
 import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
+import { SkillRatingPrompt, type SkillRatingNoteEditTarget } from '@/components/SkillRatingPrompt';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSkills } from '@/context/SkillContext';
 import { usePlaylists } from '@/context/PlaylistContext';
@@ -43,6 +43,7 @@ export default function HistoryScreen() {
     run?: SkillRatingRun;
     noteTargets?: ReturnType<typeof getSkillRatingsMissingNotes>;
   } | null>(null);
+  const [reflectionEditTarget, setReflectionEditTarget] = React.useState<SkillRatingNoteEditTarget | null>(null);
   const exportLock = React.useRef(false);
   const speechSessionRef = React.useRef(0);
   const speechEventKeyRef = React.useRef<string | null>(null);
@@ -546,6 +547,27 @@ export default function HistoryScreen() {
                           <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>
                             {entry.note ?? 'No note added.'}
                           </Text>
+                          {entry.note?.trim() ? (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Edit reflection for ${entry.skillName}`}
+                              testID={`history-edit-reflection-${entry.ratingId}`}
+                              onPress={() => setReflectionEditTarget({
+                                skillId: entry.skillId,
+                                ratingId: entry.ratingId,
+                                rating: entry.rating,
+                                note: entry.note ?? '',
+                                ratedAt: entry.ratedAt,
+                                ...(entry.completedDay ? { completedDay: entry.completedDay } : {}),
+                                ...(entry.completedAt ? { completedAt: entry.completedAt } : {}),
+                                contextLabel: `${entry.skillName} · ${ratingContext}`,
+                              })}
+                              style={({ pressed }) => [styles.editReflection, pressed && styles.pressed]}
+                            >
+                              <Ionicons name="pencil-outline" size={15} color={colors.primary} />
+                              <Text style={[styles.editReflectionText, { color: colors.primary }]}>Edit reflection</Text>
+                            </Pressable>
+                          ) : null}
                         </View>
                       ))}
                       {exportError?.runId === event.id ? (
@@ -597,6 +619,14 @@ export default function HistoryScreen() {
         noteTargets={ratingPrompt?.mode === 'notes' ? ratingPrompt.noteTargets : undefined}
         onSkip={() => setRatingPrompt(null)}
         onSaved={() => setRatingPrompt(null)}
+      />
+      <SkillRatingPrompt
+        visible={reflectionEditTarget !== null}
+        skillIds={[]}
+        routineTitle=""
+        editTarget={reflectionEditTarget ?? undefined}
+        onSkip={() => setReflectionEditTarget(null)}
+        onSaved={() => setReflectionEditTarget(null)}
       />
     </ScrollView>
   );
@@ -658,6 +688,8 @@ const styles = StyleSheet.create({
   skillNoteSkill: { fontFamily: 'Inter_600SemiBold', fontSize: 12, flex: 1 },
   skillNoteScore: { fontFamily: 'Inter_700Bold', fontSize: 12 },
   skillNoteText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  editReflection: { minHeight: 36, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5, marginTop: 3, paddingRight: 8 },
+  editReflectionText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   empty: { borderWidth: 1, borderRadius: 19, padding: 25, alignItems: 'center' },
   emptyTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 16, marginTop: 12 },
   emptyCopy: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 6 },
