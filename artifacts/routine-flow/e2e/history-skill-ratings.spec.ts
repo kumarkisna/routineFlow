@@ -330,7 +330,30 @@ test('routine history can cancel or save a reflection edit without changing its 
     }[]).find(skill => skill.id === 'focus')?.ratings?.[0],
   );
   await page.getByTestId('history-edit-reflection-routine-reflection').click();
-  await page.getByTestId('edit-skill-note-focus-routine-reflection').fill('Corrected routine reflection');
+  const editInput = page.getByTestId('edit-skill-note-focus-routine-reflection');
+  await editInput.fill('Corrected routine reflection');
+  await page.evaluate(() => {
+    const originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (key === '@routine-flow/skills') {
+        Storage.prototype.setItem = originalSetItem;
+        throw new Error('Reflection edit test: one-shot storage write failure');
+      }
+      return originalSetItem.call(this, key, value);
+    };
+  });
+  await page.getByTestId('save-reflection-edit').click();
+  await expect(page.getByTestId('skill-rating-error'))
+    .toHaveText('Reflection edit test: one-shot storage write failure');
+  await expect(editInput).toHaveValue('Corrected routine reflection');
+  const afterFailedSave = await page.evaluate(() =>
+    (JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
+      id: string;
+      ratings?: Record<string, unknown>[];
+    }[]).find(skill => skill.id === 'focus')?.ratings?.[0],
+  );
+  expect(afterFailedSave).toEqual(beforeSave);
+
   await page.getByTestId('save-reflection-edit').click();
   await expect(page.getByText('Corrected routine reflection')).toBeVisible();
 
