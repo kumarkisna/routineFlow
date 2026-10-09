@@ -8,6 +8,7 @@ import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { createPersonStorage } from '@/lib/personStorage';
 import { alertDate, futureScheduleAlerts, scheduleAlertOffsets, validateAlertOffsets } from '@/lib/scheduleAlerts';
 import { createScheduleReminderService } from '@/lib/scheduleReminderService';
+import { Notifications } from '@/lib/localNotifications';
 import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, parseSchedules, persistScheduleChange,
   scheduledPlaylistSource, type RoutineSchedule, type ScheduleTargetType } from '@/lib/schedules';
 import type { RoutineNotificationSettings } from '@/types/routines';
@@ -33,7 +34,10 @@ const ScheduleContext = createContext<ScheduleContextValue | null>(null);
 export function ScheduleProvider({ children }: { children: React.ReactNode }) {
   const { activePerson, people } = usePeople();
   const AsyncStorage = usePersonStorage();
-  const reminderService = useMemo(() => createScheduleReminderService(activePerson.id), [activePerson.id]);
+  const reminderService = useMemo(
+    () => createScheduleReminderService(activePerson.id, Platform.OS, Notifications),
+    [activePerson.id],
+  );
   const { routines, loading: routinesLoading } = useRoutines();
   const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
   const [schedules, setSchedules] = useState<RoutineSchedule[]>([]);

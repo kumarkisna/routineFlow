@@ -8,8 +8,9 @@ import {
 } from '@/lib/personCopy';
 import { initialPeopleRegistry, parsePeopleRegistry, type PeopleRegistry } from '@/lib/peopleRegistry';
 import { createScheduleReminderService } from '@/lib/scheduleReminderService';
+import { restoreScheduleReminders } from '@/lib/restoreScheduleReminders';
+import { Notifications } from '@/lib/localNotifications';
 import { persistScheduleChange, type RoutineSchedule } from '@/lib/schedules';
-import { futureScheduleAlerts } from '@/lib/scheduleAlerts';
 import { DEFAULT_SKILL_RATING_WINDOW } from '@/lib/skills';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
 import { mergePersonRestore, type PersonRestoreSnapshot } from '@/lib/personRestore';
@@ -349,48 +350,13 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     };
     await saveRegistry(next);
 
-    const schedulesToEnable = mergedProfiles.flatMap(result => result.schedulesToEnable);
-    const importedFutureAlerts = schedulesToEnable.reduce((total, schedule) => total + futureScheduleAlerts(schedule).length, 0);
-    const existingFutureAlerts = [...snapshots.values()]
-      .reduce((total, snapshot) => total + snapshot.schedules.reduce(
-        (count, schedule) => count + futureScheduleAlerts(schedule).length, 0,
-      ), 0);
-    let remindersLeftOff = 0;
-    if (Platform.OS === 'web') {
-      remindersLeftOff = schedulesToEnable.length;
-    } else if (Platform.OS === 'ios' && existingFutureAlerts + importedFutureAlerts > 60) {
-      remindersLeftOff = schedulesToEnable.length;
-    } else {
-      const schedulesByPerson = new Map(mergedProfiles.map(result => [
-        result.profile.id,
-        [...result.snapshot.schedules],
-      ]));
-      let reminderSetupBlocked = false;
-      for (const result of mergedProfiles) {
-        let personSchedules = schedulesByPerson.get(result.profile.id) ?? [];
-        const storage = createPersonStorage(result.profile.id);
-        for (const schedule of result.schedulesToEnable) {
-          if (!futureScheduleAlerts(schedule).length || reminderSetupBlocked) {
-            remindersLeftOff++;
-            continue;
-          }
-          try {
-            personSchedules = await persistScheduleChange(
-              storage,
-              PERSON_DATA_KEYS.schedules,
-              personSchedules,
-              { ...schedule, reminder: true },
-              schedule.id,
-              createScheduleReminderService(result.profile.id),
-            );
-            schedulesByPerson.set(result.profile.id, personSchedules);
-          } catch {
-            reminderSetupBlocked = true;
-            remindersLeftOff++;
-          }
-        }
-      }
-    }
+    const remindersLeftOff = await restoreScheduleReminders({
+      profiles: mergedProfiles,
+      existingSchedules: [...snapshots.values()].flatMap(snapshot => snapshot.schedules),
+      platform: Platform.OS,
+      createStorage: createPersonStorage,
+      createReminderService: personId => createScheduleReminderService(personId, Platform.OS, Notifications),
+    });
 
     const summary = mergedProfiles.reduce<AllProfilesRestoreSummary>((total, result) => ({
       profilesAdded: total.profilesAdded + Number(addedProfileIds.has(result.profile.id)),

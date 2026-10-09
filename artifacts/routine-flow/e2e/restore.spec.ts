@@ -326,7 +326,17 @@ test('all-profiles import adds profiles and merges saved history without replaci
               rateSkillsAtPlaylistEnd: true,
               reminderSettings: { stepCompletion: false, routineCompletion: false },
             }],
-            schedules: [],
+            schedules: [{
+              id: 'morning-playlist-schedule',
+              targetType: 'playlist',
+              targetId: 'morning-list',
+              targetTitle: 'Morning list',
+              scheduledAt: '2090-06-01T09:00:00.000Z',
+              reminder: true,
+              alertOffsetsMinutes: [0],
+              notificationId: 'old-playlist-device-notification',
+              notifications: [{ id: 'old-playlist-device-notification', offsetMinutes: 0 }],
+            }],
             selectedThemeId: meThemeId,
             skillRatingWindow: 7,
           },
@@ -411,6 +421,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
     meProgress: JSON.parse(localStorage.getItem('@routine-flow/progress') ?? '{}'),
     meSkills: JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]'),
     mePlaylists: JSON.parse(localStorage.getItem('@routine-flow/playlists') ?? '[]'),
+    meSchedules: JSON.parse(localStorage.getItem('@routine-flow/schedules') ?? '[]'),
     meWindow: localStorage.getItem('@routine-flow/skill-rating-window'),
     meTheme: localStorage.getItem('@routine-flow/appearance'),
     alexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines') ?? '[]'),
@@ -451,6 +462,14 @@ test('all-profiles import adds profiles and merges saved history without replaci
   ]);
   expect(restored.mePlaylists[0].routineIds).toEqual([mergedRoutine.id]);
   expect(restored.mePlaylists[0].skillIds).toEqual(['local-focus']);
+  expect(restored.meSchedules).toHaveLength(1);
+  expect(restored.meSchedules[0]).toMatchObject({
+    targetType: 'playlist',
+    targetId: 'morning-list',
+    reminder: false,
+  });
+  expect(restored.meSchedules[0].notificationId).toBeUndefined();
+  expect(restored.meSchedules[0].notifications).toBeUndefined();
   expect(restored.meWindow).toBe('7');
   expect(restored.meTheme).toBe(meThemeId);
   expect(restored.alexRoutines.map((routine: { id: string }) => routine.id)).toEqual(['travel-reset']);
