@@ -370,7 +370,7 @@ export default function HomeScreen() {
     }
   }
 
-  async function importRoutinesFile() {
+  async function importRoutinesFile(allProfilesOnly = false) {
     if (transferLock.current || visibilityLock.current || orderLock.current || renameLock.current || loading || importPending) return;
     transferLock.current = true;
     setTransferBusy('import');
@@ -407,6 +407,9 @@ export default function HomeScreen() {
         }
       } catch {
         // The format-specific parser below returns the user-facing JSON error.
+      }
+      if (allProfilesOnly && format !== ALL_PEOPLE_FILE_FORMAT) {
+        throw new Error('Select an all-profiles backup file.');
       }
       if (format === ALL_PEOPLE_FILE_FORMAT) {
         setPendingAllProfileNameDrafts({});
@@ -923,7 +926,7 @@ export default function HomeScreen() {
               <View style={[styles.allProfilesSection, { borderTopColor: colors.border }]}>
                 <Text style={[styles.transferTitle, { color: colors.foreground }]}>Back up all profiles</Text>
                 <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
-                  Export every profile saved on this device in one JSON file. Each profile keeps its own routines, playlists, schedules, skills, ratings, preferences, and theme. Daily progress follows the checkbox above. Import JSON can restore this archive without removing local history.
+                  Export every profile saved on this device in one JSON file. Each profile keeps its own routines, playlists, schedules, skills, ratings, preferences, and theme. Daily progress follows the checkbox above. Use Import all profiles below to restore this archive without removing local history.
                 </Text>
                 <View style={styles.transferActions}>
                   {Platform.OS === 'android' ? (
@@ -970,6 +973,22 @@ export default function HomeScreen() {
                       </Text>
                     </Pressable>
                   ) : null}
+                </View>
+                <View style={styles.transferActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Import an all-profiles backup"
+                    accessibilityHint="Choose a backup file to restore every profile on this device."
+                    testID="import-all-people-data"
+                    disabled={loading || peopleBusy || transferBusy !== null || visibilityBusyId !== null || orderBusy || renameBusy || importPending}
+                    onPress={() => void importRoutinesFile(true)}
+                    style={({ pressed }) => [styles.transferButton, { borderColor: colors.primary }, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
+                    <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                      {transferBusy === 'import' ? 'Importing…' : 'Import all profiles'}
+                    </Text>
+                  </Pressable>
                 </View>
               </View>
               {pendingBackup ? (

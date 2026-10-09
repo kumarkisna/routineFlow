@@ -252,6 +252,22 @@ test('all-profiles export keeps each profile and its skill history together', as
   expect(alexBackup.progress[day]['travel-reset:unpack']).toBe(true);
 });
 
+test('dedicated all-profile import action rejects routine-only backups', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await page.goto('/');
+  await expect(page.getByTestId('import-all-people-data')).toBeVisible();
+
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('import-all-people-data').click();
+  await (await chooserPromise).setFiles({
+    name: 'routine-only-backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ format: 'routine-flow-routines' })),
+  });
+  await expect(page.getByText('Select an all-profiles backup file.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Restore \d+ profiles\?/)).toHaveCount(0);
+});
+
 test('all-profile restore remaps colliding routine IDs without crossing same-named skill assignments through export and re-import', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   const profiles = [
@@ -372,8 +388,9 @@ test('all-profile restore remaps colliding routine IDs without crossing same-nam
 
   await page.goto('/');
   await expect(page.getByLabel('Active person: Me. Open people')).toBeVisible();
+  await expect(page.getByTestId('import-all-people-data')).toBeVisible();
   const restoreChooser = page.waitForEvent('filechooser');
-  await page.getByTestId('import-routines').click();
+  await page.getByTestId('import-all-people-data').click();
   await (await restoreChooser).setFiles({
     name: 'same-named-profile-skills.json',
     mimeType: 'application/json',
@@ -465,7 +482,7 @@ test('all-profile restore remaps colliding routine IDs without crossing same-nam
   });
 
   const reimportChooser = page.waitForEvent('filechooser');
-  await page.getByTestId('import-routines').click();
+  await page.getByTestId('import-all-people-data').click();
   await (await reimportChooser).setFiles({
     name: 'same-named-profile-skills-round-trip.json',
     mimeType: 'application/json',
