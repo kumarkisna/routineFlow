@@ -45,13 +45,23 @@ for (const [label, includeProgress] of [
 ] as const) {
   test(`restoring daily progress ${label} survives a reload`, async ({ page }) => {
     if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
-    const day = new Date().toISOString().slice(0, 10);
+  const day = new Date().toISOString().slice(0, 10);
     const backup = JSON.stringify({
       format: 'routine-flow-routines',
-      version: 2,
+      version: 5,
       exportedAt: new Date().toISOString(),
-      routines: [original, second],
-      progress: { [day]: { 'morning-reset:morning-water': true, 'travel-reset:unpack': true } },
+      routines: [],
+      progress: {
+        [pastDay]: {
+          'morning-reset:morning-water': labeled,
+          'morning-reset:legacy': true,
+          'legacy routine:old': true,
+          'morning-reset:incomplete': false,
+        },
+        // Even a same-day completion with the exact live routine/step IDs must
+        // stay archived rather than mark the unrelated live step complete.
+        [today]: { 'morning-reset:morning-water': labeled },
+      },
     });
 
     // Fresh storage for each choice, with a same-ID local edit and an explicit
@@ -68,7 +78,7 @@ for (const [label, includeProgress] of [
     await page.goto('/');
     await expect(page.getByLabel('Open My own reset')).toBeVisible();
 
-    const chooserPromise = page.waitForEvent('filechooser');
+  const chooserPromise = page.waitForEvent('filechooser');
     await page.getByTestId('import-routines').click();
     const chooser = await chooserPromise;
     await chooser.setFiles({
@@ -94,7 +104,30 @@ for (const [label, includeProgress] of [
     }));
     expect(stored.routines).toHaveLength(3);
     expect(stored.routines[0]).toEqual(customized);
-    const restored = stored.routines.find((routine) => routine.title === original.title);
+  const restored = await page.evaluate(() => ({
+    registry: JSON.parse(localStorage.getItem('@routine-flow/people') ?? 'null'),
+    meRoutines: JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]'),
+    meProgress: JSON.parse(localStorage.getItem('@routine-flow/progress') ?? '{}'),
+    meSkills: JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]'),
+    mePlaylists: JSON.parse(localStorage.getItem('@routine-flow/playlists') ?? '[]'),
+    meSchedules: JSON.parse(localStorage.getItem('@routine-flow/schedules') ?? '[]'),
+    meWindow: localStorage.getItem('@routine-flow/skill-rating-window'),
+    meTheme: localStorage.getItem('@routine-flow/appearance'),
+    alexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines') ?? '[]'),
+    alexProgress: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/progress') ?? '{}'),
+    alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
+    alexPlaylists: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/playlists') ?? '[]'),
+    alexSchedules: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/schedules') ?? '[]'),
+    alexWindow: localStorage.getItem('@routine-flow/person/alex/@routine-flow/skill-rating-window'),
+    alexTheme: localStorage.getItem('@routine-flow/person/alex/@routine-flow/appearance'),
+    caseyRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),
+    caseyProgress: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/progress') ?? '{}'),
+    caseySkills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
+    caseyTheme: localStorage.getItem('@routine-flow/person/casey/@routine-flow/appearance'),
+    lowerAlexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/routines') ?? '[]'),
+    lowerAlexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/skills') ?? '[]'),
+    lowerAlexTheme: localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/appearance'),
+  }));
     expect(restored).toBeDefined();
     expect(restored!.id).not.toBe(customized.id);
     expect(restored).toEqual({ ...original, id: restored!.id });
@@ -186,12 +219,12 @@ test('all-profiles export keeps each profile and its skill history together', as
   await page.goto('/');
   await expect(page.getByLabel('Open Travel Reset')).toBeVisible();
   await page.getByTestId('include-daily-progress').click();
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByTestId('export-all-people-data').click();
-  const download = await downloadPromise;
-  const path = await download.path();
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByTestId('export-person-data').click();
+    const download = await downloadPromise;
+    const path = await download.path();
   expect(path).not.toBeNull();
-  const exported = JSON.parse(readFileSync(path!, 'utf8'));
+    const exported = JSON.parse(exportedContents);
 
   expect(exported).toMatchObject({
     format: 'routine-flow-all-people',
@@ -255,6 +288,22 @@ test('all-profile restore remaps colliding routine IDs without crossing same-nam
       skillIds: [skillId],
     }],
   });
+
+  const backupSchedule = (prefix: string, skillId: string, routineId: string, playlistId: string) => ({
+    id: `${prefix}-focus-schedule`,
+    targetType: 'playlist',
+    targetId: playlistId,
+    targetTitle: `${prefix} Focus playlist`,
+    scheduledAt: prefix === 'me' ? '2090-06-01T09:00:00.000Z' : '2090-06-01T10:00:00.000Z',
+    reminder: true,
+    alertOffsetsMinutes: [0],
+    playlistOverride: {
+      title: `${prefix} Focus date`,
+      routineIds: [routineId],
+      skillIds: [skillId],
+      reminderSettings: { stepCompletion: true, routineCompletion: false },
+    },
+  });
   const localConflictRoutine = (prefix: string, skillId: string) => ({
     id: conflictingRoutineId,
     title: `${prefix} local routine`,
@@ -270,52 +319,48 @@ test('all-profile restore remaps colliding routine IDs without crossing same-nam
       skillIds: [skillId],
     }],
   });
-  const allProfilesBackup = {
+  const allProfilesBackup = JSON.stringify({
     format: 'routine-flow-all-people',
     version: 1,
-    activePersonId: 'alex',
-    people: entries.map(({ profile, backupSkillId, prefix }) => {
-      const routine = backupRoutine(prefix, backupSkillId);
-      return {
-        profile,
-        backup: {
-          format: 'routine-flow-routines',
-          version: 7,
-          exportedAt: '2026-10-01T08:00:00.000Z',
-          routines: [routine],
-          skills: [{ id: backupSkillId, name: 'Focus' }],
-          personData: {
-            playlists: [{
-              id: `${prefix}-focus-playlist`,
-              title: `${prefix} Focus playlist`,
-              routineIds: [routine.id],
-              skillIds: [backupSkillId],
-              rateSkillsAtPlaylistEnd: true,
-            }],
-            schedules: [],
-            selectedThemeId: 'routine-flow',
-            skillRatingWindow: 5,
-          },
-        },
-      };
-    }),
-  };
+    activePersonId: 'taylor',
+    people: [
+      makeBackupEntry(me, original, 'me-backup-skill'),
+      makeBackupEntry(alex, second, 'alex-backup-skill'),
+      makeBackupEntry(taylor, taylorRoutine, 'taylor-backup-skill'),
+    ],
+  });
   const localStorageSeed = {
-    '@routine-flow/people': { version: 1, activePersonId: 'me', people: profiles },
-    '@routine-flow/routines': [localConflictRoutine('me', 'me-local-focus')],
-    '@routine-flow/progress': {},
+    '@routine-flow/people': {
+      version: 1,
+      activePersonId: 'me',
+      people: [localProfile, caseyProfile],
+    },
+    '@routine-flow/routines': [customized],
+    '@routine-flow/progress': { [day]: { 'morning-reset:morning-water': true } },
     '@routine-flow/playlists': [],
     '@routine-flow/schedules': [],
-    '@routine-flow/skills': [{ id: 'me-local-focus', name: 'Focus' }],
-    '@routine-flow/skill-rating-window': '5',
-    '@routine-flow/appearance': 'routine-flow',
-    '@routine-flow/person/alex/@routine-flow/routines': [localConflictRoutine('alex', 'alex-local-focus')],
-    '@routine-flow/person/alex/@routine-flow/progress': {},
-    '@routine-flow/person/alex/@routine-flow/playlists': [],
-    '@routine-flow/person/alex/@routine-flow/schedules': [],
-    '@routine-flow/person/alex/@routine-flow/skills': [{ id: 'alex-local-focus', name: 'Focus' }],
-    '@routine-flow/person/alex/@routine-flow/skill-rating-window': '5',
-    '@routine-flow/person/alex/@routine-flow/appearance': 'routine-flow',
+    '@routine-flow/skills': [{
+      id: 'local-focus',
+      name: 'Focus',
+      ratings: [{
+        id: 'local-focus-rating',
+        rating: 4,
+        ratedAt: `${day}T09:00:00.000Z`,
+        routineTitle: 'My own reset',
+        note: 'Local reflection stays intact.',
+      }],
+    }],
+    '@routine-flow/skill-rating-window': '3',
+    '@routine-flow/appearance': localThemeId,
+    '@routine-flow/person/casey/@routine-flow/routines': [caseyRoutine],
+    '@routine-flow/person/casey/@routine-flow/progress': {
+      [day]: { 'casey-routine:unpack': true },
+    },
+    '@routine-flow/person/casey/@routine-flow/playlists': [],
+    '@routine-flow/person/casey/@routine-flow/schedules': [],
+    '@routine-flow/person/casey/@routine-flow/skills': [caseySkill],
+    '@routine-flow/person/casey/@routine-flow/skill-rating-window': '6',
+    '@routine-flow/person/casey/@routine-flow/appearance': caseyThemeId,
   };
   await page.addInitScript(storage => {
     if (localStorage.getItem('@routine-flow/people') === null) {
@@ -345,9 +390,11 @@ test('all-profile restore remaps colliding routine IDs without crossing same-nam
     return {
       meRoutines: read('@routine-flow/routines'),
       mePlaylists: read('@routine-flow/playlists'),
+      meSchedules: read('@routine-flow/schedules'),
       meSkills: read('@routine-flow/skills'),
       alexRoutines: read('@routine-flow/person/alex/@routine-flow/routines'),
       alexPlaylists: read('@routine-flow/person/alex/@routine-flow/playlists'),
+      alexSchedules: read('@routine-flow/person/alex/@routine-flow/schedules'),
       alexSkills: read('@routine-flow/person/alex/@routine-flow/skills'),
     };
   });
@@ -388,8 +435,8 @@ test('all-profile restore remaps colliding routine IDs without crossing same-nam
   const exportedFile = await exportPromise;
   const exportedPath = await exportedFile.path();
   expect(exportedPath).not.toBeNull();
-  const exportedContents = readFileSync(exportedPath!, 'utf8');
-  const exported = JSON.parse(exportedContents);
+    const exportedContents = readFileSync(path!, 'utf8');
+    const exported = JSON.parse(exportedContents);
   const exportedMeBackup = exported.people[0].backup;
   const exportedAlexBackup = exported.people[1].backup;
   const exportedMeRoutine = exportedMeBackup.routines.find((routine: { title: string }) => routine.title === 'me Focus routine');
@@ -863,8 +910,8 @@ test('all-profiles import adds profiles and merges saved history without replaci
   const exportedFile = await exportPromise;
   const exportedPath = await exportedFile.path();
   expect(exportedPath).not.toBeNull();
-  const exportedContents = readFileSync(exportedPath!, 'utf8');
-  const exported = JSON.parse(exportedContents);
+    const exportedContents = readFileSync(path!, 'utf8');
+    const exported = JSON.parse(exportedContents);
   expect(exported.activePersonId).toBe('alex-lower');
   expect(exported.people.map((entry: { profile: { id: string; profileNumber: string } }) =>
     [entry.profile.id, entry.profile.profileNumber])).toEqual([
