@@ -31,6 +31,12 @@ export type AllProfilesRestoreSummary = {
   remindersLeftOff: number;
 };
 
+export type AllProfilesRestoreName = {
+  profileId: string;
+  backupName: string;
+  suggestedName: string;
+};
+
 type PeopleContextValue = {
   people: Person[];
   activePerson: Person;
@@ -42,7 +48,11 @@ type PeopleContextValue = {
   switchPerson: (id: string) => Promise<void>;
   loadPerson: (id: string) => Promise<PersonSnapshot>;
   copyFromPerson: (sourceId: string, selection: PersonCopySelection) => Promise<PersonCopySummary>;
-  restoreAllProfiles: (backup: AllPeopleBackup, restoreHistory: boolean) => Promise<AllProfilesRestoreSummary>;
+  restoreAllProfiles: (
+    backup: AllPeopleBackup,
+    restoreHistory: boolean,
+    profileNames?: Record<string, string>,
+  ) => Promise<AllProfilesRestoreSummary>;
 };
 const PeopleContext = createContext<PeopleContextValue | null>(null);
 const colors = APP_THEMES[0].colors;
@@ -59,6 +69,20 @@ function uniqueImportedName(name: string, usedNames: Set<string>) {
     candidate = `${name.slice(0, 50 - numberedSuffix.length).trimEnd()}${numberedSuffix}`;
   }
   return candidate;
+}
+
+export function getAllProfilesRestoreNamePlan(
+  backup: AllPeopleBackup,
+  localPeople: Person[],
+): AllProfilesRestoreName[] {
+  const localIds = new Set(localPeople.map(person => person.id));
+  const usedNames = new Set(localPeople.map(person => person.name.toLocaleLowerCase()));
+  return backup.people.flatMap(({ profile }) => {
+    if (localIds.has(profile.id)) return [];
+    const suggestedName = uniqueImportedName(profile.name, usedNames);
+    usedNames.add(suggestedName.toLocaleLowerCase());
+    return [{ profileId: profile.id, backupName: profile.name, suggestedName }];
+  });
 }
 
 async function saveRegistry(registry: PeopleRegistry) {
@@ -282,7 +306,11 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     return result.summary;
   }), [runOperation]);
 
-  const restoreAllProfiles = useCallback((backup: AllPeopleBackup, restoreHistory: boolean) => runOperation(async () => {
+  const restoreAllProfiles = useCallback((
+    backup: AllPeopleBackup,
+    restoreHistory: boolean,
+    profileNames?: Record<string, string>,
+  ) => runOperation(async () => {
     const previous = current.current;
     const allIds = [...new Set([
       ...previous.people.map(person => person.id),
@@ -295,12 +323,28 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       snapshots.set(id, await readPersonExportSnapshot(id));
     }));
 
+    const namePlan = getAllProfilesRestoreNamePlan(backup, previous.people);
+    const plannedNames = new Map(namePlan.map(item => [item.profileId, item.suggestedName]));
     const usedNames = new Set(previous.people.map(person => person.name.toLocaleLowerCase()));
     const addedProfileIds = new Set<string>();
     const mergedProfiles = backup.people.map(entry => {
       const local = previous.people.find(person => person.id === entry.profile.id);
-      const name = local ? local.name : uniqueImportedName(entry.profile.name, usedNames);
-      usedNames.add(name.toLocaleLowerCase());
+      let name: string;
+      if (!local) {
+        const plannedName = plannedNames.get(entry.profile.id);
+        const requestedName = profileNames?.[entry.profile.id];
+        name = requestedName === undefined ? plannedName ?? '' : requestedName.trim();
+        if (!name || name.length > 50) {
+          throw new Error('Enter a name for each restored profile, up to 50 characters.');
+        }
+        const nameKey = name.toLocaleLowerCase();
+        if (usedNames.has(nameKey)) {
+          throw new Error('Each restored profile needs a unique name. Choose a name that is not already in use.');
+        }
+        usedNames.add(nameKey);
+      } else {
+        name = local.name;
+      }
       const profile: Person = { ...entry.profile, name };
       if (!local) addedProfileIds.add(profile.id);
       if (!findAppTheme(entry.backup.personData?.selectedThemeId ?? '')) {

@@ -413,8 +413,16 @@ test('all-profiles import adds profiles and merges saved history without replaci
     buffer: Buffer.from(allPeopleBackup),
   });
   await expect(page.getByText('Restore 2 profiles?')).toBeVisible();
+  await expect(page.getByText('“Alex” conflicts with an existing profile. Suggested name:')).toBeVisible();
+  await expect(page.getByTestId('restore-profile-name-alex')).toHaveValue('Alex (imported)');
+  await page.getByTestId('restore-profile-name-alex').fill('Me');
+  await expect(page.getByTestId('restore-profile-name-error')).toBeVisible();
+  await expect(page.getByTestId('import-all-with-progress')).toBeDisabled();
+  await page.getByTestId('restore-profile-name-alex').fill('Alex from backup');
+  await expect(page.getByTestId('restore-profile-name-alex')).toHaveValue('Alex from backup');
+  await expect(page.getByTestId('restore-profile-name-error')).toHaveCount(0);
   await page.getByTestId('import-all-with-progress').click();
-  await expect(page.getByLabel('Active person: Alex (imported). Open people')).toBeVisible();
+  await expect(page.getByLabel('Active person: Alex from backup. Open people')).toBeVisible();
   await expect(page.getByLabel('Open Travel Reset')).toBeVisible();
 
   const restored = await page.evaluate(() => ({
@@ -444,7 +452,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.registry.people.find((person: { id: string }) => person.id === 'casey')).toEqual(caseyProfile);
   expect(restored.registry.people.find((person: { id: string }) => person.id === 'alex')).toMatchObject({
     id: 'alex',
-    name: 'Alex (imported)',
+    name: 'Alex from backup',
   });
   expect(restored.registry.people.find((person: { id: string }) => person.id === 'me')).toMatchObject({
     defaultRateSkillsAtPlaylistEnd: false,
@@ -497,14 +505,14 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.alexSchedules[0].notifications).toBeUndefined();
 
   await page.reload();
-  await expect(page.getByLabel('Active person: Alex (imported). Open people')).toBeVisible();
+  await expect(page.getByLabel('Active person: Alex from backup. Open people')).toBeVisible();
   await page.getByRole('tab', { name: 'Themes' }).click();
   await expect(page.getByTestId('theme-summary')).toContainText('Active: Nordic');
   await page.reload();
   await expect(page.getByTestId('theme-summary')).toContainText('Active: Nordic');
 
   await page.getByRole('tab', { name: 'Today' }).click();
-  await page.getByLabel('Active person: Alex (imported). Open people').click();
+  await page.getByLabel('Active person: Alex from backup. Open people').click();
   await page.getByLabel('Switch to Me').click();
   await expect(page.getByLabel('Active person: Me. Open people')).toBeVisible();
   await page.getByRole('tab', { name: 'Themes' }).click();
@@ -546,7 +554,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(exportedAlex.profile).toMatchObject({
     id: 'alex',
     profileNumber: 'alex',
-    name: 'Alex (imported)',
+    name: 'Alex from backup',
   });
   expect(exportedAlex.backup.routines.map((routine: { id: string }) => routine.id)).toEqual(['travel-reset']);
   expect(exportedAlex.backup.skills[0].ratings[0].note).toBe('Pause before the next step.');
@@ -562,6 +570,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
     buffer: Buffer.from(exportedContents),
   });
   await expect(page.getByText('Restore 3 profiles?')).toBeVisible();
+  await expect(page.getByTestId('restore-profile-name-alex')).toHaveCount(0);
   await page.getByTestId('import-all-profiles').click();
   await expect(page.getByText('Restore 3 profiles?')).toHaveCount(0);
 
@@ -577,13 +586,53 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(afterRoundTrip.registry.people.map((person: { id: string }) => person.id)).toEqual(['me', 'casey', 'alex']);
   expect(afterRoundTrip.registry.people.find((person: { id: string }) => person.id === 'alex')).toMatchObject({
     id: 'alex',
-    name: 'Alex (imported)',
+    name: 'Alex from backup',
   });
   expect(afterRoundTrip.meRoutines.map((routine: { id: string }) => routine.id)).toContain('morning-reset');
   expect(afterRoundTrip.alexRoutines.map((routine: { id: string }) => routine.id)).toContain('travel-reset');
   expect(afterRoundTrip.alexSkills[0].ratings[0].note).toBe('Pause before the next step.');
   expect(afterRoundTrip.caseyRoutines).toEqual([caseyRoutine]);
   expect(afterRoundTrip.caseySkills).toEqual([caseySkill]);
+
+  const exportedMe = exported.people.find((entry: { profile: { id: string } }) => entry.profile.id === 'me');
+  const acceptedSuggestionBackup = JSON.stringify({
+    ...exported,
+    activePersonId: 'restore-copy',
+    people: [
+      exportedMe,
+      {
+        ...exportedAlex,
+        profile: {
+          ...exportedAlex.profile,
+          id: 'restore-copy',
+          profileNumber: 'restore-copy',
+          name: 'Alex from backup',
+        },
+      },
+    ],
+  });
+  const acceptSuggestionChooser = page.waitForEvent('filechooser');
+  await page.getByTestId('import-routines').click();
+  await (await acceptSuggestionChooser).setFiles({
+    name: 'routine-flow-accept-profile-name-suggestion.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(acceptedSuggestionBackup),
+  });
+  await expect(page.getByTestId('restore-profile-name-restore-copy')).toHaveValue('Alex from backup (imported)');
+  await page.getByTestId('import-all-profiles').click();
+  await expect(page.getByLabel('Active person: Alex from backup (imported). Open people')).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel('Active person: Alex from backup (imported). Open people')).toBeVisible();
+  const acceptedSuggestion = await page.evaluate(() => ({
+    registry: JSON.parse(localStorage.getItem('@routine-flow/people') ?? 'null'),
+    routines: JSON.parse(localStorage.getItem('@routine-flow/person/restore-copy/@routine-flow/routines') ?? '[]'),
+    skills: JSON.parse(localStorage.getItem('@routine-flow/person/restore-copy/@routine-flow/skills') ?? '[]'),
+  }));
+  expect(acceptedSuggestion.registry.activePersonId).toBe('restore-copy');
+  expect(acceptedSuggestion.registry.people.find((person: { id: string }) => person.id === 'restore-copy'))
+    .toMatchObject({ id: 'restore-copy', name: 'Alex from backup (imported)' });
+  expect(acceptedSuggestion.routines.map((routine: { id: string }) => routine.id)).toContain('travel-reset');
+  expect(acceptedSuggestion.skills[0].ratings[0].note).toBe('Pause before the next step.');
 });
 
 test('cancelling an all-profiles import leaves every profile and reminder unchanged', async ({ page }) => {

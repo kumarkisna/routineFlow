@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { usePeople } from '@/context/PeopleContext';
+import { getAllProfilesRestoreNamePlan, usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useSkills } from '@/context/SkillContext';
@@ -67,9 +67,27 @@ export default function HomeScreen() {
   const [includeHistory, setIncludeHistory] = React.useState(false);
   const [pendingBackup, setPendingBackup] = React.useState<RoutineBackup | null>(null);
   const [pendingAllProfilesBackup, setPendingAllProfilesBackup] = React.useState<AllPeopleBackup | null>(null);
+  const [pendingAllProfileNameDrafts, setPendingAllProfileNameDrafts] = React.useState<Record<string, string>>({});
   const importPending = pendingBackup !== null || pendingAllProfilesBackup !== null;
   const pendingAllHasProgress = pendingAllProfilesBackup?.people.some(({ backup }) =>
     Object.values(backup.progress ?? {}).some(entries => Object.keys(entries).length > 0)) ?? false;
+  const pendingAllProfileNamePlan = pendingAllProfilesBackup
+    ? getAllProfilesRestoreNamePlan(pendingAllProfilesBackup, people)
+    : [];
+  const pendingAllProfileNameChanges = pendingAllProfileNamePlan.filter(({ backupName, suggestedName }) =>
+    backupName !== suggestedName);
+  const pendingAllProfileNameError = (() => {
+    if (!pendingAllProfilesBackup) return '';
+    const usedNames = new Set(people.map(person => person.name.toLocaleLowerCase()));
+    for (const item of pendingAllProfileNamePlan) {
+      const name = (pendingAllProfileNameDrafts[item.profileId] ?? item.suggestedName).trim();
+      if (!name || name.length > 50) return 'Enter a display name, up to 50 characters.';
+      const key = name.toLocaleLowerCase();
+      if (usedNames.has(key)) return 'Each restored profile needs a unique name. Choose a name that is not already in use.';
+      usedNames.add(key);
+    }
+    return '';
+  })();
   const visibleRoutines = loading ? [] : routines.filter((routine) => !routine.hidden);
   const categories = listRoutineCategories(routines);
   const activeCategory = categoryFilter !== null && categoryFilter !== '' &&
@@ -391,6 +409,7 @@ export default function HomeScreen() {
         // The format-specific parser below returns the user-facing JSON error.
       }
       if (format === ALL_PEOPLE_FILE_FORMAT) {
+        setPendingAllProfileNameDrafts({});
         setPendingAllProfilesBackup(parseAllPeopleBackup(contents));
       } else {
         const imported = parseRoutinesFile(contents);
@@ -462,14 +481,21 @@ export default function HomeScreen() {
   }
 
   async function confirmAllProfilesImport(restoreHistory: boolean) {
-    if (!pendingAllProfilesBackup || pendingBackup || transferLock.current || orderLock.current || renameLock.current || peopleBusy) return;
+    if (!pendingAllProfilesBackup || pendingBackup || transferLock.current || orderLock.current || renameLock.current
+      || peopleBusy || pendingAllProfileNameError) return;
     transferLock.current = true;
     setTransferBusy('import');
     setTransferStatus(null);
     let restored = false;
     try {
-      const result = await restoreAllProfiles(pendingAllProfilesBackup, restoreHistory);
+      const profileNames = Object.fromEntries(pendingAllProfileNamePlan.map(item => [
+        item.profileId,
+        pendingAllProfileNameDrafts[item.profileId] ?? item.suggestedName,
+      ]));
+      const result = await restoreAllProfiles(pendingAllProfilesBackup, restoreHistory, profileNames);
       restored = true;
+      setPendingAllProfilesBackup(null);
+      setPendingAllProfileNameDrafts({});
       if (result.profilesAdded || result.routinesAdded || result.progressAdded || result.playlistsAdded) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -999,6 +1025,42 @@ export default function HomeScreen() {
                   <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
                     Phone reminders are recreated when permissions allow. Web imports leave phone reminders off.
                   </Text>
+                  {pendingAllProfileNameChanges.length ? (
+                    <View style={styles.profileNameChanges}>
+                      <Text style={[styles.profileNameTitle, { color: colors.foreground }]}>
+                        Profile names that need to change
+                      </Text>
+                      {pendingAllProfileNameChanges.map(item => (
+                        <View key={item.profileId} style={styles.profileNameRow}>
+                          <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
+                            “{item.backupName}” conflicts with an existing profile. Suggested name:
+                          </Text>
+                          <TextInput
+                            testID={`restore-profile-name-${item.profileId}`}
+                            accessibilityLabel={`Display name for ${item.backupName}`}
+                            value={pendingAllProfileNameDrafts[item.profileId] ?? item.suggestedName}
+                            onChangeText={name => setPendingAllProfileNameDrafts(current => ({
+                              ...current,
+                              [item.profileId]: name,
+                            }))}
+                            maxLength={50}
+                            autoCapitalize="words"
+                            style={[styles.profileNameInput, {
+                              backgroundColor: colors.background,
+                              borderColor: colors.border,
+                              color: colors.foreground,
+                            }]}
+                          />
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  {pendingAllProfileNameError ? (
+                    <Text testID="restore-profile-name-error" accessibilityRole="alert"
+                      style={[styles.transferStatus, { color: colors.destructive }]}>
+                      {pendingAllProfileNameError}
+                    </Text>
+                  ) : null}
                   <View style={styles.transferActions}>
                     {pendingAllHasProgress ? (
                       <>
@@ -1006,7 +1068,7 @@ export default function HomeScreen() {
                           accessibilityRole="button"
                           testID="import-all-with-progress"
                           accessibilityLabel="Import all profiles and merge daily progress"
-                          disabled={transferBusy !== null || peopleBusy}
+                          disabled={transferBusy !== null || peopleBusy || !!pendingAllProfileNameError}
                           onPress={() => void confirmAllProfilesImport(true)}
                           style={[styles.transferButton, { borderColor: colors.primary }]}
                         >
@@ -1016,7 +1078,7 @@ export default function HomeScreen() {
                           accessibilityRole="button"
                           testID="import-all-without-progress"
                           accessibilityLabel="Import all profiles without daily progress"
-                          disabled={transferBusy !== null || peopleBusy}
+                          disabled={transferBusy !== null || peopleBusy || !!pendingAllProfileNameError}
                           onPress={() => void confirmAllProfilesImport(false)}
                           style={[styles.transferButton, { borderColor: colors.border }]}
                         >
@@ -1028,7 +1090,7 @@ export default function HomeScreen() {
                         accessibilityRole="button"
                         testID="import-all-profiles"
                         accessibilityLabel="Import all profiles"
-                        disabled={transferBusy !== null || peopleBusy}
+                        disabled={transferBusy !== null || peopleBusy || !!pendingAllProfileNameError}
                         onPress={() => void confirmAllProfilesImport(false)}
                         style={[styles.transferButton, { borderColor: colors.primary }]}
                       >
@@ -1041,7 +1103,11 @@ export default function HomeScreen() {
                     accessibilityRole="button"
                     accessibilityLabel="Cancel all-profiles import"
                     disabled={transferBusy !== null}
-                    onPress={() => { setPendingAllProfilesBackup(null); setTransferStatus(null); }}
+                    onPress={() => {
+                      setPendingAllProfilesBackup(null);
+                      setPendingAllProfileNameDrafts({});
+                      setTransferStatus(null);
+                    }}
                     style={styles.cancelImport}
                   >
                     <Text style={[styles.transferButtonText, { color: colors.mutedForeground }]}>Cancel import</Text>
@@ -1139,6 +1205,10 @@ const styles = StyleSheet.create({
   allProfilesSection: { borderTopWidth: 1, marginTop: 14, paddingTop: 14, gap: 6 },
   transferTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   transferDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  profileNameChanges: { gap: 8, marginTop: 12 },
+  profileNameTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  profileNameRow: { gap: 2 },
+  profileNameInput: { borderWidth: 1, borderRadius: 12, minHeight: 44, paddingHorizontal: 12, fontFamily: 'Inter_500Medium', fontSize: 14 },
   historyOption: { flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 14, minHeight: 36 },
   historyLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, flexShrink: 1 },
   importChoice: { borderTopWidth: 1, marginTop: 16, paddingTop: 15 },
