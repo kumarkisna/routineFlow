@@ -39,7 +39,7 @@ export function SkillScopeRatingChart({
   const [scopeKind, setScopeKind] = React.useState<ScopeKind>('routine');
   const [selectedId, setSelectedId] = React.useState('');
   const [averageKind, setAverageKind] = React.useState<'cumulative' | 'rolling'>('cumulative');
-  const [showSkillRecords, setShowSkillRecords] = React.useState(false);
+  const [visibleTraceIds, setVisibleTraceIds] = React.useState<Set<string>>(() => new Set());
 
   const categories = React.useMemo(() => listRoutineCategories(routines), [routines]);
   const options: ScopeOption[] = scopeKind === 'routine'
@@ -64,6 +64,11 @@ export function SkillScopeRatingChart({
       .flatMap(getRoutineSkillIds))];
   }, [playlists, routines, scopeKind, selected]);
   const selectedSkills = skills.filter(skill => skillIds.includes(skill.id));
+  const visibleSkills = selectedSkills.filter(skill => visibleTraceIds.has(skill.id));
+  const traceColor = (skillId: string) => {
+    const index = selectedSkills.findIndex(skill => skill.id === skillId);
+    return traceColors[Math.max(index, 0) % traceColors.length];
+  };
   const points = getSkillRunAveragePoints(selectedSkills, skillIds, windowSize);
   const chartPoints = points.slice(-30);
 
@@ -86,6 +91,13 @@ export function SkillScopeRatingChart({
   const scopeLabel = scopeKind === 'category' ? `category “${selected?.label ?? ''}”` : `${scopeKind} “${selected?.label ?? ''}”`;
   const averageLabel = averageKind === 'cumulative' ? 'Cumulative average' : `Latest ${windowSize} runs average`;
   const dateTickIndexes = [...new Set([0, Math.floor((chartPoints.length - 1) / 2), chartPoints.length - 1])];
+  const traceDescription = visibleSkills.map(skill => {
+    const ratings = chartPoints
+      .filter(point => point.skillRatings[skill.id] !== undefined)
+      .map(point => `${point.skillRatings[skill.id]} out of 10 on ${new Date(point.completedAt).toLocaleDateString()}`)
+      .join('; ');
+    return ratings ? `${skill.name}: ${ratings}` : '';
+  }).filter(Boolean).join('. ');
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -153,18 +165,57 @@ export function SkillScopeRatingChart({
             })}
           </View>
           {selectedSkills.length ? (
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: showSkillRecords }}
-              testID="skill-score-individual-toggle"
-              onPress={() => setShowSkillRecords(value => !value)}
-              style={styles.recordToggle}
-            >
-              <View style={[styles.checkbox, { borderColor: showSkillRecords ? colors.primary : colors.border, backgroundColor: showSkillRecords ? colors.primary : colors.background }]}>
-                {showSkillRecords ? <Text style={{ color: colors.primaryForeground, fontSize: 11 }}>✓</Text> : null}
+            <View style={styles.traceSection}>
+              <View style={styles.traceHeader}>
+                <Text style={[styles.traceTitle, { color: colors.foreground }]}>Individual skill lines</Text>
+                {visibleSkills.length ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    testID="skill-score-clear-traces"
+                    onPress={() => setVisibleTraceIds(new Set())}
+                    hitSlop={8}
+                  >
+                    <Text style={[styles.clearText, { color: colors.primary }]}>Clear</Text>
+                  </Pressable>
+                ) : null}
               </View>
-              <Text style={[styles.toggleText, { color: colors.foreground }]}>Show individual skill records</Text>
-            </Pressable>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.traceOptions}>
+                {selectedSkills.map(skill => {
+                  const checked = visibleTraceIds.has(skill.id);
+                  const color = traceColor(skill.id);
+                  return (
+                    <Pressable
+                      key={skill.id}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked }}
+                      accessibilityLabel={`${checked ? 'Hide' : 'Show'} ${skill.name} rating line`}
+                      testID={`skill-score-trace-${skill.id}`}
+                      onPress={() => setVisibleTraceIds(current => {
+                        const next = new Set(current);
+                        if (next.has(skill.id)) next.delete(skill.id);
+                        else next.add(skill.id);
+                        return next;
+                      })}
+                      style={[
+                        styles.traceOption,
+                        { borderColor: checked ? color : colors.border, backgroundColor: checked ? colors.sageSoft : colors.background },
+                      ]}
+                    >
+                      <View style={[styles.traceCheck, { borderColor: checked ? color : colors.border, backgroundColor: checked ? color : 'transparent' }]}>
+                        {checked ? <Text style={[styles.traceCheckmark, { color: colors.primaryForeground }]}>✓</Text> : null}
+                      </View>
+                      <View style={[styles.legendDot, { backgroundColor: checked ? color : colors.border }]} />
+                      <Text numberOfLines={1} style={[styles.traceOptionText, { color: colors.foreground }]}>{skill.name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              <Text style={[styles.traceHint, { color: colors.mutedForeground }]}>
+                {visibleSkills.length
+                  ? `${visibleSkills.length} individual ${visibleSkills.length === 1 ? 'line' : 'lines'} shown. The combined average remains visible.`
+                  : 'Select any skills to overlay their ratings. The combined average remains visible.'}
+              </Text>
+            </View>
           ) : null}
           {points.length ? (
             <>
@@ -174,7 +225,7 @@ export function SkillScopeRatingChart({
               <View
                 accessible
                 accessibilityRole="image"
-                accessibilityLabel={`${averageLabel} for ${scopeLabel}. ${points.map(point => `${averageAt(point).toFixed(1)} out of 10 on ${new Date(point.completedAt).toLocaleDateString()}`).join('; ')}`}
+                accessibilityLabel={`${averageLabel} for ${scopeLabel}. ${points.map(point => `${averageAt(point).toFixed(1)} out of 10 on ${new Date(point.completedAt).toLocaleDateString()}`).join('; ')}${traceDescription ? ` Individual skill ratings: ${traceDescription}` : ''}`}
                 testID="skill-scope-rating-chart"
                 style={styles.chart}
               >
@@ -192,16 +243,17 @@ export function SkillScopeRatingChart({
                   {averageKind === 'cumulative' && averageCoords.length > 1
                     ? <SvgPath d={areaPath} fill={colors.sageSoft} fillOpacity={0.55} stroke="none" />
                     : null}
-                  {showSkillRecords ? selectedSkills.map((skill, skillIndex) => {
+                  {visibleSkills.map(skill => {
                     const values = chartPoints.flatMap((point, index) =>
                       point.skillRatings[skill.id] === undefined ? [] : [{ x: xAt(index), y: yAt(point.skillRatings[skill.id]), runId: point.runId }]);
                     if (!values.length) return null;
                     const path = values.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
+                    const color = traceColor(skill.id);
                     return <React.Fragment key={skill.id}>
-                      {values.length > 1 ? <SvgPath d={path} fill="none" stroke={traceColors[skillIndex % traceColors.length]} strokeWidth={1.6} /> : null}
-                      {values.map(point => <SvgCircle key={`${skill.id}-${point.runId}`} cx={point.x} cy={point.y} r={3} fill={traceColors[skillIndex % traceColors.length]} />)}
+                      {values.length > 1 ? <SvgPath d={path} fill="none" stroke={color} strokeWidth={1.6} /> : null}
+                      {values.map(point => <SvgCircle key={`${skill.id}-${point.runId}`} cx={point.x} cy={point.y} r={3} fill={color} />)}
                     </React.Fragment>;
-                  }) : null}
+                  })}
                   {averagePath ? <SvgPath d={averagePath} fill="none" stroke={colors.primary} strokeWidth={3} /> : null}
                   {averageCoords.map((point, index) => <SvgCircle key={chartPoints[index].runId} cx={point.x} cy={point.y} r={4} fill={colors.primary} />)}
                   {dateTickIndexes.map((index, tickIndex) => (
@@ -221,12 +273,12 @@ export function SkillScopeRatingChart({
               </View>
               <View style={styles.legend}>
                 <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: colors.primary }]} /><Text style={[styles.legendText, { color: colors.inkSoft }]}>{averageLabel}</Text></View>
-                {showSkillRecords ? selectedSkills.map((skill, index) => (
+                {visibleSkills.map(skill => (
                   <View key={skill.id} style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: traceColors[index % traceColors.length] }]} />
+                    <View style={[styles.legendDot, { backgroundColor: traceColor(skill.id) }]} />
                     <Text style={[styles.legendText, { color: colors.inkSoft }]}>{skill.name}</Text>
                   </View>
-                )) : null}
+                ))}
               </View>
             </>
           ) : (
@@ -250,9 +302,16 @@ const styles = StyleSheet.create({
   optionRow: { gap: 7, paddingBottom: 8 },
   option: { maxWidth: 190, minHeight: 33, paddingHorizontal: 10, borderWidth: 1, borderRadius: 11, justifyContent: 'center' },
   optionText: { fontFamily: 'Inter_500Medium', fontSize: 11 },
-  recordToggle: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  checkbox: { width: 18, height: 18, borderWidth: 1.5, borderRadius: 5, alignItems: 'center', justifyContent: 'center' },
-  toggleText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  traceSection: { marginTop: 4, marginBottom: 4 },
+  traceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  traceTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  clearText: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  traceOptions: { gap: 6, paddingBottom: 5 },
+  traceOption: { minHeight: 34, maxWidth: 190, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 8 },
+  traceOptionText: { fontFamily: 'Inter_500Medium', fontSize: 11, flexShrink: 1 },
+  traceCheck: { width: 15, height: 15, borderWidth: 1.3, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
+  traceCheckmark: { fontSize: 10, lineHeight: 12 },
+  traceHint: { fontFamily: 'Inter_400Regular', fontSize: 10, lineHeight: 14, marginTop: 2 },
   summary: { fontFamily: 'Inter_500Medium', fontSize: 11, marginTop: 6 },
   chart: { width: '100%', marginTop: 6 },
   axisCaption: { fontFamily: 'Inter_500Medium', fontSize: 10, marginLeft: 30 },
