@@ -204,6 +204,7 @@ export default function HistoryScreen() {
     ratings: ReturnType<typeof getHistoryForDay>[number]['skillRatings'],
     scope: 'routine' | 'playlist',
     sourceId: string,
+    routineId: string,
     contextLabel: string,
   ) {
     if (!activeDay) return;
@@ -214,7 +215,7 @@ export default function HistoryScreen() {
       skillIds: missingSkillIds,
       routineTitle,
       contextLabel,
-      run: createHistorySkillRatingRun(activeDay, scope, sourceId),
+      run: createHistorySkillRatingRun(activeDay, routineId, scope === 'playlist' ? sourceId : undefined),
     });
   }
 
@@ -440,6 +441,7 @@ export default function HistoryScreen() {
                     existingRatings,
                     ratingScope,
                     ratingSourceId,
+                    group.id,
                     ratingContext,
                   )}
                   style={({ pressed }) => [

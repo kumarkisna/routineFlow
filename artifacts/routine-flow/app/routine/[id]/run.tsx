@@ -439,7 +439,7 @@ function RoutinePlayer() {
 
   const finishRoutine = useCallback(() => {
     if (!routine || isFinishedRef.current) return;
-    const ratingRun = createSkillRatingRun();
+    const ratingRun = createSkillRatingRun(routine.id, inPlaylist ? playlistId : undefined);
     stopAnnouncement();
     isFinishedRef.current = true;
     isRunningRef.current = false;

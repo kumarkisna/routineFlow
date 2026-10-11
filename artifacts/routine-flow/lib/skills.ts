@@ -4,6 +4,8 @@ import type { RoutinePlaylist } from './playlists';
 export type RoutineSkill = { id: string; name: string; ratings?: SkillRating[] };
 export type SkillRatingRun = {
   runId: string;
+  sourceRoutineId: string;
+  sourcePlaylistId?: string;
   /** Exact completion time for ratings entered during a run. */
   completedAt?: string;
   /** Calendar day only for a rating added later from history. */
@@ -14,6 +16,8 @@ export type SkillRating = {
   rating: number;
   ratedAt: string;
   routineTitle: string;
+  sourceRoutineId?: string;
+  sourcePlaylistId?: string;
   runId?: string;
   completedAt?: string;
   completedDay?: string;
@@ -30,6 +34,10 @@ export type SkillRunAveragePoint = {
   rollingAverage: number;
   skillRatings: Record<string, number>;
 };
+export type SkillRatingSourceFilter =
+  | { kind: 'routine'; id: string; legacyRoutineTitles: string[] }
+  | { kind: 'playlist'; id: string; legacyRoutineTitles: string[] }
+  | { kind: 'category'; routineIds: string[]; legacyRoutineTitles: string[] };
 
 export const MAX_SKILL_NAME = 50;
 export const MAX_SKILLS = 200;
@@ -38,9 +46,11 @@ export const DEFAULT_SKILL_RATING_WINDOW = 5;
 export const MIN_SKILL_RATING_WINDOW = 1;
 export const MAX_SKILL_RATING_WINDOW = 100;
 
-export function createSkillRatingRun(): SkillRatingRun {
+export function createSkillRatingRun(sourceRoutineId: string, sourcePlaylistId?: string): SkillRatingRun {
   return {
     runId: `run-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    sourceRoutineId,
+    ...(sourcePlaylistId ? { sourcePlaylistId } : {}),
     completedAt: new Date().toISOString(),
   };
 }
@@ -123,6 +133,8 @@ function parseRatings(value: unknown): SkillRating[] {
     const hasRunId = rating.runId !== undefined;
     const hasCompletionTime = rating.completedAt !== undefined;
     const hasCompletionDay = rating.completedDay !== undefined;
+    const hasSourceRoutineId = rating.sourceRoutineId !== undefined;
+    const hasSourcePlaylistId = rating.sourcePlaylistId !== undefined;
     if (typeof rating.id !== 'string' || !rating.id.trim() || rating.id.length > 160 || rating.id.includes(':')
       || typeof rating.rating !== 'number' || !Number.isInteger(rating.rating) || rating.rating < 1 || rating.rating > 10
       || typeof rating.ratedAt !== 'string' || !Number.isFinite(Date.parse(rating.ratedAt))
@@ -131,6 +143,13 @@ function parseRatings(value: unknown): SkillRating[] {
       || (hasCompletionTime && hasCompletionDay)
       || (rating.runId !== undefined
         && (typeof rating.runId !== 'string' || !rating.runId.trim() || rating.runId.length > 160 || rating.runId.includes(':')))
+      || (hasSourceRoutineId
+        && (typeof rating.sourceRoutineId !== 'string' || !rating.sourceRoutineId.trim()
+          || rating.sourceRoutineId.length > 160 || rating.sourceRoutineId.includes(':')))
+      || (hasSourcePlaylistId
+        && (typeof rating.sourcePlaylistId !== 'string' || !rating.sourcePlaylistId.trim()
+          || rating.sourcePlaylistId.length > 160 || rating.sourcePlaylistId.includes(':')))
+      || (hasSourcePlaylistId && !hasSourceRoutineId)
       || (rating.completedAt !== undefined
         && (typeof rating.completedAt !== 'string' || !Number.isFinite(Date.parse(rating.completedAt))))
       || (rating.completedDay !== undefined && !isValidSkillRatingDay(rating.completedDay))
@@ -147,6 +166,8 @@ function parseRatings(value: unknown): SkillRating[] {
       rating: rating.rating,
       ratedAt: rating.ratedAt,
       routineTitle: rating.routineTitle.trim(),
+      ...(typeof rating.sourceRoutineId === 'string' ? { sourceRoutineId: rating.sourceRoutineId } : {}),
+      ...(typeof rating.sourcePlaylistId === 'string' ? { sourcePlaylistId: rating.sourcePlaylistId } : {}),
       ...(typeof rating.runId === 'string' ? { runId: rating.runId } : {}),
       ...(typeof rating.completedAt === 'string' ? { completedAt: rating.completedAt } : {}),
       ...(typeof rating.completedDay === 'string' ? { completedDay: rating.completedDay } : {}),
@@ -221,6 +242,23 @@ export function getRoutineSkillIds(routine: Routine): string[] {
     ...(routine.skillIds ?? []),
     ...routine.steps.filter(step => !step.hidden).flatMap(step => step.skillIds ?? []),
   ])];
+}
+
+function routineTitleKey(title: string): string {
+  return title.trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
+/** Return names that identify exactly one routine across the full routine list. */
+export function getUnambiguousRoutineTitles(routines: Routine[], routineIds: string[]): string[] {
+  const selectedIds = new Set(routineIds);
+  const counts = new Map<string, number>();
+  for (const routine of routines) {
+    const key = routineTitleKey(routine.title);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return routines
+    .filter(routine => selectedIds.has(routine.id) && counts.get(routineTitleKey(routine.title)) === 1)
+    .map(routine => routine.title);
 }
 
 export function getPlaylistSkillIds(routineIds: string[], routines: Routine[], playlistSkillIds: string[] = []): string[] {
@@ -306,12 +344,24 @@ export function getSkillRunAveragePoints(
   skills: RoutineSkill[],
   skillIds: string[],
   windowSize: number,
+  sourceFilter?: SkillRatingSourceFilter,
 ): SkillRunAveragePoint[] {
   const selected = new Set(skillIds);
+  const legacyTitles = sourceFilter ? new Set(sourceFilter.legacyRoutineTitles.map(routineTitleKey)) : undefined;
+  const matchesSource = (rating: SkillRating) => {
+    if (!sourceFilter) return true;
+    if (rating.sourceRoutineId !== undefined || rating.sourcePlaylistId !== undefined) {
+      if (sourceFilter.kind === 'routine') return rating.sourceRoutineId === sourceFilter.id;
+      if (sourceFilter.kind === 'playlist') return rating.sourcePlaylistId === sourceFilter.id;
+      return sourceFilter.routineIds.includes(rating.sourceRoutineId ?? '');
+    }
+    return legacyTitles?.has(routineTitleKey(rating.routineTitle)) ?? false;
+  };
   const byRun = new Map<string, { runId: string; completedAt: string; skillRatings: Record<string, number> }>();
   for (const skill of skills) {
     if (!selected.has(skill.id)) continue;
     for (const rating of skill.ratings ?? []) {
+      if (!matchesSource(rating)) continue;
       const runId = rating.runId ?? `legacy:${skill.id}:${rating.id}`;
       const completedAt = rating.completedAt
         ?? (rating.completedDay ? `${rating.completedDay}T12:00:00.000Z` : rating.ratedAt);

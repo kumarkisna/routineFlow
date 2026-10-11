@@ -3,7 +3,14 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { categoryKey, listRoutineCategories } from '@/lib/routineCategories';
-import { getPlaylistSkillIds, getRoutineSkillIds, getSkillRunAveragePoints, type RoutineSkill } from '@/lib/skills';
+import {
+  getPlaylistSkillIds,
+  getRoutineSkillIds,
+  getSkillRunAveragePoints,
+  getUnambiguousRoutineTitles,
+  type RoutineSkill,
+  type SkillRatingSourceFilter,
+} from '@/lib/skills';
 import type { RoutinePlaylist } from '@/lib/playlists';
 import type { Routine } from '@/types/routines';
 
@@ -69,7 +76,21 @@ export function SkillScopeRatingChart({
     const index = selectedSkills.findIndex(skill => skill.id === skillId);
     return traceColors[Math.max(index, 0) % traceColors.length];
   };
-  const points = getSkillRunAveragePoints(selectedSkills, skillIds, windowSize);
+  const sourceFilter: SkillRatingSourceFilter | undefined = React.useMemo(() => {
+    if (!selected) return undefined;
+    const routineIds = scopeKind === 'routine'
+      ? [selected.id]
+      : scopeKind === 'playlist'
+        ? playlists.find(item => item.id === selected.id)?.routineIds ?? []
+        : routines.filter(item => categoryKey(item.category) === selected.id).map(item => item.id);
+    const legacyRoutineTitles = getUnambiguousRoutineTitles(routines, routineIds);
+    if (scopeKind === 'routine') return { kind: 'routine', id: selected.id, legacyRoutineTitles };
+    if (scopeKind === 'playlist') return { kind: 'playlist', id: selected.id, legacyRoutineTitles };
+    return { kind: 'category', routineIds, legacyRoutineTitles };
+  }, [playlists, routines, scopeKind, selected]);
+  const points = sourceFilter
+    ? getSkillRunAveragePoints(selectedSkills, skillIds, windowSize, sourceFilter)
+    : [];
   const chartPoints = points.slice(-30);
 
   const xAt = (index: number) => {
@@ -103,7 +124,7 @@ export function SkillScopeRatingChart({
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.heading, { color: colors.foreground }]}>Combined skill scores</Text>
       <Text style={[styles.description, { color: colors.mutedForeground }]}>
-        Shows rating history for the linked skills. Each run contributes one average across the selected skills rated in that run.
+        Only scores from this routine, playlist, or category are included. Older scores are matched by routine name only when it is unique; their playlist origin cannot be confirmed.
       </Text>
       <View style={styles.choiceRow}>
         {(['routine', 'playlist', 'category'] as const).map(kind => (

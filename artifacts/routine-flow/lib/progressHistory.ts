@@ -69,10 +69,15 @@ export function localDayKey(date: Date): string {
 /** Create a repeatable identifier for a historical completion that had no run ID. */
 export function createHistorySkillRatingRun(
   day: string,
-  scope: 'routine' | 'playlist',
-  sourceId: string,
+  sourceRoutineId: string,
+  sourcePlaylistId?: string,
 ): SkillRatingRun {
-  if (!isValidDay(day) || !sourceId.trim()) throw new Error('The selected history entry is invalid.');
+  if (!isValidDay(day) || !sourceRoutineId.trim()
+    || (sourcePlaylistId !== undefined && !sourcePlaylistId.trim())) {
+    throw new Error('The selected history entry is invalid.');
+  }
+  const scope = sourcePlaylistId ? 'playlist' : 'routine';
+  const sourceId = sourcePlaylistId ?? sourceRoutineId;
   const key = `${scope}|${day}|${sourceId}`;
   let first = 0x811c9dc5;
   let second = 0x517cc1b7;
@@ -83,6 +88,8 @@ export function createHistorySkillRatingRun(
   }
   return {
     runId: `history-${scope}-${day.replace(/-/g, '')}-${(first >>> 0).toString(36)}${(second >>> 0).toString(36)}`,
+    sourceRoutineId,
+    ...(sourcePlaylistId ? { sourcePlaylistId } : {}),
     completedDay: day,
   };
 }

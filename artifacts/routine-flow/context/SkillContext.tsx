@@ -137,7 +137,12 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
       }
       if (!entries.length) return;
       if (!run || typeof run.runId !== 'string' || !run.runId.trim()
-        || run.runId.length > 160 || run.runId.includes(':')) {
+        || run.runId.length > 160 || run.runId.includes(':')
+        || typeof run.sourceRoutineId !== 'string' || !run.sourceRoutineId.trim()
+        || run.sourceRoutineId.length > 160 || run.sourceRoutineId.includes(':')
+        || (run.sourcePlaylistId !== undefined
+          && (typeof run.sourcePlaylistId !== 'string' || !run.sourcePlaylistId.trim()
+            || run.sourcePlaylistId.length > 160 || run.sourcePlaylistId.includes(':')))) {
         throw new Error('The routine completion could not be verified. Please retry the rating.');
       }
       const hasCompletionTime = run.completedAt !== undefined;
@@ -163,6 +168,8 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
           rating: entry.rating,
           ratedAt,
           routineTitle: title,
+          sourceRoutineId: run.sourceRoutineId,
+          ...(run.sourcePlaylistId ? { sourcePlaylistId: run.sourcePlaylistId } : {}),
           runId: run.runId,
           ...(run.completedAt ? { completedAt: run.completedAt } : {}),
           ...(run.completedDay ? { completedDay: run.completedDay } : {}),

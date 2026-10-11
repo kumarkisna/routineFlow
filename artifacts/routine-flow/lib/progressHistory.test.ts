@@ -95,19 +95,21 @@ test('skill ratings group by run and stay in the order presented for rating', ()
 });
 
 test('history rating IDs stay stable for a backfilled routine or playlist day', () => {
-  const routineRun = createHistorySkillRatingRun('2030-06-12', 'routine', 'morning');
-  assert.deepEqual(routineRun, createHistorySkillRatingRun('2030-06-12', 'routine', 'morning'));
+  const routineRun = createHistorySkillRatingRun('2030-06-12', 'morning');
+  assert.deepEqual(routineRun, createHistorySkillRatingRun('2030-06-12', 'morning'));
   assert.equal(routineRun.completedDay, '2030-06-12');
+  assert.equal(routineRun.sourceRoutineId, 'morning');
   assert.ok(!routineRun.runId.includes(':'));
   assert.notEqual(
     routineRun.runId,
-    createHistorySkillRatingRun('2030-06-12', 'playlist', 'morning').runId,
+    createHistorySkillRatingRun('2030-06-12', 'morning', 'daily').runId,
   );
+  assert.equal(createHistorySkillRatingRun('2030-06-12', 'morning', 'daily').sourcePlaylistId, 'daily');
   assert.notEqual(
     routineRun.runId,
-    createHistorySkillRatingRun('2030-06-13', 'routine', 'morning').runId,
+    createHistorySkillRatingRun('2030-06-13', 'morning').runId,
   );
-  assert.throws(() => createHistorySkillRatingRun('2030-02-30', 'routine', 'morning'));
+  assert.throws(() => createHistorySkillRatingRun('2030-02-30', 'morning'));
 });
 
 test('history rating choices exclude skills already rated for that entry', () => {

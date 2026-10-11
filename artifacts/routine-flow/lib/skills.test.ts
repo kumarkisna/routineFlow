@@ -9,6 +9,7 @@ import {
   getSkillAverage,
   getSkillRatingPoints,
   getSkillRunAveragePoints,
+  getUnambiguousRoutineTitles,
   MAX_SKILL_NOTE_LENGTH,
   mergeSkillCatalog,
   parseSkillRatingWindow,
@@ -52,6 +53,77 @@ test('combined skill chart computes per-run, cumulative, and rolling averages', 
   assert.deepEqual(points.map(point => point.rollingAverage), [7, 8]);
   assert.deepEqual(points[0].skillRatings, { a: 8, b: 6 });
   assert.equal(getSkillRunAveragePoints(skills, ['missing'], 3).length, 0);
+});
+
+test('combined skill chart filters runs by source IDs and uses legacy names only when unambiguous', () => {
+  const routines: Routine[] = [
+    {
+      id: 'routine-morning', title: 'Morning', subtitle: '', icon: 'sun', tone: 'sage', createdAt: '',
+      steps: [],
+    },
+    {
+      id: 'routine-morning-duplicate', title: ' Morning ', subtitle: '', icon: 'sun', tone: 'sage', createdAt: '',
+      steps: [],
+    },
+    {
+      id: 'routine-evening', title: 'Evening', subtitle: '', icon: 'sun', tone: 'sage', createdAt: '',
+      steps: [],
+    },
+  ];
+  const skill: RoutineSkill = {
+    id: 'focus',
+    name: 'Focus',
+    ratings: [
+      {
+        id: 'direct-morning', rating: 2, ratedAt: '2030-01-01T10:00:00.000Z',
+        routineTitle: 'Morning', runId: 'direct-morning-run', sourceRoutineId: 'routine-morning',
+        completedAt: '2030-01-01T09:00:00.000Z',
+      },
+      {
+        id: 'playlist-one', rating: 8, ratedAt: '2030-01-02T10:00:00.000Z',
+        routineTitle: 'Morning', runId: 'playlist-one-run', sourceRoutineId: 'routine-morning',
+        sourcePlaylistId: 'playlist-one', completedAt: '2030-01-02T09:00:00.000Z',
+      },
+      {
+        id: 'playlist-two', rating: 4, ratedAt: '2030-01-03T10:00:00.000Z',
+        routineTitle: 'Morning', runId: 'playlist-two-run', sourceRoutineId: 'routine-morning',
+        sourcePlaylistId: 'playlist-two', completedAt: '2030-01-03T09:00:00.000Z',
+      },
+      {
+        id: 'legacy-morning', rating: 10, ratedAt: '2030-01-04T10:00:00.000Z',
+        routineTitle: 'Morning', runId: 'legacy-morning-run', completedAt: '2030-01-04T09:00:00.000Z',
+      },
+      {
+        id: 'legacy-evening', rating: 6, ratedAt: '2030-01-05T10:00:00.000Z',
+        routineTitle: 'Evening', runId: 'legacy-evening-run', completedAt: '2030-01-05T09:00:00.000Z',
+      },
+    ],
+  };
+
+  assert.deepEqual(getUnambiguousRoutineTitles(routines, ['routine-morning']), []);
+  assert.deepEqual(getUnambiguousRoutineTitles(routines, ['routine-evening']), ['Evening']);
+  const routinePoints = getSkillRunAveragePoints([skill], ['focus'], 5, {
+    kind: 'routine',
+    id: 'routine-morning',
+    legacyRoutineTitles: getUnambiguousRoutineTitles(routines, ['routine-morning']),
+  });
+  assert.deepEqual(routinePoints.map(point => [point.runId, point.score]), [
+    ['direct-morning-run', 2],
+    ['playlist-one-run', 8],
+    ['playlist-two-run', 4],
+  ]);
+  const playlistPoints = getSkillRunAveragePoints([skill], ['focus'], 5, {
+    kind: 'playlist',
+    id: 'playlist-one',
+    legacyRoutineTitles: getUnambiguousRoutineTitles(routines, ['routine-morning']),
+  });
+  assert.deepEqual(playlistPoints.map(point => [point.runId, point.score]), [['playlist-one-run', 8]]);
+  const eveningPoints = getSkillRunAveragePoints([skill], ['focus'], 5, {
+    kind: 'category',
+    routineIds: ['routine-evening'],
+    legacyRoutineTitles: getUnambiguousRoutineTitles(routines, ['routine-evening']),
+  });
+  assert.deepEqual(eveningPoints.map(point => [point.runId, point.score]), [['legacy-evening-run', 6]]);
 });
 
 test('rating history import merges matching skills and ignores duplicate rating IDs', () => {
@@ -103,6 +175,8 @@ test('run time and skill sequence metadata survive skill backup parsing', () => 
       rating: 8,
       ratedAt: '2030-06-12T12:05:00.000Z',
       routineTitle: 'Morning',
+      sourceRoutineId: 'routine-morning',
+      sourcePlaylistId: 'playlist-daily',
       runId: 'run-1',
       completedAt: '2030-06-12T12:00:00.000Z',
       sequence: 2,
@@ -110,6 +184,10 @@ test('run time and skill sequence metadata survive skill backup parsing', () => 
     }],
   };
   assert.deepEqual(parseSkills(JSON.stringify([skill])), [skill]);
+  assert.throws(() => parseSkills(JSON.stringify([{
+    ...skill,
+    ratings: [{ ...skill.ratings[0], sourcePlaylistId: undefined, sourceRoutineId: 'bad:id' }],
+  }])), /could not be read/);
   assert.throws(() => parseSkills(JSON.stringify([{
     ...skill,
     ratings: [{ ...skill.ratings[0], completedAt: undefined }],

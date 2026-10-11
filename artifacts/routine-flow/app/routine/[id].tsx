@@ -97,14 +97,14 @@ export default function RoutineDetailScreen() {
     const wasComplete = isCompleted(todayProgress[progressKey]);
     const completesRoutine = !wasComplete && visibleSteps.every(step =>
       step.id === stepId || isCompleted(todayProgress[`${currentRoutine.id}:${step.id}`]));
-    const run = completesRoutine ? createSkillRatingRun() : undefined;
+    const run = completesRoutine ? createSkillRatingRun(currentRoutine.id) : undefined;
     await toggleStep(currentRoutine.id, stepId);
     void Haptics.selectionAsync();
     if (run) openRatingPrompt(run);
   }
 
   async function handleComplete() {
-    const run = createSkillRatingRun();
+    const run = createSkillRatingRun(currentRoutine.id);
     await completeRoutine(currentRoutine.id);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     openRatingPrompt(run);
