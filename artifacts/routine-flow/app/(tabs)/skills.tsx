@@ -9,6 +9,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import { getSkillAssociations, getSkillAverage, MAX_SKILL_NAME } from '@/lib/skills';
 import { SkillRatingChart } from '@/components/SkillRatingChart';
+import { SkillScopeRatingChart } from '@/components/SkillScopeRatingChart';
 import { SkillRatingPrompt, type SkillRatingNoteEditTarget } from '@/components/SkillRatingPrompt';
 
 function formatRatingTimestamp(value: string) {
@@ -163,6 +164,7 @@ export default function SkillsScreen() {
               </View>
               {windowMessage ? <Text accessibilityRole="alert" testID="skill-rating-window-error" style={[styles.message, { color: colors.destructive }]}>{windowMessage}</Text> : null}
             </View>
+            <SkillScopeRatingChart skills={skills} routines={routines} playlists={playlists} windowSize={ratingWindow} />
             <View style={[styles.createCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>New skill</Text>
               <View style={styles.createRow}>

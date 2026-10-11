@@ -22,6 +22,14 @@ export type SkillRating = {
 };
 
 export type SkillRatingPoint = SkillRating & { average: number };
+export type SkillRunAveragePoint = {
+  runId: string;
+  completedAt: string;
+  score: number;
+  cumulativeAverage: number;
+  rollingAverage: number;
+  skillRatings: Record<string, number>;
+};
 
 export const MAX_SKILL_NAME = 50;
 export const MAX_SKILLS = 200;
@@ -291,4 +299,46 @@ export function getSkillAverage(skill: RoutineSkill, windowSize: number): { aver
   const recent = chronologicalRatings(skill).slice(-windowSize);
   if (!recent.length) return { average: null, count: 0 };
   return { average: recent.reduce((sum, item) => sum + item.rating, 0) / recent.length, count: recent.length };
+}
+
+/** Groups linked-skill records by completed run, then computes both requested average views. */
+export function getSkillRunAveragePoints(
+  skills: RoutineSkill[],
+  skillIds: string[],
+  windowSize: number,
+): SkillRunAveragePoint[] {
+  const selected = new Set(skillIds);
+  const byRun = new Map<string, { runId: string; completedAt: string; skillRatings: Record<string, number> }>();
+  for (const skill of skills) {
+    if (!selected.has(skill.id)) continue;
+    for (const rating of skill.ratings ?? []) {
+      const runId = rating.runId ?? `legacy:${skill.id}:${rating.id}`;
+      const completedAt = rating.completedAt
+        ?? (rating.completedDay ? `${rating.completedDay}T12:00:00.000Z` : rating.ratedAt);
+      const point = byRun.get(runId) ?? { runId, completedAt, skillRatings: {} };
+      if (!(skill.id in point.skillRatings)) point.skillRatings[skill.id] = rating.rating;
+      if (Date.parse(completedAt) < Date.parse(point.completedAt)) point.completedAt = completedAt;
+      byRun.set(runId, point);
+    }
+  }
+  const groups = [...byRun.values()].sort((a, b) =>
+    Date.parse(a.completedAt) - Date.parse(b.completedAt) || a.runId.localeCompare(b.runId));
+  let cumulative = 0;
+  let rollingSum = 0;
+  const recentScores: number[] = [];
+  const limit = Math.max(1, windowSize);
+  return groups.map((group, index) => {
+    const values = Object.values(group.skillRatings);
+    const score = values.reduce((sum, value) => sum + value, 0) / values.length;
+    cumulative += score;
+    recentScores.push(score);
+    rollingSum += score;
+    if (recentScores.length > limit) rollingSum -= recentScores.shift()!;
+    return {
+      ...group,
+      score,
+      cumulativeAverage: cumulative / (index + 1),
+      rollingAverage: rollingSum / recentScores.length,
+    };
+  });
 }

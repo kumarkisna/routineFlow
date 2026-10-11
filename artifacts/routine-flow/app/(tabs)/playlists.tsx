@@ -7,6 +7,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { SkillTagList } from '@/components/SkillPicker';
+import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { createPlaylistRunLaunch, playablePlaylistIds, type RoutinePlaylist } from '@/lib/playlists';
 import { formatDuration, getStepSeconds } from '@/types/routines';
 
@@ -157,6 +158,14 @@ export default function PlaylistsScreen() {
                     onPress={() => router.push({ pathname: '/playlist-editor', params: { id: item.id } })} style={styles.icon}>
                     <Ionicons name="pencil-outline" size={19} color={colors.primary} />
                   </Pressable>
+                  <RoutinePdfExportButton
+                    title={item.title}
+                    kind="playlist"
+                    routines={item.routineIds.map(routineId => routines.find(routine => routine.id === routineId))}
+                    testID={`print-playlist-${item.id}`}
+                    buttonStyle={styles.icon}
+                    iconColor={colors.primary}
+                  />
                   <Pressable accessibilityRole="button" accessibilityLabel={`Delete ${item.title}`} testID={`delete-playlist-${item.id}`}
                     onPress={() => { setPendingDelete(item.id); setMessage(''); }} style={styles.icon}>
                     <Ionicons name="trash-outline" size={19} color={colors.destructive} />

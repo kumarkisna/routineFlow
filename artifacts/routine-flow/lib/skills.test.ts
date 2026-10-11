@@ -8,6 +8,7 @@ import {
   getSkillAssociations,
   getSkillAverage,
   getSkillRatingPoints,
+  getSkillRunAveragePoints,
   MAX_SKILL_NOTE_LENGTH,
   mergeSkillCatalog,
   parseSkillRatingWindow,
@@ -32,6 +33,25 @@ test('each chart point shows the moving average over the latest N ratings at tha
   assert.deepEqual(points.map(point => point.average), [14 / 3, 22 / 3]);
   assert.deepEqual(getSkillAverage(history, 3), { average: 22 / 3, count: 3 });
   assert.deepEqual(getSkillAverage({ id: 'unrated', name: 'New skill' }, 5), { average: null, count: 0 });
+});
+
+test('combined skill chart computes per-run, cumulative, and rolling averages', () => {
+  const skills: RoutineSkill[] = [
+    { id: 'a', name: 'A', ratings: [
+      { id: 'a-1', rating: 8, ratedAt: '2030-01-01T10:00:00.000Z', completedAt: '2030-01-01T09:00:00.000Z', runId: 'run-1', routineTitle: 'Morning' },
+      { id: 'a-2', rating: 6, ratedAt: '2030-01-02T10:00:00.000Z', completedAt: '2030-01-02T09:00:00.000Z', runId: 'run-2', routineTitle: 'Morning' },
+    ] },
+    { id: 'b', name: 'B', ratings: [
+      { id: 'b-1', rating: 6, ratedAt: '2030-01-01T10:00:00.000Z', completedAt: '2030-01-01T09:00:00.000Z', runId: 'run-1', routineTitle: 'Morning' },
+      { id: 'b-2', rating: 10, ratedAt: '2030-01-02T10:00:00.000Z', completedAt: '2030-01-02T09:00:00.000Z', runId: 'run-2', routineTitle: 'Morning' },
+    ] },
+  ];
+  const points = getSkillRunAveragePoints(skills, ['a', 'b'], 1);
+  assert.deepEqual(points.map(point => point.score), [7, 8]);
+  assert.deepEqual(points.map(point => point.cumulativeAverage), [7, 7.5]);
+  assert.deepEqual(points.map(point => point.rollingAverage), [7, 8]);
+  assert.deepEqual(points[0].skillRatings, { a: 8, b: 6 });
+  assert.equal(getSkillRunAveragePoints(skills, ['missing'], 3).length, 0);
 });
 
 test('rating history import merges matching skills and ignores duplicate rating IDs', () => {

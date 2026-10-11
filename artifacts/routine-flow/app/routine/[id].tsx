@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
 import { SkillTagList } from '@/components/SkillPicker';
 import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
+import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
@@ -195,6 +196,14 @@ export default function RoutineDetailScreen() {
               <Ionicons name="arrow-back" size={23} color={colors.heroForeground} />
             </Pressable>
             <View style={styles.heroActions}>
+              <RoutinePdfExportButton
+                title={currentRoutine.title}
+                kind="routine"
+                routines={[currentRoutine]}
+                testID={`print-routine-${currentRoutine.id}`}
+                buttonStyle={styles.iconButton}
+                iconColor={colors.heroForeground}
+              />
               <Pressable
                 accessibilityLabel="Copy routine"
                 testID="copy-routine"
