@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
@@ -58,6 +59,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
   const { routines } = useRoutines();
   const { playlists } = usePlaylists();
   const isWeb = Platform.OS === 'web';
+  const supportsNativeTimePicker = Platform.OS === 'ios' || Platform.OS === 'android';
   const start = React.useMemo(() => {
     if (initial.at) return initial.at;
     const d = new Date();
@@ -72,6 +74,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
   const [date, setDate] = React.useState(localDateString(start));
   const initialClock = initial.copiedAt ? new Date(initial.copiedAt) : start;
   const [time, setTime] = React.useState(`${pad(initialClock.getHours())}:${pad(initialClock.getMinutes())}`);
+  const [showNativeTimePicker, setShowNativeTimePicker] = React.useState(false);
   const [month, setMonth] = React.useState({ y: start.getFullYear(), m: start.getMonth() });
   const [reminder, setReminder] = React.useState(isWeb ? false : initial.reminder);
   const [alertRows, setAlertRows] = React.useState(() => offsetsToRows(initial.alerts));
@@ -255,11 +258,49 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
               }} style={input} />
           </View>
           <View style={{ flex: 2 }}>
-            <Text style={[styles.label, { color: colors.inkSoft }]}>Time (HH:MM)</Text>
-            <TextInput accessibilityLabel="Time, 24-hour hours and minutes" testID="schedule-time-input" value={time} editable={!busy} maxLength={5}
-              placeholder="09:00" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false}
-              keyboardType={isWeb ? 'default' : 'numbers-and-punctuation'}
-              onChangeText={(t) => { setTime(t); setError(''); }} onSubmitEditing={() => void save()} style={input} />
+            <Text style={[styles.label, { color: colors.inkSoft }]}>{supportsNativeTimePicker ? 'Start time (24-hour)' : 'Time (HH:MM)'}</Text>
+            {!supportsNativeTimePicker ? (
+              <TextInput accessibilityLabel="Time, 24-hour hours and minutes" testID="schedule-time-input" value={time} editable={!busy} maxLength={5}
+                placeholder="09:00" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false}
+                keyboardType="default"
+                onChangeText={(t) => { setTime(t); setError(''); }} onSubmitEditing={() => void save()} style={input} />
+            ) : (
+              <>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Choose start time, currently ${time}`}
+                  accessibilityState={{ disabled: busy, expanded: showNativeTimePicker }} testID="schedule-time-picker"
+                  disabled={busy} onPress={() => { Keyboard.dismiss(); setShowNativeTimePicker((shown) => !shown); }}
+                  style={[styles.entry, { backgroundColor: colors.card, borderColor: colors.border }, busy && { opacity: 0.5 }]}>
+                  <Ionicons name="time-outline" size={19} color={colors.primary} />
+                  <Text style={[styles.timeValue, { color: colors.foreground }]}>{time}</Text>
+                  <Ionicons name={showNativeTimePicker ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
+                </Pressable>
+                {showNativeTimePicker ? (
+                  <DateTimePicker
+                    testID="schedule-native-time-picker"
+                    value={(() => {
+                      const [hours, minutes] = time.split(':').map(Number);
+                      const selected = new Date();
+                      selected.setHours(hours, minutes, 0, 0);
+                      return selected;
+                    })()}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    is24Hour
+                    locale={Platform.OS === 'ios' ? 'en_GB' : undefined}
+                    onChange={(event, selected) => {
+                      if (event.type === 'dismissed') {
+                        setShowNativeTimePicker(false);
+                        return;
+                      }
+                      if (!selected) return;
+                      setTime(`${pad(selected.getHours())}:${pad(selected.getMinutes())}`);
+                      setError('');
+                      if (Platform.OS === 'android') setShowNativeTimePicker(false);
+                    }}
+                  />
+                ) : null}
+              </>
+            )}
           </View>
         </View>
 
@@ -300,6 +341,7 @@ const styles = StyleSheet.create({
   hint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginBottom: 10 },
   entry: { minHeight: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 10 },
   entryTitle: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
+  timeValue: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 16 },
   cal: { borderWidth: 1, borderRadius: 18, padding: 10, marginBottom: 14 },
   calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   calTitle: { fontFamily: 'Inter_700Bold', fontSize: 15 },
