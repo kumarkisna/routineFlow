@@ -260,31 +260,41 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
               }} style={input} />
           </View>
           <View style={{ flex: 2 }}>
-            <Text style={[styles.label, { color: colors.inkSoft }]}>{supportsNativeTimePicker ? 'Start time (24-hour)' : 'Start time'}</Text>
+            <Text style={[styles.label, { color: colors.inkSoft }]}>Start time (24-hour)</Text>
             {isWeb ? (
-              <input
-                aria-label="Start time; saved as 24-hour hours and minutes"
-                data-testid="schedule-time-input"
-                type="time"
-                lang="en-GB"
-                step={60}
-                value={time}
-                disabled={busy}
-                onChange={(event) => { setTime(event.currentTarget.value); setError(''); }}
-                style={{
-                  boxSizing: 'border-box',
-                  width: '100%',
-                  height: 52,
-                  marginBottom: 11,
-                  padding: '0 16px',
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: 15,
-                  backgroundColor: colors.card,
-                  color: colors.foreground,
-                  fontFamily: 'Inter_500Medium',
-                  fontSize: 16,
-                }}
-              />
+              <View testID="schedule-time-input" style={[styles.webTimePicker, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <select
+                  aria-label="Hour, 24-hour time"
+                  data-testid="schedule-time-hour"
+                  value={time.slice(0, 2)}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setTime(`${event.currentTarget.value}:${time.slice(3, 5)}`);
+                    setError('');
+                  }}
+                  style={{ ...styles.webTimeSelect, color: colors.foreground, backgroundColor: colors.card }}
+                >
+                  {Array.from({ length: 24 }, (_, hour) => pad(hour)).map((hour) => (
+                    <option key={hour} value={hour}>{hour}</option>
+                  ))}
+                </select>
+                <Text style={[styles.webTimeColon, { color: colors.foreground }]}>:</Text>
+                <select
+                  aria-label="Minute"
+                  data-testid="schedule-time-minute"
+                  value={time.slice(3, 5)}
+                  disabled={busy}
+                  onChange={(event) => {
+                    setTime(`${time.slice(0, 2)}:${event.currentTarget.value}`);
+                    setError('');
+                  }}
+                  style={{ ...styles.webTimeSelect, color: colors.foreground, backgroundColor: colors.card }}
+                >
+                  {Array.from({ length: 60 }, (_, minute) => pad(minute)).map((minute) => (
+                    <option key={minute} value={minute}>{minute}</option>
+                  ))}
+                </select>
+              </View>
             ) : !supportsNativeTimePicker ? (
               <TextInput accessibilityLabel="Time, 24-hour hours and minutes" testID="schedule-time-input" value={time} editable={!busy} maxLength={5}
                 placeholder="09:00" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false}
@@ -373,6 +383,9 @@ const styles = StyleSheet.create({
   entry: { minHeight: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 10 },
   entryTitle: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
   timeValue: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 16 },
+  webTimePicker: { minHeight: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 11 },
+  webTimeSelect: { width: 54, height: 40, borderWidth: 0, borderRadius: 8, fontFamily: 'Inter_500Medium', fontSize: 16, textAlign: 'center' },
+  webTimeColon: { fontFamily: 'Inter_600SemiBold', fontSize: 17, marginHorizontal: 1 },
   cal: { borderWidth: 1, borderRadius: 18, padding: 10, marginBottom: 14 },
   calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   calTitle: { fontFamily: 'Inter_700Bold', fontSize: 15 },
