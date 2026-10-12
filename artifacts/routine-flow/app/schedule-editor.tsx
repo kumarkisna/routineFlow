@@ -260,8 +260,32 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
               }} style={input} />
           </View>
           <View style={{ flex: 2 }}>
-            <Text style={[styles.label, { color: colors.inkSoft }]}>{supportsNativeTimePicker ? 'Start time (24-hour)' : 'Time (HH:MM)'}</Text>
-            {!supportsNativeTimePicker ? (
+            <Text style={[styles.label, { color: colors.inkSoft }]}>{supportsNativeTimePicker ? 'Start time (24-hour)' : 'Start time'}</Text>
+            {isWeb ? (
+              <input
+                aria-label="Start time; saved as 24-hour hours and minutes"
+                data-testid="schedule-time-input"
+                type="time"
+                lang="en-GB"
+                step={60}
+                value={time}
+                disabled={busy}
+                onChange={(event) => { setTime(event.currentTarget.value); setError(''); }}
+                style={{
+                  boxSizing: 'border-box',
+                  width: '100%',
+                  height: 52,
+                  marginBottom: 11,
+                  padding: '0 16px',
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: 15,
+                  backgroundColor: colors.card,
+                  color: colors.foreground,
+                  fontFamily: 'Inter_500Medium',
+                  fontSize: 16,
+                }}
+              />
+            ) : !supportsNativeTimePicker ? (
               <TextInput accessibilityLabel="Time, 24-hour hours and minutes" testID="schedule-time-input" value={time} editable={!busy} maxLength={5}
                 placeholder="09:00" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false}
                 keyboardType="default"
