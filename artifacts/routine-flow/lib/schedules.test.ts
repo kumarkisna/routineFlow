@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, localDateString, localTimeString, parseSchedules,
-  persistScheduleChange, scheduleDate, scheduledPlaylistSource, type RoutineSchedule } from './schedules';
 import { alertDate, scheduleAlertContent } from './scheduleAlerts';
 import { formatLocalDateTime, localDateTimeCandidates, localDateTimeOccurrence } from './localDateTime';
+import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, localDateString, localTimeString, parseSchedules,
+  persistScheduleChange, scheduleDate, scheduledPlaylistSource, type RoutineSchedule } from './schedules';
 
 const future = new Date(Date.now() + 86400000).toISOString();
 const entry: RoutineSchedule = {
@@ -46,6 +46,50 @@ test('fall-back repeated local times use and display the first occurrence, and r
   } finally {
     if (originalTimezone === undefined) delete process.env.TZ;
     else process.env.TZ = originalTimezone;
+  }
+});
+test('saved appointments and alerts keep their instants across timezone changes, while rescheduling uses the new local time', async () => {
+  const previousTimeZone = process.env.TZ;
+  const alertInstants: number[] = [];
+  const reminders = {
+    create: async (schedule: RoutineSchedule, offsetMinutes = 0) => {
+      alertInstants.push(alertDate(schedule, offsetMinutes).getTime());
+      return `reminder-${alertInstants.length}`;
+    },
+    cancel: async () => undefined,
+  };
+  const f = fixture([]);
+
+  try {
+    process.env.TZ = 'America/Los_Angeles';
+    const originalAt = scheduleDate('2032-01-15', '09:30', 0);
+    const original: RoutineSchedule = {
+      ...entry, id: 'timezone-change', scheduledAt: originalAt, alertOffsetsMinutes: [0, 60],
+    };
+    const saved = await persistScheduleChange(f.storage, 'key', [], original, original.id, reminders);
+    assert.equal(originalAt, '2032-01-15T17:30:00.000Z');
+    assert.deepEqual(alertInstants, [Date.parse(originalAt), Date.parse(originalAt) - 60 * 60000]);
+
+    process.env.TZ = 'America/New_York';
+    const reopened = parseSchedules(JSON.stringify(f.stored()))[0];
+    const displayed = new Date(reopened.scheduledAt);
+    assert.equal(reopened.scheduledAt, originalAt);
+    assert.equal(localDateString(displayed), '2032-01-15');
+    assert.equal(localTimeString(displayed), '12:30');
+    assert.deepEqual([0, 60].map(offset => alertDate(reopened, offset).getTime()), alertInstants);
+
+    const rescheduledAt = scheduleDate('2032-01-16', '09:30', 0);
+    assert.equal(rescheduledAt, '2032-01-16T14:30:00.000Z');
+    const rescheduled = await persistScheduleChange(f.storage, 'key', saved,
+      { ...reopened, scheduledAt: rescheduledAt, notificationId: undefined, notifications: undefined },
+      reopened.id, reminders);
+    assert.equal(rescheduled[0].scheduledAt, rescheduledAt);
+    assert.deepEqual(alertInstants.slice(2), [
+      Date.parse(rescheduledAt), Date.parse(rescheduledAt) - 60 * 60000,
+    ]);
+  } finally {
+    if (previousTimeZone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimeZone;
   }
 });
 test('native picker local times stay in 24-hour format when saved, reopened, and rescheduled', async () => {
