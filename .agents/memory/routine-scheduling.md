@@ -9,6 +9,12 @@ Scheduling means a one-time future appointment with an optional local phone remi
 
 **How to apply:** Do not promise automatic background execution or exact notification delivery. A notification tap should open the schedule screen and require an explicit Start before audio; verify that tap routing is implemented before relying on it. Convert the selected device-local date/time into a fixed instant; show it using the current device time zone. Reject nonexistent local times during daylight-saving transitions rather than silently shifting them.
 
+When a local clock time occurs twice as daylight-saving time ends, save the first (earlier) occurrence. Surfaces that display a repeated time identify whether the saved instant is the first or second occurrence; reminder offsets are calculated from the saved instant.
+
+**Why:** The user asked that fall-back appointments not silently resolve to an unexpected occurrence and that reminders remain aligned with the selected occurrence.
+
+**How to apply:** Use the same earlier-occurrence rule when converting local date/time to an instant, label ambiguous local-time displays from the instant's offset, and keep reminder calculations based on that instant.
+
 Users can edit a scheduled playlist for that appointment only. This date-only version owns its playlist name and ordered routine references (including repeats), without modifying the original playlist or other appointments. Rescheduling keeps that version; selecting a different source removes it. Routine contents remain live, and inactive routines are skipped. Customized appointments remain usable if the original playlist is deleted.
 
 **Why:** The user explicitly asked to edit the scheduled playlist only for that date while keeping the original unchanged. A complete local sequence avoids later original playlist edits silently changing an already-customized appointment.

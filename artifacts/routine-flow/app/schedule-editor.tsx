@@ -14,6 +14,7 @@ import { playablePlaylistIds } from '@/lib/playlists';
 import { ScheduleAlertsEditor, offsetsToRows, rowsToOffsets } from '@/components/ScheduleAlertsEditor';
 import { DEFAULT_ALERT_MINUTES } from '@/lib/scheduleAlerts';
 import { localDateString, localTimeString, scheduleDate, type ScheduleTargetType } from '@/lib/schedules';
+import { localDateTimeCandidates } from '@/lib/localDateTime';
 
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -93,6 +94,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
   const previewAt = React.useMemo(() => {
     try { return new Date(scheduleDate(date.trim(), time.trim())); } catch { return null; }
   }, [date, time]);
+  const repeatedTime = React.useMemo(() => localDateTimeCandidates(date.trim(), time.trim()).length > 1, [date, time]);
   const today = localDateString(new Date());
   const first = new Date(month.y, month.m, 1);
   const daysIn = new Date(month.y, month.m + 1, 0).getDate();
@@ -303,6 +305,11 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
             )}
           </View>
         </View>
+        {repeatedTime ? (
+          <Text testID="schedule-repeated-time-hint" style={[styles.hint, { color: colors.mutedForeground }]}>
+            This local time occurs twice. The earlier occurrence will be scheduled, and reminders will be timed from it.
+          </Text>
+        ) : null}
 
         <View style={[styles.remind, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={{ flex: 1 }}>

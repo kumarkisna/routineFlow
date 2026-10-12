@@ -3,6 +3,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { formatAlertOffset, MAX_SCHEDULE_ALERTS, validateAlertOffsets } from '@/lib/scheduleAlerts';
+import { formatLocalDateTime } from '@/lib/localDateTime';
 
 export type AlertUnit = 'minutes' | 'hours' | 'days';
 export type AlertRow = { key: number; value: string; unit: AlertUnit };
@@ -40,7 +41,7 @@ function previewFor(row: AlertRow, at: Date | null): string {
   if (!at || Number.isNaN(at.getTime())) return `${formatAlertOffset(mins)}: set a valid date and time`;
   const d = new Date(at.getTime() - mins * 60000);
   if (Number.isNaN(d.getTime())) return 'Invalid time';
-   const when = d.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const when = formatLocalDateTime(d, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   return `${formatAlertOffset(mins)}: ${when}${d.getTime() <= Date.now() ? ' (already passed)' : ''}`;
 }
 

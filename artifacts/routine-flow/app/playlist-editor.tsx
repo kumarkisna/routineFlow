@@ -14,6 +14,7 @@ import { SkillPicker } from '@/components/SkillPicker';
 import { useColors } from '@/hooks/useColors';
 import { playablePlaylistIds, resolvePlaylistReminderSettings } from '@/lib/playlists';
 import { scheduledPlaylistSource } from '@/lib/schedules';
+import { formatLocalDateTime } from '@/lib/localDateTime';
 import { formatDuration, getStepSeconds } from '@/types/routines';
 import type { RoutineNotificationSettings } from '@/types/routines';
 
@@ -147,7 +148,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
           <View style={[styles.notice, { backgroundColor: colors.coralSoft }]}>
             {appointment ? (
               <Text style={[styles.saveText, { color: colors.foreground, marginBottom: 6 }]}>
-                {new Date(appointment.scheduledAt).toLocaleString(undefined, {
+                {formatLocalDateTime(new Date(appointment.scheduledAt), {
                   weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
                 })}
               </Text>

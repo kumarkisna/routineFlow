@@ -1,4 +1,5 @@
 import { formatDuration, getStepDetails, getStepSeconds, type Routine } from '@/types/routines';
+import { formatLocalDateTime } from './localDateTime';
 
 export type SchedulePrintInput = {
   personName: string;
@@ -30,7 +31,7 @@ export function buildSchedulePrintHtml(input: SchedulePrintInput): string {
     throw new Error('Every routine needs at least one visible step to print.');
   }
 
-  const dateLabel = scheduledDate.toLocaleString(undefined, {
+  const dateLabel = formatLocalDateTime(scheduledDate, {
     weekday: 'long',
     year: 'numeric',
     month: 'long',

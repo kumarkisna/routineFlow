@@ -2,6 +2,7 @@ import { validatePlaylist, type RoutinePlaylist } from './playlists';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from './playlists';
 import { alertDate, futureScheduleAlerts, MAX_SCHEDULE_ALERTS, scheduleNotificationRecords, validateAlertOffsets,
   type ScheduledAlertNotification } from './scheduleAlerts';
+import { localDateTimeCandidates } from './localDateTime';
 import type { Routine, RoutineNotificationSettings } from '../types/routines';
 
 export type ScheduleTargetType = 'routine' | 'playlist';
@@ -111,14 +112,12 @@ export function scheduleDate(date: string, time: string, now = Date.now()): stri
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) {
     throw new Error('Choose a date and enter time as HH:MM (24-hour time).');
   }
-  const [year, month, day] = date.split('-').map(Number);
-  const [hours, minutes] = time.split(':').map(Number);
-  const value = new Date(year, month - 1, day, hours, minutes);
-  if (year < 2000 || hours > 23 || minutes > 59 || value.getFullYear() !== year
-    || value.getMonth() !== month - 1 || value.getDate() !== day
-    || value.getHours() !== hours || value.getMinutes() !== minutes) {
+  const candidates = localDateTimeCandidates(date, time);
+  if (!candidates.length) {
     throw new Error('Choose a valid date and time. This time may be unavailable because the clocks change.');
   }
+  // If the local time repeats when clocks move back, consistently save its first (earlier) occurrence.
+  const value = candidates[0];
   if (value.getTime() <= now) throw new Error('Choose a date and time in the future.');
   return value.toISOString();
 }

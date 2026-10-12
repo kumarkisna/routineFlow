@@ -9,6 +9,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSchedules } from '@/context/ScheduleContext';
 import { useColors } from '@/hooks/useColors';
+import { localDateTimeOccurrence } from '@/lib/localDateTime';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS, playablePlaylistIds } from '@/lib/playlists';
 import { buildSchedulePrintHtml } from '@/lib/schedulePrint';
 import {
@@ -106,7 +107,9 @@ export default function ScheduleScreen() {
   }
   function fmt(iso: string) {
     const d = new Date(iso);
-    return `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+    const formatted = `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} · ${d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`;
+    const occurrence = localDateTimeOccurrence(d);
+    return occurrence ? `${formatted} (${occurrence} occurrence)` : formatted;
   }
 
   async function printSchedule(s: RoutineSchedule) {

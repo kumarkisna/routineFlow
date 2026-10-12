@@ -1,4 +1,5 @@
 import type { RoutineSchedule } from './schedules';
+import { formatLocalDateTime } from './localDateTime';
 
 export const MAX_SCHEDULE_ALERTS = 12;
 export const DEFAULT_ALERT_MINUTES = [0, 15, 60];
@@ -46,7 +47,7 @@ export function scheduleAlertContent(schedule: RoutineSchedule, offsetMinutes = 
   return {
     title: offsetMinutes === 0 ? `Time for your ${kind}` : `Upcoming ${kind}`,
     body: offsetMinutes === 0 ? `${schedule.targetTitle} is scheduled now. Tap to open your schedule.`
-      : `${schedule.targetTitle} · ${formatAlertOffset(offsetMinutes)}. Starts ${new Date(schedule.scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}. Tap to open your schedule.`,
+      : `${schedule.targetTitle} · ${formatAlertOffset(offsetMinutes)}. Starts ${formatLocalDateTime(new Date(schedule.scheduledAt), { dateStyle: 'medium', timeStyle: 'short' })}. Tap to open your schedule.`,
     sound: 'default', data: { scheduleId: schedule.id, alertOffsetMinutes: offsetMinutes },
   };
 }

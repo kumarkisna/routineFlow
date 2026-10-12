@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, localDateString, localTimeString, parseSchedules,
   persistScheduleChange, scheduleDate, scheduledPlaylistSource, type RoutineSchedule } from './schedules';
+import { alertDate, scheduleAlertContent } from './scheduleAlerts';
+import { formatLocalDateTime, localDateTimeCandidates, localDateTimeOccurrence } from './localDateTime';
 
 const future = new Date(Date.now() + 86400000).toISOString();
 const entry: RoutineSchedule = {
@@ -16,6 +18,35 @@ test('schedule dates use local calendar/time and require a valid future moment',
     assert.throws(() => scheduleDate(d, t, 0));
   }
   assert.throws(() => scheduleDate('2032-04-05', '09:30', date.getTime()));
+});
+test('fall-back repeated local times use and display the first occurrence, and reminders follow that instant', () => {
+  const originalTimezone = process.env.TZ;
+  process.env.TZ = 'America/New_York';
+  try {
+    const candidates = localDateTimeCandidates('2026-11-01', '01:30');
+    assert.deepEqual(candidates.map(candidate => candidate.toISOString()), [
+      '2026-11-01T05:30:00.000Z',
+      '2026-11-01T06:30:00.000Z',
+    ]);
+
+    const scheduledAt = scheduleDate('2026-11-01', '01:30', Date.parse('2026-10-31T12:00:00-04:00'));
+    assert.equal(scheduledAt, '2026-11-01T05:30:00.000Z');
+    const firstOccurrence = new Date(scheduledAt);
+    assert.equal(localTimeString(firstOccurrence), '01:30');
+    assert.equal(localDateTimeOccurrence(firstOccurrence), 'first');
+    assert.match(formatLocalDateTime(firstOccurrence, { hour: '2-digit', minute: '2-digit', hour12: false }), /01:30 \(first occurrence\)$/);
+
+    const firstReminder = alertDate({ scheduledAt }, 15);
+    assert.equal(firstReminder.toISOString(), '2026-11-01T05:15:00.000Z');
+    assert.match(scheduleAlertContent({ ...entry, scheduledAt }, 15).body, /Starts .*first occurrence/);
+    const secondOccurrence = new Date('2026-11-01T06:30:00.000Z');
+    assert.equal(localDateTimeOccurrence(secondOccurrence), 'second');
+    assert.equal(alertDate({ scheduledAt: secondOccurrence.toISOString() }, 15).toISOString(), '2026-11-01T06:15:00.000Z');
+    assert.throws(() => scheduleDate('2026-03-08', '02:30', Date.parse('2026-03-07T12:00:00-05:00')));
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+  }
 });
 test('native picker local times stay in 24-hour format when saved, reopened, and rescheduled', async () => {
   for (const [hours, minutes] of [[17, 45], [0, 15]] as const) {
