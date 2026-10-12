@@ -13,7 +13,7 @@ import { useColors } from '@/hooks/useColors';
 import { playablePlaylistIds } from '@/lib/playlists';
 import { ScheduleAlertsEditor, offsetsToRows, rowsToOffsets } from '@/components/ScheduleAlertsEditor';
 import { DEFAULT_ALERT_MINUTES } from '@/lib/scheduleAlerts';
-import { localDateString, scheduleDate, type ScheduleTargetType } from '@/lib/schedules';
+import { localDateString, localTimeString, scheduleDate, type ScheduleTargetType } from '@/lib/schedules';
 
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -73,7 +73,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
   const [targetId, setTargetId] = React.useState(initial.id);
   const [date, setDate] = React.useState(localDateString(start));
   const initialClock = initial.copiedAt ? new Date(initial.copiedAt) : start;
-  const [time, setTime] = React.useState(`${pad(initialClock.getHours())}:${pad(initialClock.getMinutes())}`);
+  const [time, setTime] = React.useState(localTimeString(initialClock));
   const [showNativeTimePicker, setShowNativeTimePicker] = React.useState(false);
   const [month, setMonth] = React.useState({ y: start.getFullYear(), m: start.getMonth() });
   const [reminder, setReminder] = React.useState(isWeb ? false : initial.reminder);
@@ -293,7 +293,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
                         return;
                       }
                       if (!selected) return;
-                      setTime(`${pad(selected.getHours())}:${pad(selected.getMinutes())}`);
+                      setTime(localTimeString(selected));
                       setError('');
                       if (Platform.OS === 'android') setShowNativeTimePicker(false);
                     }}

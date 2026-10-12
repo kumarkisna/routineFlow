@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, localDateString, parseSchedules,
+import { copyScheduleForDate, editScheduledPlaylist, keepScheduledPlaylistOverride, localDateString, localTimeString, parseSchedules,
   persistScheduleChange, scheduleDate, scheduledPlaylistSource, type RoutineSchedule } from './schedules';
 
 const future = new Date(Date.now() + 86400000).toISOString();
@@ -16,6 +16,30 @@ test('schedule dates use local calendar/time and require a valid future moment',
     assert.throws(() => scheduleDate(d, t, 0));
   }
   assert.throws(() => scheduleDate('2032-04-05', '09:30', date.getTime()));
+});
+test('native picker local times stay in 24-hour format when saved, reopened, and rescheduled', async () => {
+  for (const [hours, minutes] of [[17, 45], [0, 15]] as const) {
+    const appointment = new Date();
+    appointment.setDate(appointment.getDate() + 1);
+    appointment.setHours(hours, minutes, 0, 0);
+
+    const time = localTimeString(appointment);
+    assert.equal(time, `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`);
+    const scheduledAt = scheduleDate(localDateString(appointment), time);
+    const original: RoutineSchedule = { ...entry, id: `time-${time}`, scheduledAt, reminder: false };
+    const f = fixture([]);
+
+    await persistScheduleChange(f.storage, 'key', [], original, original.id, f.reminders);
+    const reopened = parseSchedules(JSON.stringify(f.stored()))[0];
+    assert.equal(localTimeString(new Date(reopened.scheduledAt)), time);
+
+    const rescheduledDate = new Date(appointment);
+    rescheduledDate.setDate(rescheduledDate.getDate() + 1);
+    const rescheduled = { ...reopened, scheduledAt: scheduleDate(localDateString(rescheduledDate), time) };
+    await persistScheduleChange(f.storage, 'key', [reopened], rescheduled, reopened.id, f.reminders);
+    const reopenedAgain = parseSchedules(JSON.stringify(f.stored()))[0];
+    assert.equal(localTimeString(new Date(reopenedAgain.scheduledAt)), time);
+  }
 });
 test('schedule parsing accepts routine and playlist references but rejects corrupt values', () => {
   const list = [entry, { ...entry, id: 'p', targetType: 'playlist' }];
