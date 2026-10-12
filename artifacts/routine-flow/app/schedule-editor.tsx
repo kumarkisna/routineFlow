@@ -249,7 +249,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
 
         <View style={styles.two}>
           <View style={{ flex: 3 }}>
-            <Text style={[styles.label, { color: colors.inkSoft }]}>Date (YYYY-MM-DD)</Text>
+            <Text style={[styles.label, styles.dateTimeLabel, { color: colors.inkSoft }]}>Date (YYYY-MM-DD)</Text>
             <TextInput accessibilityLabel="Date, year-month-day" testID="schedule-date-input" value={date} editable={!busy} maxLength={10}
               placeholder="2025-01-31" placeholderTextColor={colors.mutedForeground} autoCapitalize="none" autoCorrect={false}
               keyboardType={isWeb ? 'default' : 'numbers-and-punctuation'}
@@ -260,7 +260,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
               }} style={input} />
           </View>
           <View style={{ flex: 2 }}>
-            <Text style={[styles.label, { color: colors.inkSoft }]}>Start time (24-hour)</Text>
+            <Text style={[styles.label, styles.dateTimeLabel, { color: colors.inkSoft }]}>Start time (24-hour)</Text>
             {isWeb ? (
               <View testID="schedule-time-input" style={[styles.webTimePicker, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <select
@@ -376,6 +376,7 @@ const styles = StyleSheet.create({
   saveText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   content: { paddingHorizontal: 20, paddingTop: 10 },
   label: { fontFamily: 'Inter_600SemiBold', fontSize: 13, letterSpacing: 0.3, marginBottom: 9 },
+  dateTimeLabel: { height: 32, lineHeight: 16 },
   seg: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   segBtn: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   segText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
