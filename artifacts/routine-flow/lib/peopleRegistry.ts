@@ -9,6 +9,7 @@ export const initialPeopleRegistry: PeopleRegistry = {
   people: [{
     id: DEFAULT_PERSON_ID,
     name: 'Me',
+    speechVoiceId: null,
     defaultRateSkillsAtPlaylistEnd: true,
     defaultPlaylistReminderSettings: { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
   }],
@@ -22,6 +23,9 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
   if (item.version !== 1 || !Array.isArray(item.people) || !item.people.length
     || item.people.some(person => !person || typeof person.id !== 'string' || !person.id
       || typeof person.name !== 'string' || !person.name.trim()
+       || (person.speechVoiceId !== undefined
+         && person.speechVoiceId !== null
+         && (typeof person.speechVoiceId !== 'string' || !person.speechVoiceId.trim()))
       || (person.defaultRateSkillsAtPlaylistEnd !== undefined
         && typeof person.defaultRateSkillsAtPlaylistEnd !== 'boolean')
       || (person.defaultPlaylistReminderSettings !== undefined && (
@@ -39,6 +43,7 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
     people: item.people.map(person => ({
       id: person.id,
       name: person.name,
+      speechVoiceId: person.speechVoiceId ?? null,
       defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd ?? true,
       defaultPlaylistReminderSettings: {
         stepCompletion: person.defaultPlaylistReminderSettings?.stepCompletion

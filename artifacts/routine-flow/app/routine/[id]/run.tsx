@@ -21,8 +21,10 @@ import { StepDetails } from '@/components/StepDetails';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
 import { useSkills } from '@/context/SkillContext';
+import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { Notifications } from '@/lib/localNotifications';
 import { nextPlaylistCursor, parsePlaylistQueue, playablePlaylistIds } from '@/lib/playlists';
 import {
@@ -84,6 +86,8 @@ export default function RoutineRunScreen() {
 function RoutinePlayer() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { activePerson } = usePeople();
+  const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const { id, queue, cursor = '0', playlistId, playlistTitle, playlistSkills: playlistSkillsParam,
     playlistRateSkillsAtEnd, autoStart, voice, stepReminder, routineReminder } =
     useLocalSearchParams<{ id: string; queue?: string; cursor?: string; playlistId?: string; playlistTitle?: string;
@@ -425,6 +429,7 @@ function RoutinePlayer() {
           ), {
             rate: 0.92,
             pitch: 1,
+            voice: speechVoiceId,
             onDone: () => finish(),
             onStopped: () => finish(),
             onError: () => finish(true),
@@ -435,7 +440,7 @@ function RoutinePlayer() {
       }).catch(() => finish(true));
     },
     [cancelNotifications, routine, startCountdown, stopAnnouncement, voiceEnabled, skills, inPlaylist,
-      playlistQueue, queueCursor, routines, playlistTitle, playlistSkillIds, updateKeepaliveForStep],
+      playlistQueue, queueCursor, routines, playlistTitle, playlistSkillIds, updateKeepaliveForStep, speechVoiceId],
   );
 
   const finishRoutine = useCallback(() => {

@@ -264,6 +264,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     const person: Person = {
       id: `person-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       name: trimmed,
+      speechVoiceId: profile.speechVoiceId ?? null,
       defaultRateSkillsAtPlaylistEnd: profile.defaultRateSkillsAtPlaylistEnd ?? true,
       defaultPlaylistReminderSettings: {
         stepCompletion: profile.defaultPlaylistReminderSettings?.stepCompletion
@@ -305,6 +306,9 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     const updated: Person = {
       ...existing,
       name: trimmed,
+      speechVoiceId: profile.speechVoiceId === undefined
+        ? existing.speechVoiceId ?? null
+        : profile.speechVoiceId,
       defaultRateSkillsAtPlaylistEnd:
         profile.defaultRateSkillsAtPlaylistEnd ?? existing.defaultRateSkillsAtPlaylistEnd,
       defaultPlaylistReminderSettings: {

@@ -13,6 +13,7 @@ import { useSkills } from '@/context/SkillContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
+import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import {
   createHistorySkillRatingRun, formatHistoryDay, getHistoryForDay, getSkillRatingsMissingNotes, getUnratedSkillIds,
   groupSkillRatingEvents, localDayKey, playlistHistoryOptions, playlistHistoryRatingAnchorId,
@@ -27,6 +28,7 @@ export default function HistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { activePerson } = usePeople();
+  const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const disclosure = usePersistentDisclosure('history', activePerson.id);
   const { progress, routines, loading } = useRoutines();
   const { skills, loading: skillsLoading, error: skillsError } = useSkills();
@@ -121,6 +123,7 @@ export default function HistoryScreen() {
       if (speechSessionRef.current !== session) return;
       Speech.speak(text, {
         rate: 0.95,
+        voice: speechVoiceId,
         onDone: () => {
           if (speechSessionRef.current === session) {
             speechEventKeyRef.current = null;

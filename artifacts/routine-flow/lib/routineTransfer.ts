@@ -284,6 +284,7 @@ export function serializeAllPeopleBackup(activePersonId: string, entries: AllPeo
         id: person.id,
         name: person.name,
         profileNumber: person.id,
+        speechVoiceId: person.speechVoiceId,
         defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd,
         defaultPlaylistReminderSettings: person.defaultPlaylistReminderSettings,
       },
@@ -348,10 +349,13 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
     const profileValue = entry.profile;
     const reminderSettings = profileValue.defaultPlaylistReminderSettings;
     const profileNumber = profileValue.profileNumber ?? profileValue.id;
+    const speechVoiceId = profileValue.speechVoiceId;
     if (typeof profileValue.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileValue.id)
       || typeof profileNumber !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileNumber)
       || profileNumber !== profileValue.id
       || !isText(profileValue.name) || profileValue.name.trim().length > 50
+      || (speechVoiceId !== undefined && speechVoiceId !== null
+        && (typeof speechVoiceId !== 'string' || !speechVoiceId.trim()))
       || typeof profileValue.defaultRateSkillsAtPlaylistEnd !== 'boolean'
       || !isRecord(reminderSettings)
       || typeof reminderSettings.stepCompletion !== 'boolean'
@@ -362,6 +366,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
     const profile: Person = {
       id: profileNumber,
       name: profileValue.name.trim(),
+      speechVoiceId: typeof speechVoiceId === 'string' ? speechVoiceId : null,
       defaultRateSkillsAtPlaylistEnd: profileValue.defaultRateSkillsAtPlaylistEnd,
       defaultPlaylistReminderSettings: {
         stepCompletion: reminderSettings.stepCompletion,

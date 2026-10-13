@@ -9,6 +9,7 @@ import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
+import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { SkillTagList } from '@/components/SkillPicker';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { useSkills } from '@/context/SkillContext';
@@ -20,6 +21,7 @@ export default function PlaylistsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { activePerson } = usePeople();
+  const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const { playlists, loading, error, reload, deletePlaylist } = usePlaylists();
   const { routines, loading: routinesLoading } = useRoutines();
   const { skills } = useSkills();
@@ -76,6 +78,7 @@ export default function PlaylistsScreen() {
       ), {
         rate: 0.92,
         pitch: 1,
+        voice: speechVoiceId,
         onDone: () => {
           if (currentUtterance() && !playlistSpeechPausedRef.current) {
             speakPlaylistStepAt(playlist, position + 1, sessionToken);

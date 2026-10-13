@@ -21,6 +21,7 @@ import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
+import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { buildStepAnnouncement } from '@/lib/routineSpeech';
 import { formatDuration, getStepDetails, getStepSeconds, isCompleted } from '@/types/routines';
 
@@ -29,6 +30,7 @@ export default function RoutineDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { activePerson } = usePeople();
+  const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const { routines, loading, progress, getCompletedCount, updateRoutine, copyRoutine, setStepHidden, deleteRoutine } = useRoutines();
   const { skills } = useSkills();
   const [reorderBusy, setReorderBusy] = React.useState(false);
@@ -140,6 +142,7 @@ export default function RoutineDetailScreen() {
       Speech.speak(buildStepAnnouncement(currentRoutine, index, skills), {
         rate: 0.92,
         pitch: 1,
+        voice: speechVoiceId,
         onDone: finish,
         onStopped: finish,
         onError: finish,
@@ -170,6 +173,7 @@ export default function RoutineDetailScreen() {
       Speech.speak(buildStepAnnouncement(currentRoutine, index, skills), {
         rate: 0.92,
         pitch: 1,
+        voice: speechVoiceId,
         onDone: () => {
           if (isCurrentUtterance() && !speakingAllPausedRef.current) {
             speakAllStepAt(index + 1, sessionToken);

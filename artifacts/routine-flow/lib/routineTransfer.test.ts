@@ -321,6 +321,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   const profile = (id: string, name: string, defaultRateSkillsAtPlaylistEnd: boolean) => ({
     id,
     name,
+    speechVoiceId: id === 'me' ? 'com.example.voice.enhanced' : null,
     defaultRateSkillsAtPlaylistEnd,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
   });
@@ -372,7 +373,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
     format: string;
     version: number;
     activePersonId: string;
-    people: { profile: { id: string; name: string; profileNumber: string; defaultRateSkillsAtPlaylistEnd: boolean }; backup: unknown }[];
+    people: { profile: { id: string; name: string; profileNumber: string; speechVoiceId: string | null; defaultRateSkillsAtPlaylistEnd: boolean }; backup: unknown }[];
   };
 
   assert.equal(allPeople.format, 'routine-flow-all-people');
@@ -383,6 +384,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
       id: 'me',
       name: 'Me',
       profileNumber: 'me',
+      speechVoiceId: 'com.example.voice.enhanced',
       defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
     },
@@ -390,6 +392,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
       id: 'alex',
       name: 'Alex',
       profileNumber: 'alex',
+      speechVoiceId: null,
       defaultRateSkillsAtPlaylistEnd: false,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
     },
@@ -417,6 +420,8 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   const parsedAllPeople = parseAllPeopleBackup(contents);
   assert.equal(parsedAllPeople.activePersonId, 'alex');
   assert.deepEqual(parsedAllPeople.people.map(entry => entry.profile.name), ['Me', 'Alex']);
+  assert.equal(parsedAllPeople.people[0].profile.speechVoiceId, 'com.example.voice.enhanced');
+  assert.equal(parsedAllPeople.people[1].profile.speechVoiceId, null);
   assert.equal(parsedAllPeople.people[0].backup.skills?.[0].ratings?.[0].note, 'Reflection for me-focus.');
   assert.equal(parsedAllPeople.people[1].backup.personData?.skillRatingWindow, 12);
   assert.equal(parsedAllPeople.people[0].backup.routines[0].steps[0].detailAttachments?.[0][0].contentBase64, 'aGVsbG8=');
@@ -426,6 +431,10 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   duplicate.people[1].profile.id = 'me';
   duplicate.people[1].profile.profileNumber = 'me';
   assert.throws(() => parseAllPeopleBackup(JSON.stringify(duplicate)), /duplicate profiles/);
+  const olderArchive = JSON.parse(contents);
+  delete olderArchive.people[0].profile.speechVoiceId;
+  const parsedOlderArchive = parseAllPeopleBackup(JSON.stringify(olderArchive));
+  assert.equal(parsedOlderArchive.people[0].profile.speechVoiceId, null);
   const mismatchedNumber = JSON.parse(contents);
   mismatchedNumber.people[1].profile.profileNumber = 'different-profile';
   assert.throws(() => parseAllPeopleBackup(JSON.stringify(mismatchedNumber)), /invalid profile number/);
@@ -436,6 +445,7 @@ test('all-people backup rejects duplicate profiles or a missing active profile',
     person: {
       id: 'me',
       name: 'Me',
+      speechVoiceId: null,
       defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
     },

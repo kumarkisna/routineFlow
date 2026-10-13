@@ -7,11 +7,13 @@ import type { RoutineSkill } from '@/lib/skills';
 export type Person = {
   id: string;
   name: string;
+  speechVoiceId: string | null;
   defaultRateSkillsAtPlaylistEnd: boolean;
   defaultPlaylistReminderSettings: RoutineNotificationSettings;
 };
 export type PersonProfileInput = {
   name: string;
+  speechVoiceId?: string | null;
   defaultRateSkillsAtPlaylistEnd: boolean;
   defaultPlaylistReminderSettings: RoutineNotificationSettings;
 };

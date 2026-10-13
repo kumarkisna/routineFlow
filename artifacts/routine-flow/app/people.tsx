@@ -5,6 +5,7 @@ import React from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { SpeechVoicePreference } from '@/components/SpeechVoicePreference';
 import { usePeople } from '@/context/PeopleContext';
 import { useColors } from '@/hooks/useColors';
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
@@ -20,6 +21,7 @@ export default function PeopleScreen() {
   const { people, activePerson, busy, notice, addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson } = usePeople();
   const [name, setName] = React.useState('');
   const [newPersonPlaylistRatingDefault, setNewPersonPlaylistRatingDefault] = React.useState(true);
+  const [newPersonSpeechVoiceId, setNewPersonSpeechVoiceId] = React.useState<string | null>(null);
   const [newPersonReminderSettings, setNewPersonReminderSettings] = React.useState<RoutineNotificationSettings>(
     { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
   );
@@ -27,6 +29,7 @@ export default function PeopleScreen() {
   const [removingPersonId, setRemovingPersonId] = React.useState<string | null>(null);
   const [editingName, setEditingName] = React.useState('');
   const [editingPlaylistRatingDefault, setEditingPlaylistRatingDefault] = React.useState(true);
+  const [editingSpeechVoiceId, setEditingSpeechVoiceId] = React.useState<string | null>(null);
   const [editingReminderSettings, setEditingReminderSettings] = React.useState<RoutineNotificationSettings>(
     { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
   );
@@ -82,6 +85,7 @@ export default function PeopleScreen() {
     setEditingPersonId(person.id);
     setEditingName(person.name);
     setEditingPlaylistRatingDefault(person.defaultRateSkillsAtPlaylistEnd ?? true);
+    setEditingSpeechVoiceId(person.speechVoiceId ?? null);
     setEditingReminderSettings({ ...person.defaultPlaylistReminderSettings });
     setError('');
   }
@@ -90,10 +94,12 @@ export default function PeopleScreen() {
     void run(async () => {
       await addPerson({
         name,
+        speechVoiceId: newPersonSpeechVoiceId,
         defaultRateSkillsAtPlaylistEnd: newPersonPlaylistRatingDefault,
         defaultPlaylistReminderSettings: { ...newPersonReminderSettings },
       });
       setName('');
+      setNewPersonSpeechVoiceId(null);
       setNewPersonPlaylistRatingDefault(true);
       setNewPersonReminderSettings({ ...DEFAULT_PLAYLIST_REMINDER_SETTINGS });
     }, 'Could not add person.');
@@ -103,6 +109,7 @@ export default function PeopleScreen() {
     void run(async () => {
       await updatePerson(personId, {
         name: editingName,
+        speechVoiceId: editingSpeechVoiceId,
         defaultRateSkillsAtPlaylistEnd: editingPlaylistRatingDefault,
         defaultPlaylistReminderSettings: { ...editingReminderSettings },
       });
@@ -279,6 +286,12 @@ export default function PeopleScreen() {
                         style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
                       />
                     )}
+                    <SpeechVoicePreference
+                      value={editingSpeechVoiceId}
+                      onChange={setEditingSpeechVoiceId}
+                      disabled={disabled}
+                      testID={`person-speech-voice-${p.id}`}
+                    />
                     <View style={styles.profileRatingSetting}>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.itemText, { color: colors.foreground }]}>Ask for skill ratings at playlist end</Text>
@@ -344,6 +357,12 @@ export default function PeopleScreen() {
               <Text style={[styles.linkText, { color: colors.primaryForeground }]}>Add</Text>
             </Pressable>
           </View>
+          <SpeechVoicePreference
+            value={newPersonSpeechVoiceId}
+            onChange={setNewPersonSpeechVoiceId}
+            disabled={disabled}
+            testID="new-person-speech-voice"
+          />
           <View style={[styles.profileRatingSetting, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.itemText, { color: colors.foreground }]}>Ask for skill ratings at playlist end</Text>

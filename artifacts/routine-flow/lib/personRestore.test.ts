@@ -7,6 +7,7 @@ import type { AllPeopleBackup } from './routineTransfer';
 const activeProfile = {
   id: 'me',
   name: 'Me',
+  speechVoiceId: null,
   defaultRateSkillsAtPlaylistEnd: true,
   defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
 };

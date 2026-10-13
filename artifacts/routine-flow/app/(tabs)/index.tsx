@@ -25,6 +25,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
+import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { buildStepAnnouncement } from '@/lib/routineSpeech';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
@@ -61,6 +62,7 @@ export default function HomeScreen() {
     attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupResult,
     attachmentCleanupFailureReason, retryAttachmentCleanup,
   } = usePeople();
+  const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const disclosure = usePersistentDisclosure('routines', activePerson.id);
   const backupDisclosure = usePersistentDisclosure('home-backup-sections', activePerson.id);
   const personBackupExpanded = backupDisclosure.isExpanded('person');
@@ -139,6 +141,7 @@ export default function HomeScreen() {
       Speech.speak(buildStepAnnouncement(routine, index, skills), {
         rate: 0.92,
         pitch: 1,
+        voice: speechVoiceId,
         onDone: () => {
           if (isCurrentUtterance() && !routineSpeechPausedRef.current) {
             speakRoutineStepAt(routine, index + 1, sessionToken);
