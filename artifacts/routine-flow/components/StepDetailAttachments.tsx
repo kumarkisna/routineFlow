@@ -2,11 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as Sharing from 'expo-sharing';
 import React, { useState } from 'react';
 import { Alert, Image, Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
-import type { StepDetailAttachment } from '@/types/routines';
+import { STEP_DETAIL_ATTACHMENT_MAX_BYTES, type StepDetailAttachment } from '@/types/routines';
+import { compressImageToSize } from '@/lib/stepDetailImageCompression';
 
 function getImageFileName(asset: Pick<ImagePicker.ImagePickerAsset, 'fileName' | 'uri' | 'mimeType'>, fallbackLabel: string) {
   const selectedName = asset.fileName?.trim();
@@ -33,18 +35,67 @@ export function StepDetailAttachments({
   const [viewing, setViewing] = useState<StepDetailAttachment | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function saveCopy(uri: string, name: string, mimeType: string, kind: StepDetailAttachment['kind']) {
+  async function saveCopy(
+    uri: string,
+    name: string,
+    mimeType: string,
+    kind: StepDetailAttachment['kind'],
+    dimensions?: { width: number; height: number },
+  ) {
     if (!FileSystem.documentDirectory) throw new Error('App file storage is unavailable.');
     const info = await FileSystem.getInfoAsync(uri);
-    if (info.exists && info.size && info.size > 2_000_000) throw new Error('Choose a file smaller than 2 MB.');
+    let sourceUri = uri;
+    let savedName = name;
+    let savedMimeType = mimeType || 'application/octet-stream';
+    if (info.exists && typeof info.size === 'number' && info.size > STEP_DETAIL_ATTACHMENT_MAX_BYTES) {
+      if (kind !== 'image') throw new Error('This file is larger than the 2 MB limit. Choose a smaller document.');
+      if (!dimensions) throw new Error('Could not read the image dimensions. Choose another image.');
+      const compressed = await compressImageToSize(
+        { uri, ...dimensions, maxBytes: STEP_DETAIL_ATTACHMENT_MAX_BYTES },
+        {
+          manipulate: (source, actions, quality) => manipulateAsync(source, actions, {
+            compress: quality,
+            format: SaveFormat.JPEG,
+          }),
+          getFileSize: async compressedUri => {
+            const compressedInfo = await FileSystem.getInfoAsync(compressedUri);
+            if (!compressedInfo.exists || typeof compressedInfo.size !== 'number') {
+              throw new Error('Could not verify the compressed image size.');
+            }
+            return compressedInfo.size;
+          },
+          deleteTemporaryFile: temporaryUri => FileSystem.deleteAsync(temporaryUri, { idempotent: true }),
+        },
+      );
+      sourceUri = compressed.uri;
+      savedName = `${name.replace(/\.[^/.]+$/, '') || 'image'}.jpg`;
+      savedMimeType = 'image/jpeg';
+    }
+
     const id = `detail-file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const directory = `${FileSystem.documentDirectory}step-detail-attachments/`;
-    await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
-    const extension = name.includes('.') ? name.split('.').pop()!.replace(/[^a-z0-9]/gi, '').slice(0, 8) : '';
+    const extension = savedName.includes('.') ? savedName.split('.').pop()!.replace(/[^a-z0-9]/gi, '').slice(0, 8) : '';
     const destination = `${directory}${id}${extension ? `.${extension}` : ''}`;
-    await FileSystem.copyAsync({ from: uri, to: destination });
-    const contentBase64 = await FileSystem.readAsStringAsync(destination, { encoding: FileSystem.EncodingType.Base64 });
-    return { id, name: name.slice(0, 240), uri: destination, mimeType: mimeType || 'application/octet-stream', kind, contentBase64 };
+    let saved = false;
+    try {
+      await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+      await FileSystem.copyAsync({ from: sourceUri, to: destination });
+      const contentBase64 = await FileSystem.readAsStringAsync(destination, { encoding: FileSystem.EncodingType.Base64 });
+      saved = true;
+      return {
+        id,
+        name: savedName.slice(0, 240),
+        uri: destination,
+        mimeType: savedMimeType,
+        kind,
+        contentBase64,
+      };
+    } catch (error) {
+      if (!saved) await FileSystem.deleteAsync(destination, { idempotent: true }).catch(() => {});
+      throw error;
+    } finally {
+      if (sourceUri !== uri) await FileSystem.deleteAsync(sourceUri, { idempotent: true }).catch(() => {});
+    }
   }
 
   async function addImage() {
@@ -53,7 +104,13 @@ export function StepDetailAttachments({
       if (result.canceled) return;
       setBusy(true);
       const asset = result.assets[0];
-      const file = await saveCopy(asset.uri, getImageFileName(asset, 'Image'), asset.mimeType || 'image/jpeg', 'image');
+      const file = await saveCopy(
+        asset.uri,
+        getImageFileName(asset, 'Image'),
+        asset.mimeType || 'image/jpeg',
+        'image',
+        { width: asset.width, height: asset.height },
+      );
       if (onAddAttachment) onAddAttachment(file);
       else onChange?.([...attachments, file]);
     } catch (error) {
@@ -77,7 +134,13 @@ export function StepDetailAttachments({
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: false });
       if (result.canceled) return;
       const asset = result.assets[0];
-      const file = await saveCopy(asset.uri, getImageFileName(asset, 'Photo'), asset.mimeType || 'image/jpeg', 'image');
+      const file = await saveCopy(
+        asset.uri,
+        getImageFileName(asset, 'Photo'),
+        asset.mimeType || 'image/jpeg',
+        'image',
+        { width: asset.width, height: asset.height },
+      );
       if (onAddAttachment) onAddAttachment(file);
       else onChange?.([...attachments, file]);
     } catch (error) {

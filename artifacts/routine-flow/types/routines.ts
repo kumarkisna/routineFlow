@@ -1,4 +1,5 @@
 export type RoutineTone = 'coral' | 'sage' | 'lavender' | 'sun';
+export const STEP_DETAIL_ATTACHMENT_MAX_BYTES = 2_000_000;
 export type StepDetailAttachment = { id: string; name: string; uri?: string; mimeType: string; kind: 'image' | 'document'; contentBase64: string };
 
 export type RoutineStep = {
