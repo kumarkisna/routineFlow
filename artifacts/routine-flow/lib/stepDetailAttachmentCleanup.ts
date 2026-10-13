@@ -35,6 +35,12 @@ export type PendingStepDetailAttachmentDeletion = {
 
 export type PendingStepDetailAttachmentReconciliation = 'removed' | 'present' | 'referenced';
 
+export type StepDetailAttachmentCleanupMetrics = {
+  referenceChecks: number;
+  routineRecordsRead: number;
+  routineRecordsParsed: number;
+};
+
 export type StepDetailAttachmentCleanupProgressStorage = {
   getItem: (key: string) => Promise<string | null>;
   setItem: (key: string, value: string) => Promise<void>;
@@ -293,13 +299,20 @@ function collectReferencedAttachmentUris(routines: unknown): Set<string> {
   return uris;
 }
 
-async function readReferencedAttachmentUris(storage: CleanupStorage): Promise<Set<string>> {
+type ParsedRoutineRecord = {
+  serialized: string | null;
+  uris: Set<string>;
+};
+
+async function readReferencedAttachmentUris(
+  storage: CleanupStorage,
+  parsedRoutineRecords: Map<string, ParsedRoutineRecord> = new Map(),
+  metrics?: StepDetailAttachmentCleanupMetrics,
+): Promise<Set<string>> {
+  if (metrics) metrics.referenceChecks += 1;
   const allKeys = await storage.getAllKeys();
-  const keysToRead = allKeys.filter(key => key === PEOPLE_KEY
-    || key === ROUTINES_KEY || PERSON_ROUTINES_KEY.test(key));
-  const storedData = keysToRead.length ? await storage.multiGet(keysToRead) : [];
-  const storedDataByKey = new Map(storedData);
-  const serializedPeople = storedDataByKey.get(PEOPLE_KEY);
+  const peopleValues = allKeys.includes(PEOPLE_KEY) ? await storage.multiGet([PEOPLE_KEY]) : [];
+  const serializedPeople = peopleValues.find(([key]) => key === PEOPLE_KEY)?.[1];
   const personIds = serializedPeople === undefined || serializedPeople === null
     ? new Set(['me'])
     : getRegisteredPersonIds(JSON.parse(serializedPeople));
@@ -310,10 +323,22 @@ async function readReferencedAttachmentUris(storage: CleanupStorage): Promise<Se
   });
   const savedRoutines = routineKeys.length ? await storage.multiGet(routineKeys) : [];
   const referencedUris = new Set<string>();
-  for (const [, serialized] of savedRoutines) {
-    if (serialized === null) continue;
-    const routines: unknown = JSON.parse(serialized);
-    for (const uri of collectReferencedAttachmentUris(routines)) referencedUris.add(uri);
+  const activeKeys = new Set(routineKeys);
+  for (const cachedKey of parsedRoutineRecords.keys()) {
+    if (!activeKeys.has(cachedKey)) parsedRoutineRecords.delete(cachedKey);
+  }
+  for (const [key, serialized] of savedRoutines) {
+    if (metrics) metrics.routineRecordsRead += 1;
+    let cached = parsedRoutineRecords.get(key);
+    if (!cached || cached.serialized !== serialized) {
+      const uris = serialized === null
+        ? new Set<string>()
+        : collectReferencedAttachmentUris(JSON.parse(serialized));
+      cached = { serialized, uris };
+      parsedRoutineRecords.set(key, cached);
+      if (metrics) metrics.routineRecordsParsed += 1;
+    }
+    for (const uri of cached.uris) referencedUris.add(uri);
   }
   return referencedUris;
 }
@@ -348,12 +373,14 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
   fileSystem: CleanupFileSystem,
   onProgress?: (progress: StepDetailAttachmentCleanupResult) => Promise<void>,
   beforeDelete?: (pending: Omit<PendingStepDetailAttachmentDeletion, 'counted'>) => Promise<void>,
+  metrics?: StepDetailAttachmentCleanupMetrics,
 ): Promise<StepDetailAttachmentCleanupResult> {
   if (!documentDirectory) throw new Error('App file storage is unavailable.');
   const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
   const attachmentDirectory = `${documentRoot}step-detail-attachments/`;
 
-  const referencedUris = await readReferencedAttachmentUris(storage);
+  const parsedRoutineRecords = new Map<string, ParsedRoutineRecord>();
+  const referencedUris = await readReferencedAttachmentUris(storage, parsedRoutineRecords, metrics);
 
   const fileNames = await fileSystem.readDirectoryAsync(attachmentDirectory);
   let removedCount = 0;
@@ -379,7 +406,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
     // must stop cleanup instead of being treated as a per-file failure.
     let latestReferences: Set<string>;
     try {
-      latestReferences = await readReferencedAttachmentUris(storage);
+      latestReferences = await readReferencedAttachmentUris(storage, parsedRoutineRecords, metrics);
     } catch (error) {
       throw new StepDetailAttachmentCleanupError(
         error instanceof Error ? error.message : 'Saved routines could not be checked safely.',

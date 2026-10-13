@@ -170,6 +170,33 @@ test('stops later deletions if routine data becomes unreadable during cleanup', 
   assert.ok(!adapters.deleted.includes(secondUri));
 });
 
+test('reuses parsed references across a large cleanup while rechecking every saved routine', async () => {
+  const profileIds = ['me', ...Array.from({ length: 79 }, (_, index) => `person-${index + 1}`)];
+  const entries: Array<[string, string]> = [
+    [PEOPLE_KEY, peopleRegistry(profileIds)],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([routine(`${attachmentDirectory}kept-me.pdf`)])],
+  ];
+  for (const id of profileIds.slice(1)) {
+    entries.push([
+      personStorageKey(id, PERSON_DATA_KEYS.routines),
+      JSON.stringify([routine(`${attachmentDirectory}kept-${id}.pdf`)]),
+    ]);
+  }
+  const fileNames = Array.from({ length: 40 }, (_, index) => `orphan-${index}.pdf`);
+  const adapters = createAdapters(entries, fileNames);
+  const metrics = { referenceChecks: 0, routineRecordsRead: 0, routineRecordsParsed: 0 };
+
+  const result = await cleanupOrphanedStepDetailAttachmentCopies(
+    directory, adapters.storage, adapters.fileSystem, undefined, undefined, metrics,
+  );
+
+  assert.deepEqual(result, { removedCount: 40, estimatedBytes: null });
+  assert.equal(metrics.referenceChecks, 41);
+  assert.equal(metrics.routineRecordsRead, profileIds.length * metrics.referenceChecks);
+  assert.equal(metrics.routineRecordsParsed, profileIds.length);
+  assert.equal(adapters.deleted.length, 40);
+});
+
 test('reports failed file removals after still cleaning other orphaned files', async () => {
   const adapters = createAdapters([
     [PEOPLE_KEY, peopleRegistry(['me'])],
