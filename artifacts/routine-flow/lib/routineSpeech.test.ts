@@ -146,3 +146,27 @@ test('step announcements use formatted details as plain text without reading HTM
   assert.doesNotMatch(announcement, /<\/?[a-z][^>]*>/i);
   assert.doesNotMatch(announcement, /text-align|color:#345/);
 });
+
+test('routine description is spoken before the first step, using formatted text and respecting its speech setting', () => {
+  const described: Routine = {
+    ...routine,
+    subtitle: 'Prepare calmly.',
+    subtitleHtml: '<h2>Prepare calmly.</h2><p>Clear the workspace.</p>',
+  };
+  const announcement = buildStepAnnouncement(described, 0, []);
+  assert.ok(announcement.startsWith('Prepare calmly.\nClear the workspace. Step 1.'));
+  assert.doesNotMatch(announcement, /<\/?[a-z][^>]*>/i);
+
+  assert.equal(
+    buildStepAnnouncement({ ...described, speakSubtitle: false }, 0, []),
+    'Step 1. Drink a glass of water. You have 1 minute.',
+  );
+});
+
+test('routine description is not repeated on later step announcements', () => {
+  const described: Routine = { ...routine, subtitle: 'Prepare calmly.' };
+  assert.equal(
+    buildStepAnnouncement(described, 1, []),
+    'Step 2. Stretch. You have 30 seconds.',
+  );
+});

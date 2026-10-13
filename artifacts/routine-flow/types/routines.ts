@@ -32,6 +32,10 @@ export type Routine = {
   subtitle: string;
   /** Optional so routines saved before categories remain valid. */
   category?: string;
+  /** Sanitized rich text for the routine description; subtitle remains the plain-text fallback. */
+  subtitleHtml?: string;
+  /** Routine descriptions are spoken by default, matching step-detail speech defaults. */
+  speakSubtitle?: boolean;
   /** Optional links to reusable, person-specific skills. */
   skillIds?: string[];
   /** Hidden routines remain saved but are omitted from the main list and progress. */

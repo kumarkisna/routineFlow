@@ -44,6 +44,10 @@ export function buildStepAnnouncement(
   if (index === 0) {
     const names = skillNames(routine.skillIds, skills);
     if (names.length) intro.push(`Routine ${routine.title}. Skills: ${names.join(', ')}.`);
+    const description = routine.speakSubtitle === false
+      ? ''
+      : (detailHtmlToText(routine.subtitleHtml ?? '').trim() || routine.subtitle.trim());
+    if (description) intro.push(description);
   }
   const names = skillNames(step.skillIds, skills);
   return `${intro.length ? `${intro.join(' ')} ` : ''}Step ${index + 1}. ${step.title}.${names.length ? ` Skills: ${names.join(', ')}.` : ''} ${details.length ? `${details.join('. ')}. ` : ''}You have ${describeDuration(getStepSeconds(step))}.`;

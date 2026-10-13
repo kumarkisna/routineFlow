@@ -237,6 +237,9 @@ test('routine copies preserve additional details without sharing their arrays', 
 
 test('routine backups retain rich step details and attachment bytes', () => {
   const source = routine();
+  source.subtitle = 'Start well and take your time.';
+  source.subtitleHtml = '<h2>Start well</h2><p>Take your time.</p>';
+  source.speakSubtitle = false;
   source.steps[0].description = 'Drink water slowly.';
   source.steps[0].additionalDetails = ['Use the glass marked “water”.'];
   source.steps[0].detailSpeech = [true, false];
@@ -249,6 +252,8 @@ test('routine backups retain rich step details and attachment bytes', () => {
     mimeType: 'image/png', kind: 'image', contentBase64: 'iVBORw0KGgo=',
   }], []];
   const restored = parseRoutinesFile(serializeRoutines([source])).routines[0];
+  assert.equal(restored.subtitleHtml, source.subtitleHtml);
+  assert.equal(restored.speakSubtitle, false);
   assert.equal(restored.steps[0].description, source.steps[0].description);
   assert.deepEqual(restored.steps[0].additionalDetails, source.steps[0].additionalDetails);
   assert.deepEqual(restored.steps[0].detailSpeech, source.steps[0].detailSpeech);

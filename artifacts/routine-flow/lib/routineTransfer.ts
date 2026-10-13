@@ -101,6 +101,13 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
   if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
     throw new Error(`${label} has an invalid visibility setting.`);
   }
+  if (value.subtitleHtml !== undefined &&
+      (typeof value.subtitleHtml !== 'string' || value.subtitleHtml.length > 100_000)) {
+    throw new Error(`${label} has invalid formatted description.`);
+  }
+  if (value.speakSubtitle !== undefined && typeof value.speakSubtitle !== 'boolean') {
+    throw new Error(`${label} has an invalid description speech setting.`);
+  }
   if (value.speakDetails !== undefined && typeof value.speakDetails !== 'boolean') {
     throw new Error(`${label} has an invalid spoken-details setting.`);
   }
@@ -158,6 +165,8 @@ function parseRoutine(value: unknown, index: number): Routine {
     id: value.id,
     title: value.title,
     subtitle: value.subtitle,
+    ...(value.subtitleHtml !== undefined ? { subtitleHtml: value.subtitleHtml as string } : {}),
+    ...(value.speakSubtitle !== undefined ? { speakSubtitle: value.speakSubtitle as boolean } : {}),
     ...(value.category !== undefined ? { category: (value.category as string).trim() } : {}),
     ...(skillIds !== undefined ? { skillIds } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden } : {}),

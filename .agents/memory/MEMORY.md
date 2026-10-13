@@ -4,6 +4,7 @@
 - [Routine transfer safety](routine-transfer.md) — imports merge routines/playlists additively and preserve skill ratings and their reflection notes.
 - [Routine copies](routine-copies.md) — copied routines retain step settings but start with separate progress.
 - [Routine step details](routine-step-details.md) — details stay ordered and each main/additional detail has its own speech setting, on by default.
+- [Routine descriptions](routine-descriptions.md) — rich descriptions keep plain-text fallback and are spoken before the first step unless disabled.
 - [Routine categories](routine-categories.md) — categories remain labels; Skills are a separate managed library assigned across routines, steps, and playlists.
 - [Skill association browsing](skill-associations.md) — include direct/step routine assignments and playlists containing those routines, distinguishing hidden items.
 - [Expo web confirmations](expo-web-confirmations.md) — use an in-app confirmation for destructive actions that must work in the web preview.

@@ -59,6 +59,8 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const { skills } = useSkills();
   const [title, setTitle] = useState(editingRoutine?.title ?? '');
   const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
+  const [subtitleHtml, setSubtitleHtml] = useState(editingRoutine?.subtitleHtml ?? '');
+  const [speakSubtitle, setSpeakSubtitle] = useState(editingRoutine?.speakSubtitle ?? true);
   const [category, setCategory] = useState(editingRoutine?.category ?? '');
   const [stepDraft, setStepDraft] = useState('');
   const [stepDetailDraft, setStepDetailDraft] = useState<StepDetailDraft>(createEmptyStepDetailDraft);
@@ -218,10 +220,10 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
         ...(step.skillIds ? { skillIds: step.skillIds.filter(id => availableSkills.has(id)) } : {}),
       }));
       if (editingRoutine) {
-        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds);
+        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle);
         router.back();
       } else {
-        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds);
+        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle);
         router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -290,9 +292,35 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           placeholder="What does it help you do?"
           placeholderTextColor={colors.mutedForeground}
           value={subtitle}
-          onChangeText={setSubtitle}
+          onChangeText={(value) => {
+            setSubtitle(value);
+            setSubtitleHtml('');
+          }}
           style={[styles.input, styles.descriptionInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
         />
+        <ExpandableRichDetailEditor
+          label="Routine description"
+          value={subtitle}
+          html={subtitleHtml}
+          disabled={saving}
+          onSave={(text, html) => {
+            setSubtitle(text);
+            setSubtitleHtml(html);
+          }}
+        />
+        <View style={[styles.speechPreference, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <View style={styles.speechPreferenceText}>
+            <Text style={[styles.speechPreferenceTitle, { color: colors.foreground }]}>Speak routine description</Text>
+            <Text style={[styles.speechPreferenceHint, { color: colors.mutedForeground }]}>Read it before the first step when this routine is spoken.</Text>
+          </View>
+          <Switch
+            accessibilityLabel="Speak routine description"
+            value={speakSubtitle}
+            onValueChange={setSpeakSubtitle}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.card}
+          />
+        </View>
         <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={saving} testIDPrefix="routine-skill" />
         <Text style={[styles.categoryLabel, { color: colors.inkSoft }]}>Category (optional)</Text>
         <TextInput
@@ -612,6 +640,10 @@ const styles = StyleSheet.create({
   label: { fontFamily: 'Inter_600SemiBold', fontSize: 13, letterSpacing: 0.3, marginBottom: 9 },
   input: { minHeight: 52, borderWidth: 1, borderRadius: 15, paddingHorizontal: 16, fontFamily: 'Inter_500Medium', fontSize: 16, marginBottom: 11 },
   descriptionInput: { fontFamily: 'Inter_400Regular', fontSize: 14 },
+  speechPreference: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, paddingVertical: 9, marginBottom: 12 },
+  speechPreferenceText: { flex: 1, gap: 3 },
+  speechPreferenceTitle: { fontFamily: 'Inter_500Medium', fontSize: 13 },
+  speechPreferenceHint: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15 },
   categoryLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13, letterSpacing: 0.3, marginTop: 9, marginBottom: 9 },
   categorySuggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 3 },
   categorySuggestion: { borderRadius: 16, paddingHorizontal: 12, minHeight: 32, justifyContent: 'center' },

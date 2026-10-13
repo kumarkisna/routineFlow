@@ -81,9 +81,9 @@ type RoutineContextValue = {
   progress: CompletionMap;
   loading: boolean;
   completeRoutine: (routineId: string, playlistRun?: PlaylistCompletionSource) => Promise<void>;
-  createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => Promise<Routine>;
+  createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
-  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => Promise<void>;
+  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean) => Promise<void>;
   renameCategory: (source: string, target: string) => Promise<void>;
   removeCategory: (source: string) => Promise<void>;
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
@@ -176,11 +176,13 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createRoutine = useCallback(
-    (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => runRoutineWrite(async () => {
+    (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean) => runRoutineWrite(async () => {
       const routine: Routine = {
         id: makeId(),
         title,
         subtitle,
+        ...(subtitleHtml ? { subtitleHtml } : {}),
+        speakSubtitle: speakSubtitle ?? true,
         ...(category ? { category } : {}),
         ...(skillIds?.length ? { skillIds: [...skillIds] } : {}),
         icon: 'sparkles-outline',
@@ -211,13 +213,15 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateRoutine = useCallback(
-    (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => runRoutineWrite(async () => {
+    (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean) => runRoutineWrite(async () => {
       if (!routines.some((routine) => routine.id === routineId)) {
         throw new Error('Routine not found');
       }
       const nextRoutines = routines.map((routine) =>
         routine.id === routineId ? {
           ...routine, title, subtitle, steps, category,
+          ...(subtitleHtml !== undefined ? { subtitleHtml } : {}),
+          ...(speakSubtitle !== undefined ? { speakSubtitle } : {}),
           ...(skillIds !== undefined ? { skillIds: [...skillIds] } : {}),
         } : routine,
       );

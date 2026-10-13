@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
+import { detailHtmlToText } from '@/lib/stepDetailHtml';
 import { SkillTagList } from '@/components/SkillPicker';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
@@ -343,7 +344,15 @@ export default function RoutineDetailScreen() {
             <Ionicons name={currentRoutine.icon as keyof typeof Ionicons.glyphMap} size={25} color={colors.accentForeground} />
           </View>
           <Text style={[styles.heroTitle, { color: colors.heroForeground }]}>{currentRoutine.title}</Text>
-          <Text style={[styles.heroSubtitle, { color: colors.heroForeground }]}>{currentRoutine.subtitle}</Text>
+          <StepDetails
+            details={currentRoutine.subtitle}
+            detailHtml={currentRoutine.subtitleHtml && detailHtmlToText(currentRoutine.subtitleHtml).trim()
+              ? [currentRoutine.subtitleHtml]
+              : []}
+            style={[styles.heroSubtitle, { color: colors.heroForeground }]}
+            linkColor={colors.accent}
+            backgroundColor={colors.hero}
+          />
           {currentRoutine.category ? (
             <Text style={[styles.heroCategory, { color: colors.heroForeground }]}>{currentRoutine.category}</Text>
           ) : null}
