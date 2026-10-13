@@ -229,6 +229,7 @@ export default function SkillsScreen() {
           const editing = editingId === item.id;
           const confirming = pendingDeleteId === item.id;
           const usage = associations.get(item.id) ?? { routines: [], playlists: [] };
+          const skillExpanded = disclosure.isExpanded(item.id);
           const usageExpanded = disclosure.isExpanded(`${item.id}:usage`);
           const ratingHistoryExpanded = disclosure.isExpanded(`${item.id}:rating-history`);
           const ratingHistory = [...(item.ratings ?? [])].sort((a, b) =>
@@ -285,6 +286,11 @@ export default function SkillsScreen() {
                       <Ionicons name="sparkles-outline" size={17} color={colors.success} />
                     </View>
                     <Text style={[styles.skillName, { color: colors.foreground }]}>{item.name}</Text>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${skillExpanded ? 'Collapse' : 'Expand'} skill ${item.name}`}
+                      accessibilityState={{ expanded: skillExpanded }} testID={`toggle-skill-${item.id}`} onPress={() => disclosure.toggle(item.id)}
+                      style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+                      <Ionicons name={skillExpanded ? 'chevron-up' : 'chevron-down'} size={19} color={colors.inkSoft} />
+                    </Pressable>
                     <Pressable accessibilityRole="button" accessibilityLabel={`Edit skill ${item.name}`} testID={`edit-skill-${item.id}`} disabled={busy}
                       onPress={() => { setEditingId(item.id); setEditingDraft(item.name); setMessage(''); }}
                       style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
@@ -296,6 +302,7 @@ export default function SkillsScreen() {
                       <Ionicons name="trash-outline" size={18} color={colors.destructive} />
                     </Pressable>
                   </View>
+                  {skillExpanded ? <>
                   {average.average === null ? (
                     <Text style={[styles.ratingSummary, { color: colors.mutedForeground }]}>No ratings yet</Text>
                   ) : (
@@ -470,6 +477,7 @@ export default function SkillsScreen() {
                       )}
                     </View>
                   ) : null}
+                  </> : null}
                 </>
               )}
             </View>

@@ -795,6 +795,9 @@ export default function HomeScreen() {
                       {item.category ? (
                         <Text style={[styles.routineCategory, { color: colors.primary }]} numberOfLines={1}>{item.category}</Text>
                       ) : null}
+                      <Text style={[styles.routineDetails, { color: colors.inkSoft }]} numberOfLines={2}>
+                        {item.steps.filter((step) => !step.hidden).map((step) => step.title).join(' · ') || 'No visible steps'}
+                      </Text>
                       <View style={styles.routineBottom}>
                         <Text style={[styles.routineMeta, { color: colors.inkSoft }]}>{visibleStepCount} steps</Text>
                         <View style={[styles.miniTrack, { backgroundColor: colors.secondary }]}>
@@ -1223,6 +1226,7 @@ const styles = StyleSheet.create({
   routineTitle: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   hiddenLabel: { fontFamily: 'Inter_500Medium', fontSize: 11, marginLeft: 5 },
   routineSubtitle: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 4 },
+  routineDetails: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 14, marginTop: 4 },
   routineCategory: { fontFamily: 'Inter_600SemiBold', fontSize: 11, marginTop: 5 },
   routineBottom: { flexDirection: 'row', alignItems: 'center', marginTop: 13 },
   routineMeta: { fontFamily: 'Inter_500Medium', fontSize: 11 },
