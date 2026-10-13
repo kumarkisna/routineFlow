@@ -17,13 +17,14 @@ const msg = (e: unknown, fb: string) => (e instanceof Error && e.message ? e.mes
 export default function PeopleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { people, activePerson, busy, notice, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson } = usePeople();
+  const { people, activePerson, busy, notice, addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson } = usePeople();
   const [name, setName] = React.useState('');
   const [newPersonPlaylistRatingDefault, setNewPersonPlaylistRatingDefault] = React.useState(true);
   const [newPersonReminderSettings, setNewPersonReminderSettings] = React.useState<RoutineNotificationSettings>(
     { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
   );
   const [editingPersonId, setEditingPersonId] = React.useState<string | null>(null);
+  const [removingPersonId, setRemovingPersonId] = React.useState<string | null>(null);
   const [editingName, setEditingName] = React.useState('');
   const [editingPlaylistRatingDefault, setEditingPlaylistRatingDefault] = React.useState(true);
   const [editingReminderSettings, setEditingReminderSettings] = React.useState<RoutineNotificationSettings>(
@@ -107,6 +108,14 @@ export default function PeopleScreen() {
       });
       setEditingPersonId(null);
     }, 'Could not update person.');
+  }
+
+  function confirmRemove(person: Person) {
+    void run(async () => {
+      await removePerson(person.id);
+      setRemovingPersonId(null);
+      setEditingPersonId(null);
+    }, 'Could not remove this profile.');
   }
 
   const toggle = (k: 'r' | 'p' | 's', id: string) =>
@@ -208,7 +217,50 @@ export default function PeopleScreen() {
                     <Ionicons name={editingPersonId === p.id ? 'close' : 'create-outline'} size={18} color={colors.primary} />
                     <Text style={[styles.linkText, { color: colors.primary }]}>{editingPersonId === p.id ? 'Close' : 'Edit'}</Text>
                   </Pressable>
+                  {p.id !== DEFAULT_PERSON_ID ? (
+                    <Pressable
+                      testID={`person-remove-${p.id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${p.name} profile`}
+                      disabled={disabled}
+                      onPress={() => { setRemovingPersonId(p.id); setEditingPersonId(null); setError(''); }}
+                      style={styles.editButton}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={colors.destructive} />
+                      <Text style={[styles.linkText, { color: colors.destructive }]}>Remove</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
+                {removingPersonId === p.id ? (
+                  <View style={[styles.profileEditor, { backgroundColor: colors.card, borderColor: colors.destructive }]}>
+                    <Text style={[styles.h2, { color: colors.foreground }]}>Remove {p.name}?</Text>
+                    <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                      This permanently deletes their routines, playlists, schedules, skills, progress, and saved photos, and cancels their phone reminders. The Me profile is protected. If this is the active profile, the app switches to Me.
+                    </Text>
+                    <View style={styles.formActions}>
+                      <Pressable
+                        testID={`person-remove-cancel-${p.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Cancel removing ${p.name}`}
+                        disabled={disabled}
+                        onPress={() => setRemovingPersonId(null)}
+                        style={[styles.btnSecondary, { borderColor: colors.border }]}
+                      >
+                        <Text style={[styles.linkText, { color: colors.foreground }]}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        testID={`person-remove-confirm-${p.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Confirm remove ${p.name} and all saved data`}
+                        disabled={disabled}
+                        onPress={() => confirmRemove(p)}
+                        style={[styles.btn, { backgroundColor: colors.destructive, opacity: disabled ? 0.5 : 1 }]}
+                      >
+                        <Text style={[styles.linkText, { color: colors.destructiveForeground }]}>{disabled ? 'Removing…' : 'Remove profile'}</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
                 {editingPersonId === p.id ? (
                   <View style={[styles.profileEditor, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Text style={[styles.h2, { color: colors.foreground }]}>Edit {p.name}</Text>

@@ -21,6 +21,7 @@ import type { AllPeopleBackup } from '@/lib/routineTransfer';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
 import * as FileSystem from 'expo-file-system/legacy';
+import { removePersonSavedData } from '@/lib/personRemoval';
 
 export type AllProfilesRestoreSummary = {
   profilesAdded: number;
@@ -49,6 +50,7 @@ type PeopleContextValue = {
   notice: string;
   addPerson: (profile: PersonProfileInput) => Promise<void>;
   updatePerson: (id: string, profile: PersonProfileInput) => Promise<void>;
+  removePerson: (id: string) => Promise<void>;
   switchPerson: (id: string) => Promise<void>;
   loadPerson: (id: string) => Promise<PersonSnapshot>;
   copyFromPerson: (sourceId: string, selection: PersonCopySelection) => Promise<PersonCopySummary>;
@@ -305,6 +307,31 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     setNotice(`${updated.name}’s profile was updated.`);
   }), [runOperation, runAttachmentCleanup]);
 
+  const removePerson = useCallback((id: string) => runOperation(async () => {
+    const previous = current.current;
+    const existing = previous.people.find(person => person.id === id);
+    if (!existing) throw new Error('Person not found.');
+    if (id === DEFAULT_PERSON_ID) throw new Error('The default Me profile cannot be removed.');
+    if (previous.people.length <= 1) throw new Error('Keep at least one profile.');
+    await waitForPersonWrites(id);
+
+    const reminders = createScheduleReminderService(id, Platform.OS, Notifications);
+    await removePersonSavedData(id, AsyncStorage, reminders.cancel);
+    await retryAttachmentCleanup();
+
+    const next: PeopleRegistry = {
+      version: 1,
+      people: previous.people.filter(person => person.id !== id),
+      activePersonId: previous.activePersonId === id ? DEFAULT_PERSON_ID : previous.activePersonId,
+    };
+    await saveRegistry(next);
+    current.current = next;
+    setRegistry(next);
+    setRevision(value => value + 1);
+    setNotice(`${existing.name}’s profile and saved data were removed.`);
+    if (previous.activePersonId === id) router.replace('/');
+  }), [runOperation, retryAttachmentCleanup]);
+
   const loadPerson = useCallback(async (id: string) => {
     if (!current.current.people.some(person => person.id === id)) throw new Error('Person not found.');
     await waitForPersonWrites(id);
@@ -484,10 +511,10 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     people: registry.people, activePerson, revision, busy, notice,
     attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupRemovedCount,
     retryAttachmentCleanup, runAttachmentCleanup,
-    addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles,
+    addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles,
   }), [registry.people, activePerson, revision, busy, notice, attachmentCleanupPending, attachmentCleanupBusy,
     attachmentCleanupRemovedCount, retryAttachmentCleanup, runAttachmentCleanup,
-    addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
+    addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
 
   if (loading || error) {
     return <View style={styles.loading} testID="people-startup">
