@@ -4,8 +4,10 @@ import React from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlaylists } from '@/context/PlaylistContext';
+import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useColors } from '@/hooks/useColors';
+import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { SkillTagList } from '@/components/SkillPicker';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { createPlaylistRunLaunch, playablePlaylistIds, type RoutinePlaylist } from '@/lib/playlists';
@@ -14,8 +16,10 @@ import { formatDuration, getStepSeconds } from '@/types/routines';
 export default function PlaylistsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { activePerson } = usePeople();
   const { playlists, loading, error, reload, deletePlaylist } = usePlaylists();
   const { routines, loading: routinesLoading } = useRoutines();
+  const disclosure = usePersistentDisclosure('playlists', activePerson.id);
   const [pendingDelete, setPendingDelete] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [message, setMessage] = React.useState('');
@@ -112,20 +116,29 @@ export default function PlaylistsScreen() {
         renderItem={({ item }) => {
           const playable = playablePlaylistIds(item.routineIds, routines);
           const confirming = pendingDelete === item.id;
+          const expanded = disclosure.isExpanded(item.id);
           return (
             <View testID={`playlist-${item.id}`} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
-              <SkillTagList skillIds={item.skillIds} />
-              <Text style={[styles.meta, { color: colors.inkSoft }]}>
-                {playable.length} {playable.length === 1 ? 'routine' : 'routines'} · {formatDuration(seconds(item.routineIds))}
-                {playable.length < item.routineIds.length ? ` · ${item.routineIds.length - playable.length} unavailable` : ''}
-              </Text>
-              <View style={{ marginTop: 8 }}>
-                {item.routineIds.slice(0, 4).map((id, i) => (
-                  <Text key={`${id}-${i}`} style={[styles.preview, { color: colors.mutedForeground }]} numberOfLines={1}>{i + 1}. {title(id)}</Text>
-                ))}
-                {item.routineIds.length > 4 ? <Text style={[styles.preview, { color: colors.mutedForeground }]}>+{item.routineIds.length - 4} more</Text> : null}
+              <View style={styles.cardHeading}>
+                <Text style={[styles.cardTitle, { color: colors.foreground, flex: 1 }]} numberOfLines={2}>{item.title}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} playlist ${item.title}`}
+                  accessibilityState={{ expanded }} testID={`toggle-playlist-${item.id}`} onPress={() => disclosure.toggle(item.id)} style={styles.icon}>
+                  <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.inkSoft} />
+                </Pressable>
               </View>
+              {expanded ? <>
+                <SkillTagList skillIds={item.skillIds} />
+                <Text style={[styles.meta, { color: colors.inkSoft }]}>
+                  {playable.length} {playable.length === 1 ? 'routine' : 'routines'} · {formatDuration(seconds(item.routineIds))}
+                  {playable.length < item.routineIds.length ? ` · ${item.routineIds.length - playable.length} unavailable` : ''}
+                </Text>
+                <View style={{ marginTop: 8 }}>
+                  {item.routineIds.slice(0, 4).map((id, i) => (
+                    <Text key={`${id}-${i}`} style={[styles.preview, { color: colors.mutedForeground }]} numberOfLines={1}>{i + 1}. {title(id)}</Text>
+                  ))}
+                  {item.routineIds.length > 4 ? <Text style={[styles.preview, { color: colors.mutedForeground }]}>+{item.routineIds.length - 4} more</Text> : null}
+                </View>
+              </> : null}
               {confirming ? (
                 <View style={[styles.confirm, { backgroundColor: colors.coralSoft }]}>
                   <Text style={[styles.meta, { color: colors.foreground }]}>Delete “{item.title}”? Your routines stay untouched.</Text>
@@ -139,7 +152,7 @@ export default function PlaylistsScreen() {
                     </Pressable>
                   </View>
                 </View>
-              ) : (
+              ) : expanded ? (
                 <View style={styles.row}>
                   <Pressable accessibilityRole="button" accessibilityLabel={`Start playlist ${item.title}`} accessibilityState={{ disabled: !playable.length }}
                     testID={`start-playlist-${item.id}`} disabled={!playable.length} onPress={() => start(item)}
@@ -171,7 +184,7 @@ export default function PlaylistsScreen() {
                     <Ionicons name="trash-outline" size={19} color={colors.destructive} />
                   </Pressable>
                 </View>
-              )}
+              ) : null}
             </View>
           );
         }}
@@ -195,6 +208,7 @@ const styles = StyleSheet.create({
   btn: { paddingHorizontal: 18, minHeight: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 6 },
   btnText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   card: { borderWidth: 1, borderRadius: 20, padding: 16, marginBottom: 12 },
+  cardHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardTitle: { fontFamily: 'Inter_700Bold', fontSize: 18 },
   meta: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 4 },
   preview: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },

@@ -3,10 +3,12 @@ import React from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePeople } from '@/context/PeopleContext';
 import { useSkills } from '@/context/SkillContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
+import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { getSkillAssociations, getSkillAverage, MAX_SKILL_NAME } from '@/lib/skills';
 import { SkillRatingChart } from '@/components/SkillRatingChart';
 import { SkillScopeRatingChart } from '@/components/SkillScopeRatingChart';
@@ -22,6 +24,8 @@ export default function SkillsScreen() {
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { activePerson } = usePeople();
+  const disclosure = usePersistentDisclosure('skills', activePerson.id);
   const { skills, ratingWindow, loading, error, reload, createSkill, updateSkill, deleteSkill, setRatingWindow } = useSkills();
   const { routines, loading: routinesLoading } = useRoutines();
   const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
@@ -34,8 +38,6 @@ export default function SkillsScreen() {
   const [windowDraft, setWindowDraft] = React.useState(String(ratingWindow));
   const [windowSaving, setWindowSaving] = React.useState(false);
   const [windowMessage, setWindowMessage] = React.useState('');
-  const [expandedUsageId, setExpandedUsageId] = React.useState<string | null>(null);
-  const [expandedRatingHistoryId, setExpandedRatingHistoryId] = React.useState<string | null>(null);
   const [ratingHistoryLimits, setRatingHistoryLimits] = React.useState<Record<string, number>>({});
   const [reflectionEditTarget, setReflectionEditTarget] = React.useState<SkillRatingNoteEditTarget | null>(null);
   const lock = React.useRef(false);
@@ -227,8 +229,8 @@ export default function SkillsScreen() {
           const editing = editingId === item.id;
           const confirming = pendingDeleteId === item.id;
           const usage = associations.get(item.id) ?? { routines: [], playlists: [] };
-          const usageExpanded = expandedUsageId === item.id;
-          const ratingHistoryExpanded = expandedRatingHistoryId === item.id;
+          const usageExpanded = disclosure.isExpanded(`${item.id}:usage`);
+          const ratingHistoryExpanded = disclosure.isExpanded(`${item.id}:rating-history`);
           const ratingHistory = [...(item.ratings ?? [])].sort((a, b) =>
             Date.parse(b.ratedAt) - Date.parse(a.ratedAt) || b.id.localeCompare(a.id));
           const visibleRatingHistory = ratingHistory.slice(0, ratingHistoryLimits[item.id] ?? 20);
@@ -309,7 +311,7 @@ export default function SkillsScreen() {
                         accessibilityState={{ expanded: ratingHistoryExpanded }}
                         accessibilityLabel={`Show rating history for ${item.name}`}
                         testID={`skill-rating-history-toggle-${item.id}`}
-                        onPress={() => setExpandedRatingHistoryId(current => current === item.id ? null : item.id)}
+                        onPress={() => disclosure.toggle(`${item.id}:rating-history`)}
                         style={({ pressed }) => [styles.usageToggle, { borderColor: colors.border }, pressed && styles.pressed]}
                       >
                         <View style={styles.usageToggleText}>
@@ -380,7 +382,7 @@ export default function SkillsScreen() {
                     accessibilityState={{ expanded: usageExpanded }}
                     accessibilityLabel={`Show routines and playlists for ${item.name}`}
                     testID={`skill-usage-toggle-${item.id}`}
-                    onPress={() => setExpandedUsageId(current => current === item.id ? null : item.id)}
+                    onPress={() => disclosure.toggle(`${item.id}:usage`)}
                     style={({ pressed }) => [styles.usageToggle, { borderColor: colors.border }, pressed && styles.pressed]}
                   >
                     <View style={styles.usageToggleText}>

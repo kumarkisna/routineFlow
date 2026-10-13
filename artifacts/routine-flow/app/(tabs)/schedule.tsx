@@ -9,6 +9,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSchedules } from '@/context/ScheduleContext';
 import { useColors } from '@/hooks/useColors';
+import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { localDateTimeOccurrence } from '@/lib/localDateTime';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS, playablePlaylistIds } from '@/lib/playlists';
 import { buildSchedulePrintHtml } from '@/lib/schedulePrint';
@@ -26,6 +27,7 @@ export default function ScheduleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { activePerson } = usePeople();
+  const disclosure = usePersistentDisclosure('schedules', activePerson.id);
   const { schedules, loading, error, reload, deleteSchedule } = useSchedules();
   const { routines, loading: rLoading } = useRoutines();
   const { playlists, loading: pLoading } = usePlaylists();
@@ -215,13 +217,19 @@ export default function ScheduleScreen() {
           const runnable = src.ids.length > 0;
           const past = Date.parse(s.scheduledAt) <= Date.now();
           const confirming = pending === s.id;
+          const expanded = disclosure.isExpanded(s.id);
           return (
             <View testID={`schedule-${s.id}`} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, opacity: past ? 0.85 : 1 }]}>
               <View style={styles.titleRow}>
                 <Ionicons name={s.targetType === 'playlist' ? 'list-outline' : 'sunny-outline'} size={18} color={colors.primary} />
                 <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={2}>{src.title ?? s.targetTitle}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} schedule for ${src.title ?? s.targetTitle}`}
+                  accessibilityState={{ expanded }} testID={`toggle-schedule-${s.id}`} onPress={() => disclosure.toggle(s.id)} style={styles.icon}>
+                  <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.inkSoft} />
+                </Pressable>
               </View>
               <Text style={[styles.meta, { color: colors.inkSoft }]}>{fmt(s.scheduledAt)}</Text>
+              {expanded || confirming ? <>
               {s.reminder || s.alertOffsetsMinutes ? (
                 <Text style={[styles.meta, { color: colors.mutedForeground }]} testID={`schedule-alerts-${s.id}`}>
                   {s.reminder ? 'Phone alerts' : 'Phone alerts off'} · {scheduleAlertOffsets(s).map(formatAlertOffset).join(', ')}
@@ -312,6 +320,7 @@ export default function ScheduleScreen() {
                   <Text style={[styles.btnText, { color: colors.primary }]}>{printBusy ? 'Preparing print…' : 'Print plan'}</Text>
                 </Pressable>
               ) : null}
+              </> : null}
             </View>
           );
         }}

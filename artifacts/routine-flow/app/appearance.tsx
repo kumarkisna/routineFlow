@@ -5,60 +5,74 @@ import React from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppearance } from '@/context/AppearanceContext';
+import { usePeople } from '@/context/PeopleContext';
 import { useColors } from '@/hooks/useColors';
+import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, type AppTheme } from '@/lib/appThemes';
 
 type Scheme = 'all' | 'light' | 'dark';
 
-const ThemeCard = React.memo(function ThemeCard({ item, selected, disabled, onPress }: {
-  item: AppTheme; selected: boolean; disabled: boolean; onPress: (id: string) => void;
+const ThemeCard = React.memo(function ThemeCard({ item, selected, disabled, expanded, onPress, onToggle }: {
+  item: AppTheme; selected: boolean; disabled: boolean; expanded: boolean; onPress: (id: string) => void; onToggle: (id: string) => void;
 }) {
   const c = item.colors;
   const ui = useColors();
   return (
-    <Pressable
-      testID={item.id}
-      accessibilityRole="button"
-      accessibilityLabel={`${item.name}, ${item.group}, ${item.scheme} theme`}
-      accessibilityState={{ selected, disabled }}
-      disabled={disabled}
-      onPress={() => onPress(item.id)}
-      style={({ pressed }) => [styles.card, { backgroundColor: c.background, borderColor: selected ? ui.primary : c.border, borderWidth: selected ? 2.5 : 1, opacity: disabled && !selected ? 0.6 : 1 }, pressed && { opacity: 0.8 }]}
-    >
-      <View style={[styles.mini, { backgroundColor: c.card, borderColor: c.border }]}>
-        <View style={[styles.miniIcon, { backgroundColor: c.coralSoft }]}>
-          <View style={[styles.dot, { backgroundColor: c.primary }]} />
-        </View>
-        <View style={{ flex: 1, gap: 4 }}>
-          <View style={[styles.line, { backgroundColor: c.foreground, width: '80%' }]} />
-          <View style={[styles.track, { backgroundColor: c.secondary }]}>
-            <View style={[styles.fill, { backgroundColor: c.primary }]} />
+    <View style={[styles.card, { backgroundColor: c.background, borderColor: selected ? ui.primary : c.border, borderWidth: selected ? 2.5 : 1, opacity: disabled && !selected ? 0.6 : 1 }]}>
+      {expanded ? (
+        <>
+          <View style={[styles.mini, { backgroundColor: c.card, borderColor: c.border }]}>
+            <View style={[styles.miniIcon, { backgroundColor: c.coralSoft }]}>
+              <View style={[styles.dot, { backgroundColor: c.primary }]} />
+            </View>
+            <View style={{ flex: 1, gap: 4 }}>
+              <View style={[styles.line, { backgroundColor: c.foreground, width: '80%' }]} />
+              <View style={[styles.track, { backgroundColor: c.secondary }]}>
+                <View style={[styles.fill, { backgroundColor: c.primary }]} />
+              </View>
+            </View>
           </View>
-        </View>
-      </View>
-      <View style={styles.swatches}>
-        {[c.primary, c.accent, c.hero, c.sage, c.secondary].map((col, i) => (
-          <View key={i} style={[styles.swatch, { backgroundColor: col, borderColor: c.border }]} />
-        ))}
-      </View>
+          <View style={styles.swatches}>
+            {[c.primary, c.accent, c.hero, c.sage, c.secondary].map((col, i) => (
+              <View key={i} style={[styles.swatch, { backgroundColor: col, borderColor: c.border }]} />
+            ))}
+          </View>
+        </>
+      ) : null}
       <View style={styles.nameRow}>
-        <View style={{ flex: 1 }}>
+        <Pressable
+          testID={item.id}
+          accessibilityRole="button"
+          accessibilityLabel={`${item.name}, ${item.group}, ${item.scheme} theme`}
+          accessibilityState={{ selected, disabled }}
+          disabled={disabled}
+          onPress={() => onPress(item.id)}
+          style={({ pressed }) => [{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }, pressed && { opacity: 0.8 }]}
+        >
+          <View style={{ flex: 1 }}>
           <Text numberOfLines={1} style={[styles.name, { color: c.foreground }]}>{item.name}</Text>
           <Text style={[styles.meta, { color: c.mutedForeground }]}>{item.group} · {item.scheme}</Text>
-        </View>
-        {selected ? (
-          <View style={[styles.check, { backgroundColor: c.primary }]}>
-            <Ionicons name="checkmark" size={14} color={c.primaryForeground} />
           </View>
-        ) : null}
+          {selected ? (
+            <View style={[styles.check, { backgroundColor: c.primary }]}>
+              <Ionicons name="checkmark" size={14} color={c.primaryForeground} />
+            </View>
+          ) : null}
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} ${item.name} theme preview`}
+          accessibilityState={{ expanded }} testID={`toggle-theme-${item.id}`} onPress={() => onToggle(item.id)} style={styles.expandTheme}>
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={c.foreground} />
+        </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 });
 
 export default function AppearanceScreen({ asTab = false }: { asTab?: boolean } = {}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { activePerson } = usePeople();
+  const disclosure = usePersistentDisclosure('themes', activePerson.id);
   const { theme, loading, saving, error, selectTheme } = useAppearance();
   const [query, setQuery] = React.useState('');
   const [group, setGroup] = React.useState<string>('All');
@@ -105,7 +119,8 @@ export default function AppearanceScreen({ asTab = false }: { asTab?: boolean } 
         windowSize={7}
         contentContainerStyle={{ paddingTop: (Platform.OS === 'web' ? 67 : insets.top) + 8, paddingBottom: (Platform.OS === 'web' ? 34 : insets.bottom) + (asTab ? 100 : 30), paddingHorizontal: 20, gap: 12 }}
         renderItem={({ item }) => (
-          <ThemeCard item={item} selected={item.id === theme.id} disabled={busy} onPress={choose} />
+          <ThemeCard item={item} selected={item.id === theme.id} disabled={busy} expanded={disclosure.isExpanded(item.id)}
+            onPress={choose} onToggle={disclosure.toggle} />
         )}
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
@@ -197,6 +212,7 @@ const styles = StyleSheet.create({
   swatches: { flexDirection: 'row', gap: 4 },
   swatch: { flex: 1, height: 16, borderRadius: 5, borderWidth: StyleSheet.hairlineWidth },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  expandTheme: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   name: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   meta: { fontFamily: 'Inter_400Regular', fontSize: 11, textTransform: 'capitalize' },
   check: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },

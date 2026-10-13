@@ -23,6 +23,7 @@ import { useRoutines } from '@/context/RoutineContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
+import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
 import { remapRoutineSkillIds } from '@/lib/skills';
 import { remapPlaylistReferences } from '@/lib/playlists';
@@ -40,6 +41,7 @@ function formatDate() {
 export default function HomeScreen() {
   const colors = useColors();
   const { people, activePerson, busy: peopleBusy, restoreAllProfiles } = usePeople();
+  const disclosure = usePersistentDisclosure('routines', activePerson.id);
   const insets = useSafeAreaInsets();
   const {
     routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine,
@@ -766,6 +768,7 @@ export default function HomeScreen() {
           const completed = getCompletedCount(item);
           const visibleStepCount = item.steps.filter((step) => !step.hidden).length;
           const itemProgress = visibleStepCount ? completed / visibleStepCount : 0;
+          const expanded = disclosure.isExpanded(item.id);
           return (
             <View style={[styles.routineCard, { backgroundColor: item.hidden ? colors.secondary : colors.card, borderColor: colors.border }]}>
               <Pressable
@@ -786,18 +789,27 @@ export default function HomeScreen() {
                     <Text style={[styles.routineTitle, { color: colors.foreground }]} numberOfLines={1}>{item.title}</Text>
                     {item.hidden ? <Text style={[styles.hiddenLabel, { color: colors.mutedForeground }]}>Hidden</Text> : null}
                   </View>
-                  <Text style={[styles.routineSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>{item.subtitle}</Text>
-                  {item.category ? (
-                    <Text style={[styles.routineCategory, { color: colors.primary }]} numberOfLines={1}>{item.category}</Text>
+                  {expanded ? (
+                    <>
+                      <Text style={[styles.routineSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>{item.subtitle}</Text>
+                      {item.category ? (
+                        <Text style={[styles.routineCategory, { color: colors.primary }]} numberOfLines={1}>{item.category}</Text>
+                      ) : null}
+                      <View style={styles.routineBottom}>
+                        <Text style={[styles.routineMeta, { color: colors.inkSoft }]}>{visibleStepCount} steps</Text>
+                        <View style={[styles.miniTrack, { backgroundColor: colors.secondary }]}>
+                          <View style={[styles.miniFill, { backgroundColor: colors.primary, width: `${itemProgress * 100}%` }]} />
+                        </View>
+                        <Text style={[styles.routineMeta, { color: colors.mutedForeground }]}>{completed}/{visibleStepCount}</Text>
+                      </View>
+                    </>
                   ) : null}
-                  <View style={styles.routineBottom}>
-                    <Text style={[styles.routineMeta, { color: colors.inkSoft }]}>{visibleStepCount} steps</Text>
-                    <View style={[styles.miniTrack, { backgroundColor: colors.secondary }]}>
-                      <View style={[styles.miniFill, { backgroundColor: colors.primary, width: `${itemProgress * 100}%` }]} />
-                    </View>
-                    <Text style={[styles.routineMeta, { color: colors.mutedForeground }]}>{completed}/{visibleStepCount}</Text>
-                  </View>
                 </View>
+              </Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} routine ${item.title}`}
+                accessibilityState={{ expanded }} testID={`toggle-routine-${item.id}`} onPress={() => disclosure.toggle(item.id)}
+                style={({ pressed }) => [styles.collapseButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}>
+                <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={19} color={colors.inkSoft} />
               </Pressable>
               {reordering ? (
                 <View style={[styles.orderActions, { borderLeftColor: colors.border }]}>
@@ -1201,6 +1213,7 @@ const styles = StyleSheet.create({
   addButton: { width: 43, height: 43, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   routineCard: { minHeight: 98, borderRadius: 19, borderWidth: 1, flexDirection: 'row', alignItems: 'center', overflow: 'hidden', marginBottom: 10 },
   routineCardContent: { flex: 1, minWidth: 0, minHeight: 98, paddingLeft: 13, paddingVertical: 13, paddingRight: 8, flexDirection: 'row', alignItems: 'center' },
+  collapseButton: { width: 38, alignSelf: 'stretch', borderLeftWidth: 1, alignItems: 'center', justifyContent: 'center' },
   visibilityButton: { width: 44, alignSelf: 'stretch', borderLeftWidth: 1, alignItems: 'center', justifyContent: 'center' },
   orderActions: { width: 44, alignSelf: 'stretch', borderLeftWidth: 1 },
   orderButton: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center' },

@@ -7,10 +7,12 @@ import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SkillRatingPrompt, type SkillRatingNoteEditTarget } from '@/components/SkillRatingPrompt';
+import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
 import { useSkills } from '@/context/SkillContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
+import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import {
   createHistorySkillRatingRun, formatHistoryDay, getHistoryForDay, getSkillRatingsMissingNotes, getUnratedSkillIds,
   groupSkillRatingEvents, localDayKey, playlistHistoryOptions, playlistHistoryRatingAnchorId,
@@ -24,6 +26,8 @@ import { playablePlaylistIds } from '@/lib/playlists';
 export default function HistoryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { activePerson } = usePeople();
+  const disclosure = usePersistentDisclosure('history', activePerson.id);
   const { progress, routines, loading } = useRoutines();
   const { skills, loading: skillsLoading, error: skillsError } = useSkills();
   const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
@@ -402,6 +406,8 @@ export default function HistoryScreen() {
             const ratingContext = ratingScope === 'playlist'
               ? `Playlist: ${selectedPlaylist?.title ?? group.playlistRuns?.find(run => run.playlistId === ratingSourceId)?.playlistTitle ?? 'Playlist'}`
               : `Routine: ${group.title}`;
+            const disclosureId = `${activeDay}:${group.id}:${ratingSourceId}`;
+            const expanded = disclosure.isExpanded(disclosureId);
 
             return (
             <View key={group.id} style={[styles.routineCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -418,7 +424,12 @@ export default function HistoryScreen() {
                       : ''}
                   </Text>
                 </View>
+                <Pressable accessibilityRole="button" accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} history for ${group.title}`}
+                  accessibilityState={{ expanded }} testID={`toggle-history-${group.id}`} onPress={() => disclosure.toggle(disclosureId)} style={styles.iconButton}>
+                  <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.inkSoft} />
+                </Pressable>
               </View>
+              {expanded ? <>
               {group.steps.map((step) => (
                 <View key={step.id} style={[styles.stepRow, { borderTopColor: colors.border }]}>
                   <Ionicons name="checkmark-circle" size={19} color={colors.success} />
@@ -587,6 +598,7 @@ export default function HistoryScreen() {
                   })}
                 </View>
               ) : null}
+              </> : null}
             </View>
           );
           })}
@@ -660,6 +672,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.65 },
   routineCard: { borderWidth: 1, borderRadius: 19, padding: 17, marginBottom: 11 },
   routineHeader: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 10 },
+  iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   routineIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   routineHeading: { flex: 1 },
   routineTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
