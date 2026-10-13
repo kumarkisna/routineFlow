@@ -4,6 +4,10 @@ import type { RoutineSkill } from './skills';
 import { getRoutinePlaybackStep } from './routinePlayback';
 import { detailHtmlToText } from './stepDetailHtml';
 
+export function getSpeechResumeMode(platform: string): 'replay-current-step' | 'resume-utterance' {
+  return platform === 'android' ? 'replay-current-step' : 'resume-utterance';
+}
+
 function describeDuration(totalSeconds: number) {
   const safeSeconds = Math.max(0, Math.round(totalSeconds));
   const hours = Math.floor(safeSeconds / 3600);

@@ -12,7 +12,7 @@ import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { SkillTagList } from '@/components/SkillPicker';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { useSkills } from '@/context/SkillContext';
-import { buildStepAnnouncement } from '@/lib/routineSpeech';
+import { buildStepAnnouncement, getSpeechResumeMode } from '@/lib/routineSpeech';
 import { createPlaylistRunLaunch, getPlaylistSpeechSteps, playablePlaylistIds, type RoutinePlaylist } from '@/lib/playlists';
 import { formatDuration, getStepSeconds } from '@/types/routines';
 
@@ -99,7 +99,7 @@ export default function PlaylistsScreen() {
       if (!playlistSpeechPausedRef.current) {
         playlistSpeechPausedRef.current = true;
         setPlaylistSpeechPaused(true);
-        if (Platform.OS === 'android') {
+        if (getSpeechResumeMode(Platform.OS) === 'replay-current-step') {
           // Android cannot pause an utterance in place; resume by replaying this step.
           speechUtteranceToken.current += 1;
           void Speech.stop();
@@ -109,7 +109,7 @@ export default function PlaylistsScreen() {
       } else {
         playlistSpeechPausedRef.current = false;
         setPlaylistSpeechPaused(false);
-        if (Platform.OS === 'android') {
+        if (getSpeechResumeMode(Platform.OS) === 'replay-current-step') {
           speakPlaylistStepAt(playlist, speechPosition.current, sessionToken);
         } else {
           void Speech.resume();

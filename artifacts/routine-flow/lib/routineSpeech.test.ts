@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Routine } from '../types/routines';
-import { buildStepAnnouncement } from './routineSpeech';
+import { buildStepAnnouncement, getSpeechResumeMode } from './routineSpeech';
 import { renameSkillInCatalog, type RoutineSkill } from './skills';
 
 const routine: Routine = {
@@ -21,6 +21,12 @@ const routine: Routine = {
 const playlist = { title: 'Start the day', skillIds: ['skill-focus'] };
 const initialSkills: RoutineSkill[] = [{ id: 'skill-focus', name: 'Focus' }];
 const renamedSkills = renameSkillInCatalog(initialSkills, 'skill-focus', 'Sustained focus');
+
+test('speech resume restarts the current step on Android and resumes the utterance on iOS and web', () => {
+  assert.equal(getSpeechResumeMode('android'), 'replay-current-step');
+  assert.equal(getSpeechResumeMode('ios'), 'resume-utterance');
+  assert.equal(getSpeechResumeMode('web'), 'resume-utterance');
+});
 
 test('routine and step announcements use the current renamed skill while keeping assignment IDs', () => {
   assert.equal(
