@@ -28,6 +28,7 @@ import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/r
 import { remapRoutineSkillIds } from '@/lib/skills';
 import { remapPlaylistReferences } from '@/lib/playlists';
 import { readPersonExportSnapshot } from '@/lib/personCopy';
+import { getStepDetailAttachmentCleanupFailureMessage } from '@/lib/stepDetailAttachmentCleanup';
 import {
   ALL_PEOPLE_FILE_FORMAT, MAX_ROUTINE_FILE_BYTES, parseAllPeopleBackup, parseRoutinesFile,
   serializeAllPeopleBackup, serializePersonBackup, type AllPeopleBackup, type RoutineBackup,
@@ -54,7 +55,8 @@ export default function HomeScreen() {
   const colors = useColors();
   const {
     people, activePerson, busy: peopleBusy, restoreAllProfiles,
-    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupResult, retryAttachmentCleanup,
+    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupResult,
+    attachmentCleanupFailureReason, retryAttachmentCleanup,
   } = usePeople();
   const disclosure = usePersistentDisclosure('routines', activePerson.id);
   const backupDisclosure = usePersistentDisclosure('home-backup-sections', activePerson.id);
@@ -895,11 +897,15 @@ export default function HomeScreen() {
               </Text>
               {attachmentCleanupPending ? (
                 <View style={[styles.cleanupNotice, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
-                  <Text accessibilityRole="alert" style={[styles.transferDescription, { color: colors.foreground }]}>
+                  <Text accessibilityRole="alert" accessibilityLiveRegion="assertive"
+                    testID="attachment-cleanup-notice"
+                    style={[styles.transferDescription, { color: colors.foreground }]}>
                     {attachmentCleanupResult !== null && attachmentCleanupResult.removedCount > 0
                       ? `Cleanup is still incomplete. Removed ${attachmentCleanupResult.removedCount} unused attachment ${attachmentCleanupResult.removedCount === 1 ? 'file' : 'files'} so far. `
                       : 'Cleanup is still incomplete. '}
-                    Some files could not be safely checked or removed. Your saved attachments are safe; retry when storage is available.
+                    {getStepDetailAttachmentCleanupFailureMessage(
+                      attachmentCleanupFailureReason ?? 'file-removal',
+                    )}
                   </Text>
                   <Pressable
                     accessibilityRole="button"

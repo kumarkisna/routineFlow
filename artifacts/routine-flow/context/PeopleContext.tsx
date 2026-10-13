@@ -17,6 +17,7 @@ import { mergePersonRestore, type PersonRestoreSnapshot } from '@/lib/personRest
 import {
   cleanupOrphanedStepDetailAttachmentCopies, createStepDetailAttachmentCleanupRunner,
   reconcilePendingStepDetailAttachmentDeletion,
+  type StepDetailAttachmentCleanupFailureReason,
   type StepDetailAttachmentCleanupResult,
 } from '@/lib/stepDetailAttachmentCleanup';
 import type { AllPeopleBackup } from '@/lib/routineTransfer';
@@ -64,6 +65,7 @@ type PeopleContextValue = {
   attachmentCleanupPending: boolean;
   attachmentCleanupBusy: boolean;
   attachmentCleanupResult: StepDetailAttachmentCleanupResult | null;
+  attachmentCleanupFailureReason: StepDetailAttachmentCleanupFailureReason | null;
   retryAttachmentCleanup: () => Promise<StepDetailAttachmentCleanupResult | null>;
   runAttachmentCleanup: () => Promise<StepDetailAttachmentCleanupResult | null>;
 };
@@ -138,15 +140,23 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const [attachmentCleanupPending, setAttachmentCleanupPending] = useState(false);
   const [attachmentCleanupBusy, setAttachmentCleanupBusy] = useState(false);
   const [attachmentCleanupResult, setAttachmentCleanupResult] = useState<StepDetailAttachmentCleanupResult | null>(null);
+  const [attachmentCleanupFailureReason, setAttachmentCleanupFailureReason] =
+    useState<StepDetailAttachmentCleanupFailureReason | null>(null);
   const runAttachmentCleanup = useMemo(() => createStepDetailAttachmentCleanupRunner(
     (onProgress, beforeDelete) => cleanupOrphanedStepDetailAttachmentCopies(
       FileSystem.documentDirectory, AsyncStorage, FileSystem, onProgress, beforeDelete,
     ),
-    (status, progress) => {
+    (status, progress, failureReason) => {
       setAttachmentCleanupBusy(status === 'running');
       if (progress) setAttachmentCleanupResult(progress);
-      if (status === 'complete') setAttachmentCleanupPending(false);
-      if (status === 'retry') setAttachmentCleanupPending(true);
+      if (status === 'complete') {
+        setAttachmentCleanupPending(false);
+        setAttachmentCleanupFailureReason(null);
+      }
+      if (status === 'retry') {
+        setAttachmentCleanupPending(true);
+        setAttachmentCleanupFailureReason(failureReason ?? 'file-removal');
+      }
     },
     {
       getItem: key => AsyncStorage.getItem(key),
@@ -519,11 +529,11 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const canRepairDurations = repairPersonId !== null && /needs a valid duration|invalid legacy duration/.test(error);
   const value = useMemo(() => ({
     people: registry.people, activePerson, revision, busy, notice,
-    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupResult,
+    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupResult, attachmentCleanupFailureReason,
     retryAttachmentCleanup, runAttachmentCleanup,
     addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles,
   }), [registry.people, activePerson, revision, busy, notice, attachmentCleanupPending, attachmentCleanupBusy,
-    attachmentCleanupResult, retryAttachmentCleanup, runAttachmentCleanup,
+    attachmentCleanupResult, attachmentCleanupFailureReason, retryAttachmentCleanup, runAttachmentCleanup,
     addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
 
   if (loading || error) {

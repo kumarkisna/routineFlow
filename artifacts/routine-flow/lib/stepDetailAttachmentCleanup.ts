@@ -37,10 +37,32 @@ export type StepDetailAttachmentCleanupResult = {
   estimatedBytes: number | null;
 };
 
+export type StepDetailAttachmentCleanupFailureReason =
+  | 'routine-data'
+  | 'attachment-storage'
+  | 'file-removal'
+  | 'progress-storage';
+
+export function getStepDetailAttachmentCleanupFailureMessage(
+  reason: StepDetailAttachmentCleanupFailureReason,
+): string {
+  switch (reason) {
+    case 'routine-data':
+      return 'Saved routine data could not be read safely. Check that app storage is available, then retry. Your saved attachments are safe.';
+    case 'attachment-storage':
+      return 'Attachment storage is not available. Check the app’s storage access, then retry. Your saved attachments are safe.';
+    case 'file-removal':
+      return 'Some unused attachment files could not be removed. Check available device storage, then retry. Your saved attachments are safe.';
+    case 'progress-storage':
+      return 'Cleanup progress could not be accessed or saved. Check app storage availability, then retry. Your saved attachments are safe.';
+  }
+}
+
 export class StepDetailAttachmentCleanupError extends Error {
   constructor(
     message: string,
     readonly partialResult: StepDetailAttachmentCleanupResult,
+    readonly failureReason: StepDetailAttachmentCleanupFailureReason = 'file-removal',
   ) {
     super(message);
     this.name = 'StepDetailAttachmentCleanupError';
@@ -91,6 +113,7 @@ export function createStepDetailAttachmentCleanupRunner(
   onStatus: (
     status: StepDetailAttachmentCleanupStatus,
     progress?: StepDetailAttachmentCleanupResult,
+    failureReason?: StepDetailAttachmentCleanupFailureReason,
   ) => void,
   progressStorage?: StepDetailAttachmentCleanupProgressStorage,
   reconcilePendingDeletion?: (
@@ -119,8 +142,16 @@ export function createStepDetailAttachmentCleanupRunner(
       await progressStorage.setItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY, serialized);
     } catch {
       // Some storage drivers can reject after committing. Confirm before failing.
-      if (await progressStorage.getItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY) !== serialized) {
-        throw new Error('Cleanup progress could not be saved.');
+      try {
+        if (await progressStorage.getItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY) !== serialized) {
+          throw new Error();
+        }
+      } catch {
+        throw new StepDetailAttachmentCleanupError(
+          'Cleanup progress could not be saved.',
+          progress,
+          'progress-storage',
+        );
       }
     }
   };
@@ -131,8 +162,16 @@ export function createStepDetailAttachmentCleanupRunner(
       await progressStorage.removeItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY);
     } catch {
       // Confirm removal when a storage driver rejects after committing.
-      if (await progressStorage.getItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY) !== null) {
-        throw new Error('Completed cleanup progress could not be cleared.');
+      try {
+        if (await progressStorage.getItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY) !== null) {
+          throw new Error();
+        }
+      } catch {
+        throw new StepDetailAttachmentCleanupError(
+          'Completed cleanup progress could not be cleared.',
+          previousAttempts,
+          'progress-storage',
+        );
       }
     }
   };
@@ -182,12 +221,12 @@ export function createStepDetailAttachmentCleanupRunner(
       try {
         await loadProgress();
       } catch {
-        onStatus('retry', previousAttempts);
+        onStatus('retry', previousAttempts, 'progress-storage');
         return null;
       }
       if (pendingDeletion) {
         if (!reconcilePendingDeletion || !progressStorage) {
-          onStatus('retry', previousAttempts);
+          onStatus('retry', previousAttempts, 'progress-storage');
           return null;
         }
         try {
@@ -210,8 +249,14 @@ export function createStepDetailAttachmentCleanupRunner(
           }
           await saveProgress(previousAttempts, undefined);
           pendingDeletion = undefined;
-        } catch {
-          onStatus('retry', previousAttempts);
+        } catch (error) {
+          onStatus(
+            'retry',
+            previousAttempts,
+            error instanceof StepDetailAttachmentCleanupError
+              ? error.failureReason
+              : 'routine-data',
+          );
           return null;
         }
       }
@@ -242,7 +287,13 @@ export function createStepDetailAttachmentCleanupRunner(
         } catch {
           // Keep the in-memory count visible; the cleanup remains retryable.
         }
-        onStatus('retry', previousAttempts);
+        onStatus(
+          'retry',
+          previousAttempts,
+          error instanceof StepDetailAttachmentCleanupError
+            ? error.failureReason
+            : 'file-removal',
+        );
         return null;
       }
       const total = addCleanupResults(previousAttempts, removed);
@@ -256,7 +307,7 @@ export function createStepDetailAttachmentCleanupRunner(
         } catch {
           // Preserve the in-memory count even if storage is still unavailable.
         }
-        onStatus('retry', previousAttempts);
+        onStatus('retry', previousAttempts, 'progress-storage');
         return null;
       }
       previousAttempts = { removedCount: 0, estimatedBytes: 0 };
@@ -373,16 +424,39 @@ export async function reconcilePendingStepDetailAttachmentDeletion(
   storage: CleanupStorage,
   fileSystem: CleanupFileSystem,
 ): Promise<PendingStepDetailAttachmentReconciliation> {
-  if (!documentDirectory) throw new Error('App file storage is unavailable.');
+  if (!documentDirectory) {
+    throw new StepDetailAttachmentCleanupError('App file storage is unavailable.', {
+      removedCount: 0,
+      estimatedBytes: 0,
+    }, 'attachment-storage');
+  }
   if (!pending.fileName || pending.fileName === '.' || pending.fileName === '..'
     || /[/\\]/.test(pending.fileName)) {
     throw new Error('Saved cleanup progress could not be checked safely.');
   }
-  const referencedUris = await readReferencedAttachmentUris(storage);
+  let referencedUris: Set<string>;
+  try {
+    referencedUris = await readReferencedAttachmentUris(storage);
+  } catch {
+    throw new StepDetailAttachmentCleanupError(
+      'Saved routine data could not be checked safely.',
+      { removedCount: 0, estimatedBytes: 0 },
+      'routine-data',
+    );
+  }
   const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
   const uri = `${documentRoot}step-detail-attachments/${pending.fileName}`;
   if (referencedUris.has(uri)) return 'referenced';
-  const info = await fileSystem.getInfoAsync(uri);
+  let info: { exists: boolean; isDirectory: boolean; size?: number };
+  try {
+    info = await fileSystem.getInfoAsync(uri);
+  } catch {
+    throw new StepDetailAttachmentCleanupError(
+      'Attachment files could not be checked.',
+      { removedCount: 0, estimatedBytes: 0 },
+      'attachment-storage',
+    );
+  }
   return info.exists ? 'present' : 'removed';
 }
 
@@ -437,18 +511,42 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
   beforeDelete?: (pending: Omit<PendingStepDetailAttachmentDeletion, 'counted'>) => Promise<void>,
   metrics?: StepDetailAttachmentCleanupMetrics,
 ): Promise<StepDetailAttachmentCleanupResult> {
-  if (!documentDirectory) throw new Error('App file storage is unavailable.');
+  if (!documentDirectory) {
+    throw new StepDetailAttachmentCleanupError('App file storage is unavailable.', {
+      removedCount: 0,
+      estimatedBytes: 0,
+    }, 'attachment-storage');
+  }
   const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
   const attachmentDirectory = `${documentRoot}step-detail-attachments/`;
 
   const parsedRoutineRecords = new Map<string, ParsedRoutineRecord>();
-  const referencedUris = await readReferencedAttachmentUris(storage, parsedRoutineRecords, metrics);
+  let referencedUris: Set<string>;
+  try {
+    referencedUris = await readReferencedAttachmentUris(storage, parsedRoutineRecords, metrics);
+  } catch {
+    throw new StepDetailAttachmentCleanupError(
+      'Saved routine data could not be checked safely.',
+      { removedCount: 0, estimatedBytes: 0 },
+      'routine-data',
+    );
+  }
 
-  const fileNames = await fileSystem.readDirectoryAsync(attachmentDirectory);
+  let fileNames: string[];
+  try {
+    fileNames = await fileSystem.readDirectoryAsync(attachmentDirectory);
+  } catch {
+    throw new StepDetailAttachmentCleanupError(
+      'Attachment storage could not be checked.',
+      { removedCount: 0, estimatedBytes: 0 },
+      'attachment-storage',
+    );
+  }
   let removedCount = 0;
   let estimatedBytes = 0;
   let hasAllSizes = true;
-  let failed = false;
+  let failedAttachmentAccess = false;
+  let failedFileRemoval = false;
   for (const fileName of fileNames) {
     if (!fileName || fileName === '.' || fileName === '..' || /[/\\]/.test(fileName)) continue;
     const uri = `${attachmentDirectory}${fileName}`;
@@ -457,7 +555,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
     try {
       info = await fileSystem.getInfoAsync(uri);
     } catch {
-      failed = true;
+      failedAttachmentAccess = true;
       continue;
     }
     if (!info.exists || info.isDirectory) continue;
@@ -477,6 +575,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
               removedCount,
               estimatedBytes: hasAllSizes ? estimatedBytes : null,
             },
+            'routine-data',
           );
         }
         if (latestReferences.has(uri)) {
@@ -498,6 +597,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
                 removedCount,
                 estimatedBytes: hasAllSizes ? estimatedBytes : null,
               },
+              'progress-storage',
             );
           }
         }
@@ -507,7 +607,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
     } catch (error) {
       if (error instanceof StepDetailAttachmentCleanupError) throw error;
       // Continue trying other files, then report failure so the caller can offer a retry.
-      failed = true;
+      failedFileRemoval = true;
       continue;
     }
     if (!deleted) continue;
@@ -530,6 +630,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
             removedCount,
             estimatedBytes: hasAllSizes ? estimatedBytes : null,
           },
+          'progress-storage',
         );
       }
     }
@@ -538,10 +639,13 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
     removedCount,
     estimatedBytes: hasAllSizes ? estimatedBytes : null,
   };
-  if (failed) {
+  if (failedAttachmentAccess || failedFileRemoval) {
     throw new StepDetailAttachmentCleanupError(
-      'Some unused attachment files could not be removed.',
+      failedAttachmentAccess
+        ? 'Attachment files could not be accessed.'
+        : 'Some unused attachment files could not be removed.',
       result,
+      failedAttachmentAccess ? 'attachment-storage' : 'file-removal',
     );
   }
   return result;

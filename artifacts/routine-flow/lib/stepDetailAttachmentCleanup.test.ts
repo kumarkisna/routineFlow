@@ -6,6 +6,7 @@ import { performance } from 'node:perf_hooks';
 import {
   cleanupOrphanedStepDetailAttachmentCopies,
   createStepDetailAttachmentCleanupRunner,
+  getStepDetailAttachmentCleanupFailureMessage,
   reconcilePendingStepDetailAttachmentDeletion,
   saveRoutinesWithStepDetailAttachments,
   STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY,
@@ -337,11 +338,15 @@ test('keeps partial cleanup progress visible across retries without counting sav
     status: string;
     progress?: { removedCount: number; estimatedBytes: number | null };
   }> = [];
+  let failureReason: string | undefined;
   const runCleanup = createStepDetailAttachmentCleanupRunner(
     () => cleanupOrphanedStepDetailAttachmentCopies(
       directory, adapters.storage, adapters.fileSystem,
     ),
-    (status, progress) => statuses.push({ status, progress }),
+    (status, progress, reason) => {
+      statuses.push({ status, progress });
+      failureReason = reason;
+    },
   );
 
   assert.equal(await runCleanup(), null);
@@ -349,6 +354,7 @@ test('keeps partial cleanup progress visible across retries without counting sav
     status: 'retry',
     progress: { removedCount: 1, estimatedBytes: 300 },
   });
+  assert.equal(failureReason, 'file-removal');
   assert.deepEqual(adapters.deleted, [removeUri]);
   assert.ok(!adapters.deleted.includes(sharedUri));
 
@@ -358,8 +364,188 @@ test('keeps partial cleanup progress visible across retries without counting sav
     status: 'complete',
     progress: { removedCount: 2, estimatedBytes: 500 },
   });
+  assert.equal(failureReason, undefined);
   assert.deepEqual(adapters.deleted, [removeUri, retryUri]);
   assert.ok(!adapters.deleted.includes(sharedUri));
+});
+
+test('reports when cleanup progress storage blocks a safe deletion, then clears the notice after retry', async () => {
+  const orphanUri = `${attachmentDirectory}orphan.pdf`;
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], ['orphan.pdf'], { 'orphan.pdf': 128 });
+  const remainingFiles = ['orphan.pdf'];
+  adapters.fileSystem.readDirectoryAsync = async () => [...remainingFiles];
+  adapters.fileSystem.getInfoAsync = async uri => ({
+    exists: remainingFiles.includes(uri.slice(uri.lastIndexOf('/') + 1)),
+    isDirectory: false,
+    size: 128,
+  });
+  adapters.fileSystem.deleteAsync = async uri => {
+    adapters.deleted.push(uri);
+    const index = remainingFiles.indexOf(uri.slice(uri.lastIndexOf('/') + 1));
+    if (index >= 0) remainingFiles.splice(index, 1);
+  };
+  const progressValues = new Map<string, string>();
+  let failFirstSave = true;
+  const progressStorage = {
+    getItem: async (key: string) => progressValues.get(key) ?? null,
+    setItem: async (key: string, value: string) => {
+      if (failFirstSave) {
+        failFirstSave = false;
+        throw new Error('private storage path and raw driver detail');
+      }
+      progressValues.set(key, value);
+    },
+    removeItem: async (key: string) => { progressValues.delete(key); },
+  };
+  let failureReason: string | undefined;
+  const runCleanup = createStepDetailAttachmentCleanupRunner(
+    (onProgress, beforeDelete) => cleanupOrphanedStepDetailAttachmentCopies(
+      directory, adapters.storage, adapters.fileSystem, onProgress, beforeDelete,
+    ),
+    (_status, _progress, reason) => { failureReason = reason; },
+    progressStorage,
+  );
+
+  assert.equal(await runCleanup(), null);
+  assert.equal(failureReason, 'progress-storage');
+  assert.deepEqual(adapters.deleted, []);
+  assert.deepEqual(JSON.parse(progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY)!), {
+    version: 2,
+    removedCount: 0,
+    estimatedBytes: 0,
+  });
+  assert.match(
+    getStepDetailAttachmentCleanupFailureMessage('progress-storage'),
+    /Cleanup progress could not be accessed or saved.*retry.*attachments are safe/,
+  );
+  assert.doesNotMatch(
+    getStepDetailAttachmentCleanupFailureMessage('progress-storage'),
+    /private storage path|raw driver detail|file:\/\//i,
+  );
+
+  assert.deepEqual(await runCleanup(), { removedCount: 1, estimatedBytes: 128 });
+  assert.equal(failureReason, undefined);
+  assert.deepEqual(adapters.deleted, [orphanUri]);
+  assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
+});
+
+test('retains the completed-file count when clearing progress fails and announces completion after retry', async () => {
+  const orphanUri = `${attachmentDirectory}orphan.pdf`;
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], ['orphan.pdf'], { 'orphan.pdf': 128 });
+  const remainingFiles = ['orphan.pdf'];
+  adapters.fileSystem.readDirectoryAsync = async () => [...remainingFiles];
+  adapters.fileSystem.getInfoAsync = async uri => ({
+    exists: remainingFiles.includes(uri.slice(uri.lastIndexOf('/') + 1)),
+    isDirectory: false,
+    size: 128,
+  });
+  adapters.fileSystem.deleteAsync = async uri => {
+    adapters.deleted.push(uri);
+    const index = remainingFiles.indexOf(uri.slice(uri.lastIndexOf('/') + 1));
+    if (index >= 0) remainingFiles.splice(index, 1);
+  };
+  const progressValues = new Map<string, string>();
+  let failFirstClear = true;
+  const progressStorage = {
+    getItem: async (key: string) => progressValues.get(key) ?? null,
+    setItem: async (key: string, value: string) => { progressValues.set(key, value); },
+    removeItem: async (key: string) => {
+      if (failFirstClear) {
+        failFirstClear = false;
+        throw new Error('raw storage error');
+      }
+      progressValues.delete(key);
+    },
+  };
+  const statuses: string[] = [];
+  let failureReason: string | undefined;
+  const runCleanup = createStepDetailAttachmentCleanupRunner(
+    (onProgress, beforeDelete) => cleanupOrphanedStepDetailAttachmentCopies(
+      directory, adapters.storage, adapters.fileSystem, onProgress, beforeDelete,
+    ),
+    (status, _progress, reason) => {
+      statuses.push(status);
+      failureReason = reason;
+    },
+    progressStorage,
+  );
+
+  assert.equal(await runCleanup(), null);
+  assert.deepEqual(adapters.deleted, [orphanUri]);
+  assert.equal(failureReason, 'progress-storage');
+  assert.deepEqual(JSON.parse(progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY)!), {
+    version: 2,
+    removedCount: 1,
+    estimatedBytes: 128,
+  });
+
+  assert.deepEqual(await runCleanup(), { removedCount: 1, estimatedBytes: 128 });
+  assert.deepEqual(statuses, ['running', 'retry', 'running', 'complete']);
+  assert.equal(failureReason, undefined);
+  assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
+});
+
+test('uses fixed display-safe cleanup reasons for each failure category', () => {
+  const reasons = ['routine-data', 'attachment-storage', 'file-removal', 'progress-storage'] as const;
+  for (const reason of reasons) {
+    const message = getStepDetailAttachmentCleanupFailureMessage(reason);
+    assert.match(message, /retry/i);
+    assert.match(message, /saved attachments are safe/i);
+    assert.doesNotMatch(message, /file:\/\//i);
+  }
+});
+
+test('keeps saved counts when attachment storage is unavailable, then completes after storage returns', async () => {
+  const orphanUri = `${attachmentDirectory}orphan.pdf`;
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], ['orphan.pdf'], { 'orphan.pdf': 128 });
+  const progressValues = new Map<string, string>([[
+    STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY,
+    JSON.stringify({ version: 2, removedCount: 2, estimatedBytes: 256 }),
+  ]]);
+  const progressStorage = {
+    getItem: async (key: string) => progressValues.get(key) ?? null,
+    setItem: async (key: string, value: string) => { progressValues.set(key, value); },
+    removeItem: async (key: string) => { progressValues.delete(key); },
+  };
+  let attachmentStorageAvailable = false;
+  let failureReason: string | undefined;
+  const runCleanup = createStepDetailAttachmentCleanupRunner(
+    () => cleanupOrphanedStepDetailAttachmentCopies(
+      attachmentStorageAvailable ? directory : null,
+      adapters.storage,
+      adapters.fileSystem,
+    ),
+    (_status, _progress, reason) => { failureReason = reason; },
+    progressStorage,
+  );
+
+  assert.equal(await runCleanup(), null);
+  assert.equal(failureReason, 'attachment-storage');
+  assert.deepEqual(JSON.parse(progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY)!), {
+    version: 2,
+    removedCount: 2,
+    estimatedBytes: 256,
+  });
+  assert.match(
+    getStepDetailAttachmentCleanupFailureMessage('attachment-storage'),
+    /storage is not available.*storage access.*retry/i,
+  );
+  assert.deepEqual(adapters.deleted, []);
+
+  attachmentStorageAvailable = true;
+  assert.deepEqual(await runCleanup(), { removedCount: 3, estimatedBytes: 384 });
+  assert.equal(failureReason, undefined);
+  assert.deepEqual(adapters.deleted, [orphanUri]);
+  assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
 });
 
 test('persists partial cleanup progress across restarts until every profile has been safely checked', async () => {
@@ -396,15 +582,17 @@ test('persists partial cleanup progress across restarts until every profile has 
     const index = remainingFiles.indexOf(fileName);
     if (index >= 0) remainingFiles.splice(index, 1);
   };
+  let failureReason: string | undefined;
   const createRunner = () => createStepDetailAttachmentCleanupRunner(
     onProgress => cleanupOrphanedStepDetailAttachmentCopies(
       directory, adapters.storage, adapters.fileSystem, onProgress,
     ),
-    () => {},
+    (_status, _progress, reason) => { failureReason = reason; },
     progressStorage,
   );
 
   assert.equal(await createRunner()(), null);
+  assert.equal(failureReason, 'file-removal');
   const savedPartialProgress = progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY);
   assert.ok(savedPartialProgress);
   assert.deepEqual(JSON.parse(savedPartialProgress), {
@@ -418,11 +606,13 @@ test('persists partial cleanup progress across restarts until every profile has 
   adapters.values.set(PERSON_DATA_KEYS.routines, '{invalid json');
   const afterRestart = createRunner();
   assert.equal(await afterRestart(), null);
+  assert.equal(failureReason, 'routine-data');
   assert.equal(progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), savedPartialProgress);
 
   adapters.values.set(PERSON_DATA_KEYS.routines, JSON.stringify([routine(sharedUri)]));
   storageAvailable = true;
   assert.deepEqual(await afterRestart(), { removedCount: 2, estimatedBytes: 500 });
+  assert.equal(failureReason, undefined);
   assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
   assert.deepEqual(adapters.deleted, [removeUri, retryUri]);
   assert.ok(!adapters.deleted.includes(sharedUri));
