@@ -6,6 +6,7 @@ import {
   buildStepDetailFields,
   createStepDetailDraft,
   removeAdditionalStepDetail,
+  setStepDetailHtml,
   setStepDetailSpeech,
   updateAdditionalStepDetail,
 } from './stepDetailDraft';
@@ -49,6 +50,43 @@ test('detail speech settings stay with their text through add, remove, save, and
     'Main detail',
     'Stay enabled',
     'New last detail',
+  ]);
+});
+
+test('formatted details retain plain editable text and HTML through save and reopen', () => {
+  const legacyStep: RoutineStep = {
+    id: 'legacy',
+    title: 'Read the guide',
+    description: '  Old unformatted note  ',
+    durationSeconds: 60,
+  };
+  const oldDraft = createStepDetailDraft(legacyStep);
+  assert.equal(oldDraft.description, '  Old unformatted note  ');
+  assert.equal(buildStepDetailFields(oldDraft).description, 'Old unformatted note');
+
+  let draft = createStepDetailDraft({
+    ...legacyStep,
+    description: 'Read each instruction in order.',
+    additionalDetails: ['Open the reference.'],
+  });
+  draft = setStepDetailHtml(draft, 0, '<h2>Read each instruction in order.</h2>');
+  draft = setStepDetailHtml(draft, 1, '<p><a href="https://example.com">Open the reference</a></p>');
+  const savedFields = buildStepDetailFields(draft);
+  const reopened = createStepDetailDraft({
+    ...legacyStep,
+    ...savedFields,
+  });
+
+  assert.equal(savedFields.description, 'Read each instruction in order.');
+  assert.deepEqual(savedFields.additionalDetails, ['Open the reference.']);
+  assert.deepEqual(reopened.detailHtml, [
+    '<h2>Read each instruction in order.</h2>',
+    '<p><a href="https://example.com">Open the reference</a></p>',
+  ]);
+  assert.equal(reopened.description, 'Read each instruction in order.');
+  assert.deepEqual(getSpokenStepDetails({ ...legacyStep, ...savedFields }), [
+    'Read each instruction in order.',
+    'Open the reference.',
   ]);
 });
 

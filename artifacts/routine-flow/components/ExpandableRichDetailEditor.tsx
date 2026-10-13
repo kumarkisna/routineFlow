@@ -3,20 +3,9 @@ import React, { useRef, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { actions, RichEditor, RichToolbar } from 'react-native-pell-rich-editor';
 import { useColors } from '@/hooks/useColors';
+import { detailHtmlToText, sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
 
-export function detailHtmlToText(html: string) {
-  return html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
-    .replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'").replace(/\n{3,}/g, '\n\n').trim();
-}
-
-export function sanitizeStepDetailHtml(html: string) {
-  return html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
-    .replace(/<(iframe|object|embed|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
-    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/javascript\s*:/gi, '');
-}
+export { detailHtmlToText, sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
 
 const escapeHtml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 
@@ -53,7 +42,7 @@ export function ExpandableRichDetailEditor({ label, value, html, disabled, onSav
             <Pressable accessibilityRole="button" accessibilityLabel="Save formatted detail" onPress={save}
               style={[styles.done, { backgroundColor: colors.primary }]}><Text style={{ color: colors.primaryForeground }}>Done</Text></Pressable>
           </View>
-          {Platform.OS === 'web' ? (
+          {visible ? (Platform.OS === 'web' ? (
             <TextInput multiline value={webText} onChangeText={setWebText} style={[styles.webInput, { color: colors.foreground, borderColor: colors.border }]} />
           ) : (
             <>
@@ -67,7 +56,7 @@ export function ExpandableRichDetailEditor({ label, value, html, disabled, onSav
                 placeholder="Write step instructions…" style={styles.editor}
                 editorStyle={{ backgroundColor: colors.background, color: colors.foreground, placeholderColor: colors.mutedForeground, contentCSSText: 'font-size:16px;line-height:1.5;padding:12px;' }} />
             </>
-          )}
+          )) : null}
         </View>
       </Modal>
     </>

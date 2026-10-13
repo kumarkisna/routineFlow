@@ -376,6 +376,7 @@ export default function RoutineDetailScreen() {
                         detailHtml={step.detailHtml}
                         style={[styles.stepDescription, { color: colors.mutedForeground }]}
                         linkColor={colors.primary}
+                        backgroundColor={step.hidden ? colors.secondary : isDone ? colors.sageSoft : colors.card}
                       />
                     ) : null}
                     {step.detailAttachments?.map((attachments, detailIndex) => attachments.length ? (

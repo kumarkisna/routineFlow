@@ -743,6 +743,7 @@ function RoutinePlayer() {
               detailHtml={activeStep.detailHtml}
               style={[styles.activeDescription, { color: colors.heroForeground }]}
               linkColor={colors.heroForeground}
+              backgroundColor={colors.hero}
             />
           ) : null}
           {!isFinished ? activeStep.detailAttachments?.map((attachments, detailIndex) => attachments.length ? (
@@ -894,6 +895,7 @@ function RoutinePlayer() {
                       detailHtml={step.detailHtml}
                       style={[styles.stepDescription, { color: colors.mutedForeground }]}
                       linkColor={colors.primary}
+                      backgroundColor={colors.card}
                       numberOfLines={2}
                     />
                   ) : null}

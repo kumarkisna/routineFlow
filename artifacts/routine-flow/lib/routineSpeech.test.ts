@@ -119,3 +119,24 @@ test('assigned skill names remain spoken when all step details are muted', () =>
     'Routine Morning reset. Skills: Sustained focus. Step 1. Drink a glass of water. Skills: Sustained focus. You have 1 minute.',
   );
 });
+
+test('step announcements use formatted details as plain text without reading HTML markup', () => {
+  const richRoutine: Routine = {
+    ...routine,
+    steps: [
+      {
+        ...routine.steps[0],
+        description: 'Prepare the surface.\nSpread the mixture evenly.',
+        detailHtml: [
+          '<h2 style="text-align:center;color:#345">Prepare the surface.</h2><ul><li>Spread the mixture evenly.</li></ul>',
+        ],
+      },
+      routine.steps[1],
+    ],
+  };
+
+  const announcement = buildStepAnnouncement(richRoutine, 0, []);
+  assert.ok(announcement.includes('Prepare the surface.\nSpread the mixture evenly.'));
+  assert.doesNotMatch(announcement, /<\/?[a-z][^>]*>/i);
+  assert.doesNotMatch(announcement, /text-align|color:#345/);
+});

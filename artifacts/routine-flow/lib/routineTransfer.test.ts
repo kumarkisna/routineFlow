@@ -18,6 +18,7 @@ import { makeRoutineCopy } from './copyRoutine';
 import type { CompletionMap, Routine } from '@/types/routines';
 import { getSpokenStepDetails, getStepDetails } from '@/types/routines';
 import { getHistoryForDay } from './progressHistory';
+import { buildStepAnnouncement } from './routineSpeech';
 
 const day = '2026-09-28';
 const secondDay = '2026-09-29';
@@ -207,17 +208,19 @@ test('multiple step details survive backup round-trips while old single details 
 test('routine copies preserve additional details without sharing their arrays', () => {
   const source = routine();
   source.steps[0].additionalDetails = ['Use the saved checklist.'];
-  source.steps[0].detailHtml = ['<p>Drink water</p>', '<ul><li>Use the saved checklist.</li></ul>'];
   source.steps[0].detailAttachments = [
     [{ id: 'img', name: 'photo.png', uri: 'file:///old/photo.png', mimeType: 'image/png', kind: 'image', contentBase64: 'aGVsbG8=' }],
     [],
   ];
   source.steps[0].speakDetails = false;
   source.steps[0].detailSpeech = [true, false];
+  source.steps[0].description = 'Check the plan.';
+  source.steps[0].detailHtml = ['<h2>Check the plan.</h2>', '<p><strong>Use the saved checklist.</strong></p>'];
   let nextId = 0;
 
   const copied = makeRoutineCopy(source, [], () => `copy-${nextId++}`);
 
+  assert.equal(copied.steps[0].description, 'Check the plan.');
   assert.deepEqual(copied.steps[0].additionalDetails, ['Use the saved checklist.']);
   assert.notEqual(copied.steps[0].additionalDetails, source.steps[0].additionalDetails);
   assert.equal(copied.steps[0].speakDetails, false);
@@ -227,18 +230,34 @@ test('routine copies preserve additional details without sharing their arrays', 
   assert.notEqual(copied.steps[0].detailHtml, source.steps[0].detailHtml);
   assert.deepEqual(copied.steps[0].detailAttachments, source.steps[0].detailAttachments);
   assert.notEqual(copied.steps[0].detailAttachments?.[0], source.steps[0].detailAttachments?.[0]);
+  const copiedAnnouncement = buildStepAnnouncement(copied, 0, []);
+  assert.ok(copiedAnnouncement.includes('Check the plan.'));
+  assert.doesNotMatch(copiedAnnouncement, /<\/?(?:h2|p|strong)[^>]*>/i);
 });
 
 test('routine backups retain rich step details and attachment bytes', () => {
   const source = routine();
-  source.steps[0].detailHtml = ['<p><strong>Drink water</strong></p>'];
+  source.steps[0].description = 'Drink water slowly.';
+  source.steps[0].additionalDetails = ['Use the glass marked “water”.'];
+  source.steps[0].detailSpeech = [true, false];
+  source.steps[0].detailHtml = [
+    '<h2 style="text-align:center;color:#345">Drink water slowly.</h2>',
+    '<p><a href="https://example.com/guide">Use the glass marked “water”.</a></p>',
+  ];
   source.steps[0].detailAttachments = [[{
     id: 'file-one', name: 'photo.png', uri: 'file:///old-device/photo.png',
     mimeType: 'image/png', kind: 'image', contentBase64: 'iVBORw0KGgo=',
-  }]];
+  }], []];
   const restored = parseRoutinesFile(serializeRoutines([source])).routines[0];
+  assert.equal(restored.steps[0].description, source.steps[0].description);
+  assert.deepEqual(restored.steps[0].additionalDetails, source.steps[0].additionalDetails);
+  assert.deepEqual(restored.steps[0].detailSpeech, source.steps[0].detailSpeech);
   assert.deepEqual(restored.steps[0].detailHtml, source.steps[0].detailHtml);
   assert.deepEqual(restored.steps[0].detailAttachments, source.steps[0].detailAttachments);
+  assert.deepEqual(getSpokenStepDetails(restored.steps[0]), ['Drink water slowly.']);
+  const restoredAnnouncement = buildStepAnnouncement(restored, 0, []);
+  assert.ok(restoredAnnouncement.includes('Drink water slowly.'));
+  assert.doesNotMatch(restoredAnnouncement, /<\/?(?:h2|p|a)[^>]*>/i);
 });
 
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
