@@ -42,6 +42,9 @@ export default function HomeScreen() {
   const colors = useColors();
   const { people, activePerson, busy: peopleBusy, restoreAllProfiles } = usePeople();
   const disclosure = usePersistentDisclosure('routines', activePerson.id);
+  const backupDisclosure = usePersistentDisclosure('home-backup-sections', activePerson.id);
+  const personBackupExpanded = backupDisclosure.isExpanded('person');
+  const allProfilesBackupExpanded = backupDisclosure.isExpanded('all-profiles');
   const insets = useSafeAreaInsets();
   const {
     routines, progress: dailyProgress, loading, getCompletedCount, setRoutineHidden, moveRoutine,
@@ -865,7 +868,13 @@ export default function HomeScreen() {
         ListFooterComponent={
           <View style={styles.footer}>
             <View style={[styles.transferCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.transferTitle, { color: colors.foreground }]}>Back up {activePerson.name}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel={`${personBackupExpanded ? 'Collapse' : 'Expand'} backup for ${activePerson.name}`}
+                accessibilityState={{ expanded: personBackupExpanded }} testID="toggle-person-backup"
+                onPress={() => backupDisclosure.toggle('person')} style={styles.backupSectionHeading}>
+                <Text style={[styles.transferTitle, { color: colors.foreground, flex: 1 }]}>Back up {activePerson.name}</Text>
+                <Ionicons name={personBackupExpanded ? 'chevron-up' : 'chevron-down'} size={19} color={colors.inkSoft} />
+              </Pressable>
+              {personBackupExpanded ? <>
               <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
                 Export this person’s routines, playlists, schedules, skills and rating history, and selected theme as one JSON file. Daily progress is optional. {Platform.OS === 'android' ? 'On Android, save to a folder on your device or share the backup with another app. ' : ''}Import JSON merges a single-profile backup into the active profile; schedules and theme are not restored.
               </Text>
@@ -938,8 +947,15 @@ export default function HomeScreen() {
                   </Pressable>
                 </View>
               ) : null}
+              </> : null}
               <View style={[styles.allProfilesSection, { borderTopColor: colors.border }]}>
-                <Text style={[styles.transferTitle, { color: colors.foreground }]}>Back up all profiles</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={`${allProfilesBackupExpanded ? 'Collapse' : 'Expand'} backup for all profiles`}
+                  accessibilityState={{ expanded: allProfilesBackupExpanded }} testID="toggle-all-profiles-backup"
+                  onPress={() => backupDisclosure.toggle('all-profiles')} style={styles.backupSectionHeading}>
+                  <Text style={[styles.transferTitle, { color: colors.foreground, flex: 1 }]}>Back up all profiles</Text>
+                  <Ionicons name={allProfilesBackupExpanded ? 'chevron-up' : 'chevron-down'} size={19} color={colors.inkSoft} />
+                </Pressable>
+                {allProfilesBackupExpanded ? <>
                 <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
                   Export every profile saved on this device in one JSON file. Each profile keeps its own routines, playlists, schedules, skills, ratings, preferences, and theme. Daily progress follows the checkbox above. Use Import all profiles below to restore this archive without removing local history.
                 </Text>
@@ -1005,6 +1021,7 @@ export default function HomeScreen() {
                     </Text>
                   </Pressable>
                 </View>
+                </> : null}
               </View>
               {pendingBackup ? (
                 <View style={[styles.importChoice, { borderTopColor: colors.border }]}>
@@ -1239,6 +1256,7 @@ const styles = StyleSheet.create({
   footer: { alignItems: 'center', paddingTop: 17 },
   transferCard: { width: '100%', borderWidth: 1, borderRadius: 19, padding: 17 },
   allProfilesSection: { borderTopWidth: 1, marginTop: 14, paddingTop: 14, gap: 6 },
+  backupSectionHeading: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 8 },
   transferTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   transferDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
   profileNameChanges: { gap: 8, marginTop: 12 },
