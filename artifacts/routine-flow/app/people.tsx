@@ -13,6 +13,7 @@ import { useAppearance } from '@/context/AppearanceContext';
 import { APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, type ThemeGroup } from '@/lib/appThemes';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import { capturePersonBackground } from '@/lib/personBackgroundCamera';
 import { createPersonStorage, PERSON_DATA_KEYS, PersonBackgroundStateUncertainError, persistPersonBackgroundImage } from '@/lib/personStorage';
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
@@ -179,11 +180,11 @@ export default function PeopleScreen() {
     setBackgroundError('');
     setBackgroundNotice('');
     try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) throw new Error('Allow camera access to take a background picture.');
-      const captured = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.8 });
-      if (captured.canceled || !captured.assets[0]) return;
-      await saveBackgroundAsset(personId, captured.assets[0]);
+      await capturePersonBackground(
+        () => ImagePicker.requestCameraPermissionsAsync(),
+        () => ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.8 }),
+        asset => saveBackgroundAsset(personId, asset),
+      );
     } catch (e) {
       reportBackgroundError(personId, e, 'Could not take or save this background picture.');
     } finally {

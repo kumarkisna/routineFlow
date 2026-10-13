@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { capturePersonBackground } from './personBackgroundCamera';
 import { createPersonStorage, persistPersonBackgroundImage, PERSON_DATA_KEYS } from './personStorage';
 
 function makeBackend(initial: Record<string, string> = {}) {
@@ -92,6 +93,35 @@ test('a failed background clear reports uncertainty if rollback and verification
     },
   );
   assert.equal(backend.values.has(PERSON_DATA_KEYS.backgroundImage), false);
+});
+
+test('denied camera permission leaves the selected background untouched and explains how to grant access', async () => {
+  let selectedPhoto = 'saved-background-photo';
+  let cameraLaunches = 0;
+  const saving = capturePersonBackground(
+    async () => ({ granted: false, canAskAgain: false }),
+    async () => {
+      cameraLaunches++;
+      return { canceled: false, assets: ['new-photo'] };
+    },
+    async asset => { selectedPhoto = asset; },
+  );
+
+  await assert.rejects(saving, /camera access is blocked.*device settings.*try again/i);
+  assert.equal(selectedPhoto, 'saved-background-photo');
+  assert.equal(cameraLaunches, 0);
+});
+
+test('camera capture can be retried and saved after permission is granted', async () => {
+  let selectedPhoto = 'saved-background-photo';
+  const result = await capturePersonBackground(
+    async () => ({ granted: true, canAskAgain: true }),
+    async () => ({ canceled: false, assets: ['new-photo'] }),
+    async asset => { selectedPhoto = asset; },
+  );
+
+  assert.equal(result, 'saved');
+  assert.equal(selectedPhoto, 'new-photo');
 });
 
 test('a failed background clear restores the selected photo and can be retried without changing another profile', async () => {
