@@ -207,6 +207,11 @@ test('multiple step details survive backup round-trips while old single details 
 test('routine copies preserve additional details without sharing their arrays', () => {
   const source = routine();
   source.steps[0].additionalDetails = ['Use the saved checklist.'];
+  source.steps[0].detailHtml = ['<p>Drink water</p>', '<ul><li>Use the saved checklist.</li></ul>'];
+  source.steps[0].detailAttachments = [
+    [{ id: 'img', name: 'photo.png', uri: 'file:///old/photo.png', mimeType: 'image/png', kind: 'image', contentBase64: 'aGVsbG8=' }],
+    [],
+  ];
   source.steps[0].speakDetails = false;
   source.steps[0].detailSpeech = [true, false];
   let nextId = 0;
@@ -218,6 +223,10 @@ test('routine copies preserve additional details without sharing their arrays', 
   assert.equal(copied.steps[0].speakDetails, false);
   assert.deepEqual(copied.steps[0].detailSpeech, [true, false]);
   assert.notEqual(copied.steps[0].detailSpeech, source.steps[0].detailSpeech);
+  assert.deepEqual(copied.steps[0].detailHtml, source.steps[0].detailHtml);
+  assert.notEqual(copied.steps[0].detailHtml, source.steps[0].detailHtml);
+  assert.deepEqual(copied.steps[0].detailAttachments, source.steps[0].detailAttachments);
+  assert.notEqual(copied.steps[0].detailAttachments?.[0], source.steps[0].detailAttachments?.[0]);
 });
 
 test('routine backups retain rich step details and attachment bytes', () => {
@@ -264,7 +273,11 @@ test('person backup includes playlists, schedules, selected theme, and optional 
   const routineWithSkills: Routine = {
     ...base,
     skillIds: ['skill-focus'],
-    steps: base.steps.map((step, index) => index === 0 ? { ...step, skillIds: ['skill-mobility'] } : step),
+    steps: base.steps.map((step, index) => index === 0 ? {
+      ...step, skillIds: ['skill-mobility'], detailHtml: ['<p><strong>Drink safely</strong></p>'],
+      detailAttachments: [[{ id: 'photo', name: 'water.png', uri: 'file:///old/water.png',
+        mimeType: 'image/png', kind: 'image', contentBase64: 'aGVsbG8=' }]],
+    } : step),
   };
 
   const exported = serializePersonBackup([routineWithSkills], personData, progress);
@@ -312,7 +325,20 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   const entries = [
     {
       person: profile('me', 'Me', true),
-      routines: [routine('me-morning')],
+      routines: [{
+        ...routine('me-morning'),
+        steps: [{
+          ...routine('me-morning').steps[0],
+          additionalDetails: ['Open the saved guide.'],
+          detailHtml: ['<p>Carry the photo through restore.</p>', '<p>Read the guide.</p>'],
+          detailAttachments: [
+            [{ id: 'portable-photo', name: 'photo.png', uri: 'file:///old-device/photo.png',
+              mimeType: 'image/png', kind: 'image' as const, contentBase64: 'aGVsbG8=' }],
+            [{ id: 'portable-document', name: 'guide.pdf', uri: 'file:///old-device/guide.pdf',
+              mimeType: 'application/pdf', kind: 'document' as const, contentBase64: 'JVBERi0=' }],
+          ],
+        }, routine('me-morning').steps[1]],
+      }],
       personData: personData('me-focus', 6, 5),
       progress: { [day]: { 'me-morning:water': true } },
     },
@@ -362,6 +388,8 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   assert.equal(meBackup.skills?.[0].ratings?.[0].note, 'Reflection for me-focus.');
   assert.equal(meBackup.personData?.skillRatingWindow, 5);
   assert.deepEqual(meBackup.progress, { [day]: { 'me-morning:water': true } });
+  assert.equal(meBackup.routines[0].steps[0].detailAttachments?.[0][0].contentBase64, 'aGVsbG8=');
+  assert.equal(meBackup.routines[0].steps[0].detailHtml?.[0], '<p>Carry the photo through restore.</p>');
   assert.equal(alexBackup.routines[0].id, 'alex-morning');
   assert.equal(alexBackup.skills?.[0].ratings?.[0].note, 'Reflection for alex-focus.');
   assert.equal(alexBackup.personData?.skillRatingWindow, 12);
@@ -372,6 +400,8 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   assert.deepEqual(parsedAllPeople.people.map(entry => entry.profile.name), ['Me', 'Alex']);
   assert.equal(parsedAllPeople.people[0].backup.skills?.[0].ratings?.[0].note, 'Reflection for me-focus.');
   assert.equal(parsedAllPeople.people[1].backup.personData?.skillRatingWindow, 12);
+  assert.equal(parsedAllPeople.people[0].backup.routines[0].steps[0].detailAttachments?.[0][0].contentBase64, 'aGVsbG8=');
+  assert.equal(parsedAllPeople.people[0].backup.routines[0].steps[0].detailAttachments?.[1][0].contentBase64, 'JVBERi0=');
 
   const duplicate = JSON.parse(contents);
   duplicate.people[1].profile.id = 'me';
