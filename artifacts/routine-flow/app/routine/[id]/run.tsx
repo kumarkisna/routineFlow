@@ -748,6 +748,7 @@ function RoutinePlayer() {
           ) : null}
           {!isFinished ? activeStep.detailAttachments?.map((attachments, detailIndex) => attachments.length ? (
             <StepDetailAttachments key={`${activeStep.id}-attachments-${detailIndex}`} attachments={attachments}
+              label={detailIndex === 0 ? 'Main detail files' : `Detail ${detailIndex} files`}
               testID={`run-step-detail-files-${activeStep.id}-${detailIndex}`} />
           ) : null) : null}
           <Text style={[styles.activeMeta, { color: colors.heroForeground }]}>

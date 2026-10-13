@@ -378,7 +378,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           />
           <ExpandableRichDetailEditor label="Main step detail" value={stepDescriptionDraft} html={detailHtmlDraft[0] ?? ''} disabled={saving}
             onSave={(description, html) => setStepDetailDraft(current => setDraftDetailHtml({ ...current, description }, 0, html))} />
-          <StepDetailAttachments testID="main-detail-files" attachments={detailAttachmentsDraft[0] ?? []} disabled={saving}
+          <StepDetailAttachments label="Files for main detail" testID="main-detail-files" attachments={detailAttachmentsDraft[0] ?? []} disabled={saving}
             onAddAttachment={file => setStepDetailDraft(current => addStepDetailAttachment(current, 0, file))}
             onRemoveAttachment={id => setStepDetailDraft(current => removeStepDetailAttachment(current, 0, id))} />
           <View style={styles.detailSpeechRow}>
@@ -415,7 +415,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 />
                 <ExpandableRichDetailEditor label={`Additional detail ${index + 1}`} value={detail} html={detailHtmlDraft[index + 1] ?? ''} disabled={saving}
                   onSave={(text, html) => setStepDetailDraft(current => setDraftDetailHtml(updateAdditionalStepDetail(current, index, text), index + 1, html))} />
-                <StepDetailAttachments testID={`additional-detail-files-${index}`} attachments={detailAttachmentsDraft[index + 1] ?? []} disabled={saving}
+                <StepDetailAttachments label={`Files for detail ${index + 1}`} testID={`additional-detail-files-${index}`} attachments={detailAttachmentsDraft[index + 1] ?? []} disabled={saving}
                   onAddAttachment={file => setStepDetailDraft(current => addStepDetailAttachment(current, index + 1, file))}
                   onRemoveAttachment={id => setStepDetailDraft(current => removeStepDetailAttachment(current, index + 1, id))} />
                 <Pressable
@@ -518,6 +518,14 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                   {getStepDetails(step).join(' · ')}
                 </Text>
               ) : null}
+              {step.detailAttachments?.map((attachments, detailIndex) => attachments.length ? (
+                <StepDetailAttachments
+                  key={`${step.id}-saved-files-${detailIndex}`}
+                  label={detailIndex === 0 ? 'Main detail files' : `Detail ${detailIndex} files`}
+                  testID={`saved-step-files-${step.id}-${detailIndex}`}
+                  attachments={attachments}
+                />
+              ) : null)}
               <SkillTagList skillIds={step.skillIds} />
               <Text style={[styles.stepDuration, { color: colors.mutedForeground }]}>
                 {formatDuration(getStepSeconds(step))}

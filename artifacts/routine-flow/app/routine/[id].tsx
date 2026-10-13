@@ -381,6 +381,7 @@ export default function RoutineDetailScreen() {
                     ) : null}
                     {step.detailAttachments?.map((attachments, detailIndex) => attachments.length ? (
                       <StepDetailAttachments key={`${step.id}-attachments-${detailIndex}`} attachments={attachments}
+                        label={detailIndex === 0 ? 'Main detail files' : `Detail ${detailIndex} files`}
                         testID={`view-step-detail-files-${step.id}-${detailIndex}`} />
                     ) : null)}
                     <SkillTagList skillIds={step.skillIds} />

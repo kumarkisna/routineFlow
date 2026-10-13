@@ -8,8 +8,18 @@ import { Alert, Image, Linking, Modal, Platform, Pressable, StyleSheet, Text, Vi
 import { useColors } from '@/hooks/useColors';
 import type { StepDetailAttachment } from '@/types/routines';
 
+function getImageFileName(asset: Pick<ImagePicker.ImagePickerAsset, 'fileName' | 'uri' | 'mimeType'>, fallbackLabel: string) {
+  const selectedName = asset.fileName?.trim();
+  if (selectedName) return selectedName;
+  const uriName = decodeURIComponent(asset.uri.split(/[/?#]/).pop() ?? '');
+  if (uriName && /\.[a-z0-9]{2,8}$/i.test(uriName)) return uriName;
+  const mimeExtension = asset.mimeType?.split('/')[1]?.replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'jpg';
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', '-').replace(/:/g, '-');
+  return `${fallbackLabel}-${stamp}.${mimeExtension}`;
+}
+
 export function StepDetailAttachments({
-  attachments, onChange, onAddAttachment, onRemoveAttachment, disabled = false, testID = 'step-detail-attachments',
+  attachments, onChange, onAddAttachment, onRemoveAttachment, disabled = false, testID = 'step-detail-attachments', label = 'Attachments',
 }: {
   attachments: StepDetailAttachment[];
   onChange?: (attachments: StepDetailAttachment[]) => void;
@@ -17,6 +27,7 @@ export function StepDetailAttachments({
   onRemoveAttachment?: (attachmentId: string) => void;
   disabled?: boolean;
   testID?: string;
+  label?: string;
 }) {
   const colors = useColors();
   const [viewing, setViewing] = useState<StepDetailAttachment | null>(null);
@@ -42,7 +53,7 @@ export function StepDetailAttachments({
       if (result.canceled) return;
       setBusy(true);
       const asset = result.assets[0];
-      const file = await saveCopy(asset.uri, asset.fileName || `image-${Date.now()}.jpg`, asset.mimeType || 'image/jpeg', 'image');
+      const file = await saveCopy(asset.uri, getImageFileName(asset, 'Image'), asset.mimeType || 'image/jpeg', 'image');
       if (onAddAttachment) onAddAttachment(file);
       else onChange?.([...attachments, file]);
     } catch (error) {
@@ -66,7 +77,7 @@ export function StepDetailAttachments({
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: false });
       if (result.canceled) return;
       const asset = result.assets[0];
-      const file = await saveCopy(asset.uri, asset.fileName || `step-photo-${Date.now()}.jpg`, asset.mimeType || 'image/jpeg', 'image');
+      const file = await saveCopy(asset.uri, getImageFileName(asset, 'Photo'), asset.mimeType || 'image/jpeg', 'image');
       if (onAddAttachment) onAddAttachment(file);
       else onChange?.([...attachments, file]);
     } catch (error) {
@@ -115,6 +126,7 @@ export function StepDetailAttachments({
 
   return (
     <View testID={testID} style={styles.container}>
+      {attachments.length ? <Text style={[styles.groupLabel, { color: colors.mutedForeground }]}>{label}</Text> : null}
       {attachments.map(file => (
         <View key={file.id} style={[styles.fileRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
           <Pressable accessibilityRole="button" accessibilityLabel={file.kind === 'image' ? `View image ${file.name}` : `Open ${file.name} in another app`}
@@ -161,6 +173,7 @@ export function StepDetailAttachments({
 
 const styles = StyleSheet.create({
   container: { gap: 6 },
+  groupLabel: { fontFamily: 'Inter_500Medium', fontSize: 11, marginTop: 3 },
   actions: { flexDirection: 'row', gap: 8 },
   addButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderRadius: 10, paddingHorizontal: 9 },
   addText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
