@@ -1,18 +1,19 @@
-import type { RoutineStep } from '../types/routines';
+import type { RoutineStep, StepDetailAttachment } from '../types/routines';
 
 export type StepDetailDraft = {
   description: string;
   additionalDetails: string[];
   /** Index 0 belongs to description; each following entry belongs to the additional detail at that index. */
   detailSpeech: boolean[];
+  detailAttachments: StepDetailAttachment[][];
 };
 
 export function createEmptyStepDetailDraft(): StepDetailDraft {
-  return { description: '', additionalDetails: [], detailSpeech: [true] };
+  return { description: '', additionalDetails: [], detailSpeech: [true], detailAttachments: [[]] };
 }
 
 export function createStepDetailDraft(
-  step: Pick<RoutineStep, 'description' | 'additionalDetails' | 'detailSpeech' | 'speakDetails'>,
+  step: Pick<RoutineStep, 'description' | 'additionalDetails' | 'detailSpeech' | 'speakDetails' | 'detailAttachments'>,
 ): StepDetailDraft {
   const additionalDetails = [...(step.additionalDetails ?? [])];
   const legacySpeechDefault = step.speakDetails !== false;
@@ -21,6 +22,7 @@ export function createStepDetailDraft(
     additionalDetails,
     detailSpeech: [step.description, ...additionalDetails]
       .map((_, index) => step.detailSpeech?.[index] ?? legacySpeechDefault),
+    detailAttachments: Array.from({ length: 1 + additionalDetails.length }, (_, index) => [...(step.detailAttachments?.[index] ?? [])]),
   };
 }
 
@@ -35,6 +37,7 @@ export function addAdditionalStepDetail(draft: StepDetailDraft): StepDetailDraft
     ...draft,
     additionalDetails: [...draft.additionalDetails, ''],
     detailSpeech: [...draft.detailSpeech, true],
+    detailAttachments: [...draft.detailAttachments, []],
   };
 }
 
@@ -57,13 +60,15 @@ export function removeAdditionalStepDetail(draft: StepDetailDraft, index: number
     ...draft,
     additionalDetails: draft.additionalDetails.filter((_, detailIndex) => detailIndex !== index),
     detailSpeech: draft.detailSpeech.filter((_, speechIndex) => speechIndex !== index + 1),
+    detailAttachments: draft.detailAttachments.filter((_, detailIndex) => detailIndex !== index + 1),
   };
 }
 
 export function buildStepDetailFields(draft: StepDetailDraft) {
   const additionalDetailsWithSpeech = draft.additionalDetails.flatMap((detail, index) => {
     const text = detail.trim();
-    return text ? [{ text, speak: draft.detailSpeech[index + 1] ?? true }] : [];
+    const attachments = draft.detailAttachments[index + 1] ?? [];
+    return text || attachments.length ? [{ text, speak: draft.detailSpeech[index + 1] ?? true, attachments }] : [];
   });
   return {
     description: draft.description.trim(),
@@ -72,5 +77,15 @@ export function buildStepDetailFields(draft: StepDetailDraft) {
       draft.detailSpeech[0] ?? true,
       ...additionalDetailsWithSpeech.map(detail => detail.speak),
     ],
+    detailAttachments: [
+      [...(draft.detailAttachments[0] ?? [])],
+      ...additionalDetailsWithSpeech.map(detail => [...detail.attachments]),
+    ],
   };
+}
+
+export function setStepDetailAttachments(draft: StepDetailDraft, index: number, attachments: StepDetailAttachment[]): StepDetailDraft {
+  const detailAttachments = [...draft.detailAttachments];
+  detailAttachments[index] = attachments;
+  return { ...draft, detailAttachments };
 }

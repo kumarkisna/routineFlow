@@ -77,6 +77,17 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
         || value.detailSpeech.some((speak) => typeof speak !== 'boolean'))) {
     throw new Error(`${label} has invalid per-detail speech settings.`);
   }
+  const detailCount = 1 + (Array.isArray(value.additionalDetails) ? value.additionalDetails.length : 0);
+  if (value.detailAttachments !== undefined &&
+      (!Array.isArray(value.detailAttachments) || value.detailAttachments.length !== detailCount
+        || value.detailAttachments.some(group => !Array.isArray(group) || group.length > 20
+          || group.some(attachment => !isRecord(attachment) || !isId(attachment.id)
+            || !isText(attachment.name) || attachment.name.length > 240
+            || !isText(attachment.uri) || attachment.uri.length > 4096
+            || !isText(attachment.mimeType) || attachment.mimeType.length > 160
+            || !['image', 'document'].includes(String(attachment.kind))))) {
+    throw new Error(`${label} has invalid detail attachments.`);
+  }
   if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
     throw new Error(`${label} has an invalid visibility setting.`);
   }
@@ -101,6 +112,8 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     ...(value.description !== undefined ? { description: value.description as string } : {}),
     ...(value.additionalDetails !== undefined ? { additionalDetails: value.additionalDetails as string[] } : {}),
     ...(value.detailSpeech !== undefined ? { detailSpeech: [...(value.detailSpeech as boolean[])] } : {}),
+    ...(value.detailAttachments !== undefined
+      ? { detailAttachments: (value.detailAttachments as RoutineStep['detailAttachments'])!.map(group => [...group]) } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden as boolean } : {}),
     ...(value.speakDetails !== undefined ? { speakDetails: value.speakDetails as boolean } : {}),
     ...(skillIds !== undefined ? { skillIds } : {}),
