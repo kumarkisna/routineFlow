@@ -11,7 +11,7 @@ People are local profiles, with default “Me.” A selected person owns their r
 
 Speech voice choice is person-specific. New profiles use the device default, all-profile backups preserve each selection, and an unavailable voice falls back to the current device default.
 
-**Why:** The user approved a voice selector in person settings rather than one global choice.
+**Why:** The user approved a voice selector in person settings rather than one global choice and confirmed it works.
 
 **How to apply:** Save the platform voice identifier on that profile and use it only when the current device reports that identifier as available.
 
