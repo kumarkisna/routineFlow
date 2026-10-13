@@ -4,7 +4,7 @@ import { Directory, File as ExpoFile } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React from 'react';
 import {
@@ -104,13 +104,7 @@ export default function HomeScreen() {
   const pendingAllHasProgress = pendingAllProfilesBackup?.people.some(({ backup }) =>
     Object.values(backup.progress ?? {}).some(entries => Object.keys(entries).length > 0)) ?? false;
 
-  React.useEffect(() => () => {
-    speechSessionToken.current += 1;
-    speechUtteranceToken.current += 1;
-    void Speech.stop();
-  }, []);
-
-  function stopRoutineSpeech() {
+  const stopRoutineSpeech = React.useCallback(() => {
     speechSessionToken.current += 1;
     speechUtteranceToken.current += 1;
     speakingRoutineRef.current = null;
@@ -118,7 +112,12 @@ export default function HomeScreen() {
     setSpeakingRoutineId(null);
     setRoutineSpeechPaused(false);
     void Speech.stop();
-  }
+  }, []);
+
+  useFocusEffect(React.useCallback(
+    () => () => stopRoutineSpeech(),
+    [stopRoutineSpeech],
+  ));
 
   function speakRoutineStepAt(routine: Routine, index: number, sessionToken: number) {
     const steps = routine.steps.filter(step => !step.hidden);
