@@ -14,9 +14,11 @@ import { persistScheduleChange, type RoutineSchedule } from '@/lib/schedules';
 import { DEFAULT_SKILL_RATING_WINDOW } from '@/lib/skills';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
 import { mergePersonRestore, type PersonRestoreSnapshot } from '@/lib/personRestore';
+import { cleanupOrphanedStepDetailAttachmentCopies } from '@/lib/stepDetailAttachmentCleanup';
 import type { AllPeopleBackup } from '@/lib/routineTransfer';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export type AllProfilesRestoreSummary = {
   profilesAdded: number;
@@ -95,6 +97,9 @@ async function saveRegistry(registry: PeopleRegistry) {
       throw new Error('The person change could not be saved. Please try again.');
     }
   }
+  await cleanupOrphanedStepDetailAttachmentCopies(
+    FileSystem.documentDirectory, AsyncStorage, FileSystem,
+  ).catch(() => {});
 }
 
 async function validatePersonSettings(personId: string) {
@@ -135,6 +140,9 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       if (!raw || JSON.stringify(next) !== raw) await saveRegistry(next);
       await readPersonSnapshot(next.activePersonId);
       await validatePersonSettings(next.activePersonId);
+      await cleanupOrphanedStepDetailAttachmentCopies(
+        FileSystem.documentDirectory, AsyncStorage, FileSystem,
+      ).catch(() => {});
       current.current = next;
       setRegistry(next);
       return true;

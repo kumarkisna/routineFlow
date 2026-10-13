@@ -182,7 +182,6 @@ export function StepDetailAttachments({
   }
 
   async function remove(file: StepDetailAttachment) {
-    try { if (file.uri) await FileSystem.deleteAsync(file.uri, { idempotent: true }); } catch { /* Removing a stale file is safe. */ }
     if (onRemoveAttachment) onRemoveAttachment(file.id);
     else onChange?.(attachments.filter(item => item.id !== file.id));
   }

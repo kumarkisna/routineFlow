@@ -8,6 +8,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import NativeAsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   isCompleted, type CompletionMap, type PlaylistCompletionSource, type Routine, type RoutineStep,
 } from '@/types/routines';
@@ -16,6 +18,7 @@ import { recordCompletion } from '@/lib/progressHistory';
 import { removeRoutineCategory, renameRoutineCategory } from '@/lib/routineCategories';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { mergeImportedProgress, mergeImportedRoutines, persistImportedBackup, type RoutineBackup } from '@/lib/routineTransfer';
+import { cleanupOrphanedStepDetailAttachmentCopies } from '@/lib/stepDetailAttachmentCleanup';
 
 const ROUTINES_KEY = '@routine-flow/routines';
 const PROGRESS_KEY = '@routine-flow/progress';
@@ -224,6 +227,9 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       );
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
+      await cleanupOrphanedStepDetailAttachmentCopies(
+        FileSystem.documentDirectory, NativeAsyncStorage, FileSystem,
+      ).catch(() => {});
     }),
     [routines, runRoutineWrite],
   );
@@ -360,6 +366,9 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       const nextRoutines = routines.filter((routine) => routine.id !== routineId);
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
+      await cleanupOrphanedStepDetailAttachmentCopies(
+        FileSystem.documentDirectory, NativeAsyncStorage, FileSystem,
+      ).catch(() => {});
     }),
     [routines, runRoutineWrite],
   );

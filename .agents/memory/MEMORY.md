@@ -21,3 +21,4 @@
 - [Local person profiles](person-profiles.md) — skill ratings, reflections, and their shared average window belong to the person; cross-person copies do not transfer ratings.
 - [Combined skill charts](skill-score-charts.md) — offer cumulative and shared-N averages across linked skill histories, with optional raw skill traces.
 - [Post-merge setup duration](post-merge-setup.md) — workspace dependency linking can exceed two minutes; retain a generous post-merge timeout and verify the full setup.
+- [Attachment cleanup test isolation](attachment-cleanup-tests.md) — keep cleanup logic injectable so Node tests do not load Expo native modules.
