@@ -38,11 +38,23 @@ function formatDate() {
   return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
 }
 
+function formatApproximateAttachmentSize(bytes: number) {
+  const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let unit = 0;
+  while (size >= 1000 && unit < units.length - 1) {
+    size /= 1000;
+    unit += 1;
+  }
+  const formatted = unit === 0 ? `${Math.round(size)}` : size.toFixed(size < 10 ? 1 : 0);
+  return `${formatted} ${units[unit]}`;
+}
+
 export default function HomeScreen() {
   const colors = useColors();
   const {
     people, activePerson, busy: peopleBusy, restoreAllProfiles,
-    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupRemovedCount, retryAttachmentCleanup,
+    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupResult, retryAttachmentCleanup,
   } = usePeople();
   const disclosure = usePersistentDisclosure('routines', activePerson.id);
   const backupDisclosure = usePersistentDisclosure('home-backup-sections', activePerson.id);
@@ -901,12 +913,16 @@ export default function HomeScreen() {
                   </Pressable>
                 </View>
               ) : null}
-              {attachmentCleanupRemovedCount !== null && !attachmentCleanupPending ? (
+              {attachmentCleanupResult !== null && !attachmentCleanupPending ? (
                 <Text accessibilityLiveRegion="polite" testID="attachment-cleanup-result"
                   style={[styles.transferDescription, { color: colors.foreground }]}>
-                  {attachmentCleanupRemovedCount === 0
+                  {attachmentCleanupResult.removedCount === 0
                     ? 'Cleanup complete. No unused attachment files needed removal.'
-                    : `Removed ${attachmentCleanupRemovedCount} unused attachment ${attachmentCleanupRemovedCount === 1 ? 'file' : 'files'} from this device.`}
+                    : `Removed ${attachmentCleanupResult.removedCount} unused attachment ${attachmentCleanupResult.removedCount === 1 ? 'file' : 'files'} from this device. ${
+                      attachmentCleanupResult.estimatedBytes === null
+                        ? 'The reclaimed size could not be estimated.'
+                        : `Estimated space reclaimed: about ${formatApproximateAttachmentSize(attachmentCleanupResult.estimatedBytes)}.`
+                    }`}
                 </Text>
               ) : null}
               <Pressable

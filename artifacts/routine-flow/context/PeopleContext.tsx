@@ -16,6 +16,7 @@ import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, p
 import { mergePersonRestore, type PersonRestoreSnapshot } from '@/lib/personRestore';
 import {
   cleanupOrphanedStepDetailAttachmentCopies, createStepDetailAttachmentCleanupRunner,
+  type StepDetailAttachmentCleanupResult,
 } from '@/lib/stepDetailAttachmentCleanup';
 import type { AllPeopleBackup } from '@/lib/routineTransfer';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
@@ -61,9 +62,9 @@ type PeopleContextValue = {
   ) => Promise<AllProfilesRestoreSummary>;
   attachmentCleanupPending: boolean;
   attachmentCleanupBusy: boolean;
-  attachmentCleanupRemovedCount: number | null;
-  retryAttachmentCleanup: () => Promise<number | null>;
-  runAttachmentCleanup: () => Promise<number | null>;
+  attachmentCleanupResult: StepDetailAttachmentCleanupResult | null;
+  retryAttachmentCleanup: () => Promise<StepDetailAttachmentCleanupResult | null>;
+  runAttachmentCleanup: () => Promise<StepDetailAttachmentCleanupResult | null>;
 };
 const PeopleContext = createContext<PeopleContextValue | null>(null);
 const colors = APP_THEMES[0].colors;
@@ -135,22 +136,22 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const [notice, setNotice] = useState('');
   const [attachmentCleanupPending, setAttachmentCleanupPending] = useState(false);
   const [attachmentCleanupBusy, setAttachmentCleanupBusy] = useState(false);
-  const [attachmentCleanupRemovedCount, setAttachmentCleanupRemovedCount] = useState<number | null>(null);
+  const [attachmentCleanupResult, setAttachmentCleanupResult] = useState<StepDetailAttachmentCleanupResult | null>(null);
   const runAttachmentCleanup = useMemo(() => createStepDetailAttachmentCleanupRunner(
     () => cleanupOrphanedStepDetailAttachmentCopies(
       FileSystem.documentDirectory, AsyncStorage, FileSystem,
     ),
     status => {
       setAttachmentCleanupBusy(status === 'running');
-      if (status === 'running') setAttachmentCleanupRemovedCount(null);
+      if (status === 'running') setAttachmentCleanupResult(null);
       if (status === 'complete') setAttachmentCleanupPending(false);
       if (status === 'retry') setAttachmentCleanupPending(true);
     },
   ), []);
   const retryAttachmentCleanup = useCallback(async () => {
-    const removedCount = await runAttachmentCleanup();
-    if (removedCount !== null) setAttachmentCleanupRemovedCount(removedCount);
-    return removedCount;
+    const result = await runAttachmentCleanup();
+    if (result !== null) setAttachmentCleanupResult(result);
+    return result;
   }, [runAttachmentCleanup]);
 
   const hydrate = useCallback(async (): Promise<boolean> => {
@@ -509,11 +510,11 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const canRepairDurations = repairPersonId !== null && /needs a valid duration|invalid legacy duration/.test(error);
   const value = useMemo(() => ({
     people: registry.people, activePerson, revision, busy, notice,
-    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupRemovedCount,
+    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupResult,
     retryAttachmentCleanup, runAttachmentCleanup,
     addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles,
   }), [registry.people, activePerson, revision, busy, notice, attachmentCleanupPending, attachmentCleanupBusy,
-    attachmentCleanupRemovedCount, retryAttachmentCleanup, runAttachmentCleanup,
+    attachmentCleanupResult, retryAttachmentCleanup, runAttachmentCleanup,
     addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
 
   if (loading || error) {

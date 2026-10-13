@@ -4,17 +4,22 @@ type CleanupStorage = {
 };
 type CleanupFileSystem = {
   readDirectoryAsync: (uri: string) => Promise<string[]>;
-  getInfoAsync: (uri: string) => Promise<{ exists: boolean; isDirectory: boolean }>;
+  getInfoAsync: (uri: string) => Promise<{ exists: boolean; isDirectory: boolean; size?: number }>;
   deleteAsync: (uri: string, options?: { idempotent?: boolean }) => Promise<void>;
+};
+
+export type StepDetailAttachmentCleanupResult = {
+  removedCount: number;
+  estimatedBytes: number | null;
 };
 
 export type StepDetailAttachmentCleanupStatus = 'running' | 'retry' | 'complete';
 
 export function createStepDetailAttachmentCleanupRunner(
-  cleanup: () => Promise<number>,
+  cleanup: () => Promise<StepDetailAttachmentCleanupResult>,
   onStatus: (status: StepDetailAttachmentCleanupStatus) => void,
-): () => Promise<number | null> {
-  let inFlight: Promise<number | null> | null = null;
+): () => Promise<StepDetailAttachmentCleanupResult | null> {
+  let inFlight: Promise<StepDetailAttachmentCleanupResult | null> | null = null;
   return () => {
     if (inFlight) return inFlight;
     onStatus('running');
@@ -97,7 +102,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
   documentDirectory: string | null | undefined,
   storage: CleanupStorage,
   fileSystem: CleanupFileSystem,
-): Promise<number> {
+): Promise<StepDetailAttachmentCleanupResult> {
   if (!documentDirectory) throw new Error('App file storage is unavailable.');
   const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
   const attachmentDirectory = `${documentRoot}step-detail-attachments/`;
@@ -125,7 +130,9 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
   }
 
   const fileNames = await fileSystem.readDirectoryAsync(attachmentDirectory);
-  let removed = 0;
+  let removedCount = 0;
+  let estimatedBytes = 0;
+  let hasAllSizes = true;
   let failed = false;
   for (const fileName of fileNames) {
     if (!fileName || fileName === '.' || fileName === '..' || /[/\\]/.test(fileName)) continue;
@@ -135,12 +142,20 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
       const info = await fileSystem.getInfoAsync(uri);
       if (!info.exists || info.isDirectory) continue;
       await fileSystem.deleteAsync(uri, { idempotent: true });
-      removed += 1;
+      removedCount += 1;
+      if (typeof info.size === 'number' && Number.isFinite(info.size) && info.size >= 0) {
+        estimatedBytes += info.size;
+      } else {
+        hasAllSizes = false;
+      }
     } catch {
       // Continue trying other files, then report failure so the caller can offer a retry.
       failed = true;
     }
   }
   if (failed) throw new Error('Some unused attachment files could not be removed.');
-  return removed;
+  return {
+    removedCount,
+    estimatedBytes: hasAllSizes ? estimatedBytes : null,
+  };
 }

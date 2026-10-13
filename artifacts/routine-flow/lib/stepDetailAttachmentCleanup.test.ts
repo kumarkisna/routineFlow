@@ -41,7 +41,11 @@ function routine(uri: string, contentBase64 = 'c2FtcGxl'): Routine {
   };
 }
 
-function createAdapters(initialEntries: Array<[string, string]>, fileNames: string[]) {
+function createAdapters(
+  initialEntries: Array<[string, string]>,
+  fileNames: string[],
+  fileSizes: Record<string, number> = {},
+) {
   const values = new Map(initialEntries);
   const deleted: string[] = [];
   const storage = {
@@ -51,7 +55,11 @@ function createAdapters(initialEntries: Array<[string, string]>, fileNames: stri
   };
   const fileSystem = {
     readDirectoryAsync: async () => [...fileNames],
-    getInfoAsync: async () => ({ exists: true, isDirectory: false }),
+    getInfoAsync: async (uri: string) => ({
+      exists: true,
+      isDirectory: false,
+      size: fileSizes[uri.slice(uri.lastIndexOf('/') + 1)],
+    }),
     deleteAsync: async (uri: string) => { deleted.push(uri); },
   };
   return { values, deleted, storage, fileSystem };
@@ -65,16 +73,30 @@ test('removes orphaned local attachment copies across all profiles but keeps sha
     [PEOPLE_KEY, peopleRegistry(['me', 'person-2'])],
     [PERSON_DATA_KEYS.routines, rawRoutine],
     [personStorageKey('person-2', PERSON_DATA_KEYS.routines), JSON.stringify([routine(sharedUri)])],
-  ], ['shared.pdf', 'orphan.pdf']);
+  ], ['shared.pdf', 'orphan.pdf'], { 'shared.pdf': 1200, 'orphan.pdf': 845 });
 
   const removed = await cleanupOrphanedStepDetailAttachmentCopies(
     directory, adapters.storage, adapters.fileSystem,
   );
 
-  assert.equal(removed, 1);
+  assert.deepEqual(removed, { removedCount: 1, estimatedBytes: 845 });
   assert.deepEqual(adapters.deleted, [orphanUri]);
   assert.equal(adapters.values.get(PERSON_DATA_KEYS.routines), rawRoutine);
   assert.match(adapters.values.get(PERSON_DATA_KEYS.routines)!, /YmFja3VwLWNvbnRlbnQ=/);
+});
+
+test('marks the size estimate unavailable when a removed file has no reported size', async () => {
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], ['orphan.pdf']);
+
+  const result = await cleanupOrphanedStepDetailAttachmentCopies(
+    directory, adapters.storage, adapters.fileSystem,
+  );
+
+  assert.deepEqual(result, { removedCount: 1, estimatedBytes: null });
+  assert.deepEqual(adapters.deleted, [`${attachmentDirectory}orphan.pdf`]);
 });
 
 test('does not delete files when any saved routine data cannot be inspected safely', async () => {
@@ -125,7 +147,7 @@ test('retries startup cleanup after reopening and hides the retry state after su
     [PEOPLE_KEY, peopleRegistry(['me', 'person-2'])],
     [PERSON_DATA_KEYS.routines, JSON.stringify([routine(sharedUri)])],
     [personStorageKey('person-2', PERSON_DATA_KEYS.routines), JSON.stringify([routine(sharedUri)])],
-  ], ['shared.pdf', 'orphan.pdf']);
+  ], ['shared.pdf', 'orphan.pdf'], { 'shared.pdf': 1200, 'orphan.pdf': 845 });
   let storageAvailable = false;
   adapters.fileSystem.deleteAsync = async uri => {
     if (uri === orphanUri && !storageAvailable) throw new Error('Temporary storage error');
@@ -152,7 +174,7 @@ test('retries startup cleanup after reopening and hides the retry state after su
   assert.equal(retryVisible, true);
 
   storageAvailable = true;
-  assert.equal(await afterRestart(), 1);
+  assert.deepEqual(await afterRestart(), { removedCount: 1, estimatedBytes: 845 });
   assert.equal(retryVisible, false);
   assert.equal(busy, false);
   assert.ok(adapters.deleted.includes(orphanUri));
