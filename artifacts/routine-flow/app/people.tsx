@@ -13,7 +13,7 @@ import { useAppearance } from '@/context/AppearanceContext';
 import { APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, type ThemeGroup } from '@/lib/appThemes';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { createPersonStorage, PERSON_DATA_KEYS, persistPersonBackgroundImage } from '@/lib/personStorage';
+import { createPersonStorage, PERSON_DATA_KEYS, PersonBackgroundStateUncertainError, persistPersonBackgroundImage } from '@/lib/personStorage';
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
 import type { RoutineNotificationSettings } from '@/types/routines';
@@ -52,6 +52,16 @@ export default function PeopleScreen() {
   const [backgroundSavingId, setBackgroundSavingId] = React.useState<string | null>(null);
   const [backgroundError, setBackgroundError] = React.useState('');
   const [backgroundNotice, setBackgroundNotice] = React.useState('');
+  function reportBackgroundError(personId: string, error: unknown, fallback: string) {
+    if (error instanceof PersonBackgroundStateUncertainError) {
+      setPersonBackgrounds(current => {
+        const next = { ...current };
+        delete next[personId];
+        return next;
+      });
+    }
+    setBackgroundError(msg(error, fallback));
+  }
   const [editingSpeechVoiceId, setEditingSpeechVoiceId] = React.useState<string | null>(null);
   const [editingReminderSettings, setEditingReminderSettings] = React.useState<RoutineNotificationSettings>(
     { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
@@ -152,7 +162,7 @@ export default function PeopleScreen() {
       if (picked.canceled || !picked.assets[0]) return;
       await saveBackgroundAsset(personId, picked.assets[0]);
     } catch (e) {
-      setBackgroundError(msg(e, 'Could not save this background picture.'));
+      reportBackgroundError(personId, e, 'Could not save this background picture.');
     } finally {
       setBackgroundSavingId(null);
     }
@@ -169,7 +179,7 @@ export default function PeopleScreen() {
       if (captured.canceled || !captured.assets[0]) return;
       await saveBackgroundAsset(personId, captured.assets[0]);
     } catch (e) {
-      setBackgroundError(msg(e, 'Could not take or save this background picture.'));
+      reportBackgroundError(personId, e, 'Could not take or save this background picture.');
     } finally {
       setBackgroundSavingId(null);
     }
@@ -185,7 +195,7 @@ export default function PeopleScreen() {
       setPersonBackgrounds(current => ({ ...current, [personId]: null }));
       setBackgroundNotice('No background picture is set for this person.');
     } catch (e) {
-      setBackgroundError(msg(e, 'Could not remove this background picture.'));
+      reportBackgroundError(personId, e, 'Could not remove this background picture.');
     } finally {
       setBackgroundSavingId(null);
     }

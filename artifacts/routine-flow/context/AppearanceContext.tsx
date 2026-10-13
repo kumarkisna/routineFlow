@@ -6,7 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme, saveThemePreference, type AppTheme } from '@/lib/appThemes';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
-import { PERSON_DATA_KEYS, persistPersonBackgroundImage } from '@/lib/personStorage';
+import { PERSON_DATA_KEYS, PersonBackgroundStateUncertainError, persistPersonBackgroundImage } from '@/lib/personStorage';
 
 const KEY = '@routine-flow/appearance';
 type AppearanceContextValue = {
@@ -68,7 +68,12 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
   }), [loading, runWrite, AsyncStorage]);
   const saveBackgroundImage = useCallback(async (image: string | null) => {
     if (loading) throw new Error('Wait for your appearance settings to load.');
-    await persistPersonBackgroundImage(AsyncStorage, image);
+    try {
+      await persistPersonBackgroundImage(AsyncStorage, image);
+    } catch (error) {
+      if (error instanceof PersonBackgroundStateUncertainError) setBackgroundImageState(null);
+      throw error;
+    }
     setBackgroundImageState(image);
   }, [loading, AsyncStorage]);
   return <AppearanceContext.Provider value={{ theme, loading, saving, error, selectTheme, backgroundImage, setBackgroundImage: saveBackgroundImage }}>

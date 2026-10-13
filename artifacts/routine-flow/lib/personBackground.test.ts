@@ -4,27 +4,35 @@ import { createPersonStorage, persistPersonBackgroundImage, PERSON_DATA_KEYS } f
 
 function makeBackend(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
-  let failNextSetAfterCommit = false;
-  let failNextRemoveAfterCommit = false;
+  const setFailureModes: ('before' | 'after')[] = [];
+  const removeFailureModes: ('before' | 'after')[] = [];
+  let successfulReadsBeforeFailure: number | null = null;
   return {
     values,
-    failNextSetAfterCommit() { failNextSetAfterCommit = true; },
-    failNextRemoveAfterCommit() { failNextRemoveAfterCommit = true; },
+    failNextSetAfterCommit() { setFailureModes.push('after'); },
+    failNextSetBeforeCommit() { setFailureModes.push('before'); },
+    failNextRemoveAfterCommit() { removeFailureModes.push('after'); },
+    failNextGetAfter(successfulReads: number) { successfulReadsBeforeFailure = successfulReads; },
     backend: {
-      getItem: async (key: string) => values.get(key) ?? null,
-      setItem: async (key: string, value: string) => {
-        values.set(key, value);
-        if (failNextSetAfterCommit) {
-          failNextSetAfterCommit = false;
-          throw new Error('Temporary storage failure after commit.');
+      getItem: async (key: string) => {
+        if (successfulReadsBeforeFailure === 0) {
+          successfulReadsBeforeFailure = null;
+          throw new Error('Temporary storage read failure.');
         }
+        if (successfulReadsBeforeFailure !== null) successfulReadsBeforeFailure--;
+        return values.get(key) ?? null;
+      },
+      setItem: async (key: string, value: string) => {
+        const failureMode = setFailureModes.shift();
+        if (failureMode === 'before') throw new Error('Temporary storage failure before save.');
+        values.set(key, value);
+        if (failureMode === 'after') throw new Error('Temporary storage failure after commit.');
       },
       removeItem: async (key: string) => {
+        const failureMode = removeFailureModes.shift();
+        if (failureMode === 'before') throw new Error('Temporary storage failure before removal.');
         values.delete(key);
-        if (failNextRemoveAfterCommit) {
-          failNextRemoveAfterCommit = false;
-          throw new Error('Temporary storage failure after removal.');
-        }
+        if (failureMode === 'after') throw new Error('Temporary storage failure after removal.');
       },
     },
   };
@@ -46,6 +54,44 @@ test('a failed background save restores the selected profile and can be retried 
   await persistPersonBackgroundImage(me, 'me-new-photo');
   assert.equal(await me.getItem(PERSON_DATA_KEYS.backgroundImage), 'me-new-photo');
   assert.equal(await alex.getItem(PERSON_DATA_KEYS.backgroundImage), 'alex-photo');
+});
+
+test('a failed background save reports uncertainty if rollback and verification also fail', async () => {
+  const backend = makeBackend({ [PERSON_DATA_KEYS.backgroundImage]: 'me-old-photo' });
+  const me = createPersonStorage('me', backend.backend);
+  backend.failNextSetAfterCommit();
+  backend.failNextSetBeforeCommit();
+  backend.failNextGetAfter(1);
+
+  await assert.rejects(
+    persistPersonBackgroundImage(me, 'me-new-photo'),
+    error => {
+      if (!(error instanceof Error)) return false;
+      assert.match(error.message, /previous setting could not be verified/i);
+      assert.doesNotMatch(error.message, /previous photo is still selected/i);
+      return true;
+    },
+  );
+  assert.equal(backend.values.get(PERSON_DATA_KEYS.backgroundImage), 'me-new-photo');
+});
+
+test('a failed background clear reports uncertainty if rollback and verification also fail', async () => {
+  const backend = makeBackend({ [PERSON_DATA_KEYS.backgroundImage]: 'me-photo' });
+  const me = createPersonStorage('me', backend.backend);
+  backend.failNextRemoveAfterCommit();
+  backend.failNextSetBeforeCommit();
+  backend.failNextGetAfter(1);
+
+  await assert.rejects(
+    persistPersonBackgroundImage(me, null),
+    error => {
+      if (!(error instanceof Error)) return false;
+      assert.match(error.message, /previous setting could not be verified/i);
+      assert.doesNotMatch(error.message, /previous photo is still selected/i);
+      return true;
+    },
+  );
+  assert.equal(backend.values.has(PERSON_DATA_KEYS.backgroundImage), false);
 });
 
 test('a failed background clear restores the selected photo and can be retried without changing another profile', async () => {

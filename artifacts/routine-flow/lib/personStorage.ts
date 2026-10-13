@@ -28,14 +28,17 @@ type PersonStorageBackend = {
 
 export type PersonStorage = ReturnType<typeof createPersonStorage>;
 
+export class PersonBackgroundStateUncertainError extends Error {}
+
 export async function persistPersonBackgroundImage(storage: PersonStorage, image: string | null) {
   const action = image === null ? 'cleared' : 'saved';
   const failureMessage = `The background photo could not be ${action}. Your previous photo is still selected. Please try again.`;
+  const uncertainMessage = `The background photo could not be ${action}, and its previous setting could not be verified. Check the selected photo and try again.`;
   let previous: string | null;
   try {
     previous = await storage.getItem(PERSON_DATA_KEYS.backgroundImage);
   } catch {
-    throw new Error(failureMessage);
+    throw new PersonBackgroundStateUncertainError(uncertainMessage);
   }
 
   try {
@@ -57,10 +60,12 @@ export async function persistPersonBackgroundImage(storage: PersonStorage, image
     try {
       restored = await storage.getItem(PERSON_DATA_KEYS.backgroundImage);
     } catch {
-      throw new Error(`The background photo could not be ${action}, and its previous setting could not be verified. Please try again.`);
+      throw new PersonBackgroundStateUncertainError(uncertainMessage);
     }
     if (restored !== previous) {
-      throw new Error(`The background photo could not be ${action}, and its previous setting could not be restored. Please try again.`);
+      throw new PersonBackgroundStateUncertainError(
+        `The background photo could not be ${action}, and its previous setting could not be restored. Check the selected photo and try again.`,
+      );
     }
     throw new Error(failureMessage);
   }
