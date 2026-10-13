@@ -24,6 +24,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
+import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
 import { remapRoutineSkillIds } from '@/lib/skills';
 import { remapPlaylistReferences } from '@/lib/playlists';
@@ -834,6 +835,18 @@ export default function HomeScreen() {
                 style={({ pressed }) => [styles.collapseButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}>
                 <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={19} color={colors.inkSoft} />
               </Pressable>
+              {expanded && !reordering ? (
+                <RoutinePdfExportButton
+                  title={item.title}
+                  kind="routine"
+                  routines={[item]}
+                  personName={activePerson.name}
+                  personId={activePerson.id}
+                  testID={`print-routine-${item.id}`}
+                  buttonStyle={[styles.visibilityButton, { borderLeftColor: colors.border }]}
+                  iconColor={colors.primary}
+                />
+              ) : null}
               {reordering ? (
                 <View style={[styles.orderActions, { borderLeftColor: colors.border }]}>
                   <Pressable

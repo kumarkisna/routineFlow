@@ -42,6 +42,7 @@ export default function RoutineDetailScreen() {
   const [showHiddenSteps, setShowHiddenSteps] = React.useState(false);
   const [reorderError, setReorderError] = React.useState('');
   const [speakingStepId, setSpeakingStepId] = React.useState<string | null>(null);
+  const [speakingAll, setSpeakingAll] = React.useState(false);
   const speechToken = React.useRef(0);
   const reorderLock = React.useRef(false);
   const routine = routines.find((item) => item.id === id);
@@ -98,18 +99,27 @@ export default function RoutineDetailScreen() {
     }
   }
 
+  function stopPreviewSpeech() {
+    speechToken.current += 1;
+    setSpeakingStepId(null);
+    setSpeakingAll(false);
+    void Speech.stop();
+  }
+
   function speakStep(stepId: string, index: number) {
-    if (speakingStepId === stepId) {
-      speechToken.current += 1;
-      setSpeakingStepId(null);
-      void Speech.stop();
+    if (speakingStepId === stepId && !speakingAll) {
+      stopPreviewSpeech();
       return;
     }
     const token = ++speechToken.current;
     void Speech.stop();
     setSpeakingStepId(stepId);
+    setSpeakingAll(false);
     const finish = () => {
-      if (speechToken.current === token) setSpeakingStepId(null);
+      if (speechToken.current === token) {
+        setSpeakingStepId(null);
+        setSpeakingAll(false);
+      }
     };
     try {
       Speech.speak(buildStepAnnouncement(currentRoutine, index, skills), {
@@ -122,6 +132,51 @@ export default function RoutineDetailScreen() {
     } catch {
       finish();
     }
+  }
+
+  function speakAllSteps() {
+    if (speakingAll) {
+      stopPreviewSpeech();
+      return;
+    }
+    const token = ++speechToken.current;
+    void Speech.stop();
+    setSpeakingAll(true);
+    const speakNext = (index: number) => {
+      if (speechToken.current !== token) return;
+      if (index >= visibleSteps.length) {
+        setSpeakingStepId(null);
+        setSpeakingAll(false);
+        return;
+      }
+      const step = visibleSteps[index];
+      setSpeakingStepId(step.id);
+      try {
+        Speech.speak(buildStepAnnouncement(currentRoutine, index, skills), {
+          rate: 0.92,
+          pitch: 1,
+          onDone: () => speakNext(index + 1),
+          onStopped: () => {
+            if (speechToken.current === token) {
+              setSpeakingStepId(null);
+              setSpeakingAll(false);
+            }
+          },
+          onError: () => {
+            if (speechToken.current === token) {
+              setSpeakingStepId(null);
+              setSpeakingAll(false);
+            }
+          },
+        });
+      } catch {
+        if (speechToken.current === token) {
+          setSpeakingStepId(null);
+          setSpeakingAll(false);
+        }
+      }
+    };
+    speakNext(0);
   }
 
   async function handleCopy() {
@@ -200,6 +255,8 @@ export default function RoutineDetailScreen() {
                 title={currentRoutine.title}
                 kind="routine"
                 routines={[currentRoutine]}
+                personName={activePerson.name}
+                personId={activePerson.id}
                 testID={`print-routine-${currentRoutine.id}`}
                 buttonStyle={styles.iconButton}
                 iconColor={colors.heroForeground}
@@ -310,9 +367,24 @@ export default function RoutineDetailScreen() {
 
           <View style={styles.stepsHeading}>
             <Text style={[styles.sectionEyebrow, { color: colors.mutedForeground }]}>YOUR FLOW</Text>
-            <Text style={[styles.stepCount, { color: colors.mutedForeground }]}>
-              {completed} of {visibleSteps.length}
-            </Text>
+            <View style={styles.stepsHeadingActions}>
+              <Text style={[styles.stepCount, { color: colors.mutedForeground }]}>{completed} of {visibleSteps.length}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={speakingAll ? 'Stop speaking all steps' : 'Speak all steps'}
+                testID="speak-all-steps"
+                disabled={visibleSteps.length === 0}
+                onPress={speakAllSteps}
+                style={({ pressed }) => [
+                  styles.speakAllButton,
+                  { backgroundColor: visibleSteps.length ? colors.secondary : colors.card },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Ionicons name={speakingAll ? 'stop' : 'volume-high-outline'} size={15} color={colors.primary} />
+                <Text style={[styles.speakAllText, { color: colors.primary }]}>{speakingAll ? 'Stop' : 'Speak all'}</Text>
+              </Pressable>
+            </View>
           </View>
           <Text style={[styles.reorderHint, { color: colors.mutedForeground }]}>
             Use the arrows to reorder. Tap the speaker to hear a step; run the routine to record progress.
@@ -501,7 +573,10 @@ const styles = StyleSheet.create({
   progressTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginTop: 17 },
   progressFill: { height: '100%', borderRadius: 4 },
   stepsHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 34, marginBottom: 5 },
+  stepsHeadingActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stepCount: { fontFamily: 'Inter_400Regular', fontSize: 13 },
+  speakAllButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 9, borderRadius: 10 },
+  speakAllText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   reorderHint: { fontFamily: 'Inter_400Regular', fontSize: 12, marginBottom: 12 },
   showHiddenButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, marginTop: -6, marginBottom: 7 },
   showHiddenText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },

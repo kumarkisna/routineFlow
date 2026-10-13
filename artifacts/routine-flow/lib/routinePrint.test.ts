@@ -25,11 +25,14 @@ test('routine PDF includes ordered steps, optional notes, and a QR after each UR
     title: 'Morning <Plan>',
     kind: 'routine',
     routines: [routine('Morning', 'Read https://example.com/guide?x=1&y=2.')],
+    personName: 'Alex',
+    personId: 'profile-42',
     includeNotes: true,
   });
   const urlPosition = html.indexOf('https://example.com/guide?x=1&amp;y=2');
   const qrPosition = html.indexOf('<div class="qr">', urlPosition);
   assert.ok(html.includes('Morning &lt;Plan&gt;'));
+  assert.ok(html.includes('Person: Alex · Profile ID: profile-42'));
   assert.ok(html.includes('Drink water'));
   assert.ok(html.includes('Take a breath'));
   assert.ok(html.includes('A short &lt;intro&gt;'));
@@ -42,6 +45,8 @@ test('routine PDF can omit notes and playlist PDF preserves order and missing en
     title: 'Afternoon',
     kind: 'playlist',
     routines: [routine('First', 'private note'), undefined, routine('Last', 'later note')],
+    personName: 'Alex',
+    personId: 'profile-42',
     includeNotes: false,
   });
   assert.ok(html.indexOf('1. First') < html.indexOf('2. Unavailable routine'));

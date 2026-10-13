@@ -17,13 +17,14 @@ const visibleStep = (id: string, title: string, extra: Partial<Routine['steps'][
 test('prints the active person and scheduled date/time metadata', () => {
   const html = buildSchedulePrintHtml({
     personName: 'Alex',
+    personId: 'profile-42',
     scheduledAt: '2026-10-08T09:30:00.000Z',
     title: 'Morning routine',
     targetType: 'routine',
     routines: [routine('Morning routine', [visibleStep('one', 'Get ready')])],
   });
 
-  assert.match(html, /<dt>Person<\/dt><dd>Alex<\/dd>/);
+  assert.match(html, /Person: Alex · Profile ID: profile-42/);
   assert.match(html, /datetime="2026-10-08T09:30:00\.000Z"/);
   assert.match(html, /<dt>Date and time<\/dt>/);
 });
@@ -31,6 +32,7 @@ test('prints the active person and scheduled date/time metadata', () => {
 test('preserves playlist order and repeated routines', () => {
   const html = buildSchedulePrintHtml({
     personName: 'Alex',
+    personId: 'profile-42',
     scheduledAt: '2026-10-08T09:30:00.000Z',
     title: 'Morning playlist',
     targetType: 'playlist',
@@ -52,6 +54,7 @@ test('preserves playlist order and repeated routines', () => {
 test('omits hidden steps and leaves readable space between visible steps', () => {
   const html = buildSchedulePrintHtml({
     personName: 'Alex',
+    personId: 'profile-42',
     scheduledAt: '2026-10-08T09:30:00.000Z',
     title: 'Morning routine',
     targetType: 'routine',
@@ -71,6 +74,7 @@ test('omits hidden steps and leaves readable space between visible steps', () =>
 test('escapes user-provided text and rejects unusable schedules', () => {
   const html = buildSchedulePrintHtml({
     personName: '<script>alert("x")</script>',
+    personId: 'profile-42',
     scheduledAt: '2026-10-08T09:30:00.000Z',
     title: 'Routine & flow',
     targetType: 'routine',
@@ -82,6 +86,7 @@ test('escapes user-provided text and rejects unusable schedules', () => {
   assert.doesNotMatch(html, /<img src=x>/);
   assert.throws(() => buildSchedulePrintHtml({
     personName: 'Alex',
+    personId: 'profile-42',
     scheduledAt: 'not-a-date',
     title: 'Routine',
     targetType: 'routine',
@@ -89,6 +94,7 @@ test('escapes user-provided text and rejects unusable schedules', () => {
   }), /scheduled date is invalid/i);
   assert.throws(() => buildSchedulePrintHtml({
     personName: 'Alex',
+    personId: 'profile-42',
     scheduledAt: '2026-10-08T09:30:00.000Z',
     title: 'Routine',
     targetType: 'routine',

@@ -131,6 +131,7 @@ export default function ScheduleScreen() {
     try {
       const html = buildSchedulePrintHtml({
         personName: activePerson.name,
+        personId: activePerson.id,
         scheduledAt: s.scheduledAt,
         title: src.title,
         targetType: s.targetType,

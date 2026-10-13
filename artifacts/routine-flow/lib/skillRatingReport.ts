@@ -1,6 +1,8 @@
 import type { HistorySkillRating } from './progressHistory';
 
 export type SkillRatingReportInput = {
+  personName: string;
+  personId: string;
   routineTitle: string;
   dateTime: string;
   isRunTime: boolean;
@@ -31,6 +33,9 @@ export function formatSkillRatingDateTime(value: string): string {
 }
 
 export function buildSkillRatingReportHtml(input: SkillRatingReportInput): string {
+  if (!input.personName.trim() || !input.personId.trim()) {
+    throw new Error('The active person details are unavailable.');
+  }
   const routineTitle = input.routineTitle.trim();
   if (!routineTitle || routineTitle.length > 200) throw new Error('The routine name is invalid.');
   if (!Array.isArray(input.ratings) || input.ratings.length === 0) {
@@ -67,6 +72,7 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
     * { box-sizing: border-box; }
     body { max-width: 780px; margin: 0 auto; padding: 34px; color: #1e2d28; font: 15px/1.55 Arial, sans-serif; }
     .eyebrow { margin: 0 0 8px; color: #537267; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+    .person-details { margin: 0 0 8px; color: #63736d; font-size: 12px; }
     h1 { margin: 0; font-size: 29px; line-height: 1.2; }
     .metadata { margin: 22px 0 26px; padding: 14px 16px; border: 1px solid #d9e2dc; border-radius: 10px; background: #f6f8f5; }
     .metadata dt { color: #63736d; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
@@ -89,6 +95,7 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
 <body>
   <header>
     <p class="eyebrow">Routine Flow · Skill reflection</p>
+    <p class="person-details">Person: ${escapeHtml(input.personName)} · Profile ID: ${escapeHtml(input.personId)}</p>
     <h1>${escapeHtml(routineTitle)}</h1>
     <dl class="metadata">
       <dt>${dateLabel}</dt>

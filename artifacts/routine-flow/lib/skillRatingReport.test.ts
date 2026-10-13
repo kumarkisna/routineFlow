@@ -5,6 +5,8 @@ import { buildSkillRatingReportHtml } from './skillRatingReport';
 
 test('skill report includes the run time, escaped notes, and sequential skill order', () => {
   const html = buildSkillRatingReportHtml({
+    personName: 'Alex',
+    personId: 'profile-42',
     routineTitle: 'Morning <Routine>',
     dateTime: '2030-06-12T12:00:00.000Z',
     isRunTime: true,
@@ -14,6 +16,7 @@ test('skill report includes the run time, escaped notes, and sequential skill or
     ],
   });
   assert.match(html, /Morning &lt;Routine&gt;/);
+  assert.match(html, /Person: Alex · Profile ID: profile-42/);
   assert.match(html, /Run date and time/);
   assert.match(html, /Keep &lt;steady&gt;\./);
   assert.ok(html.indexOf('<th scope="row">Breathing</th>') < html.indexOf('<th scope="row">Balance</th>'));
@@ -22,6 +25,8 @@ test('skill report includes the run time, escaped notes, and sequential skill or
 
 test('skill report rejects empty or invalid export data', () => {
   assert.throws(() => buildSkillRatingReportHtml({
+    personName: 'Alex',
+    personId: 'profile-42',
     routineTitle: 'Morning',
     dateTime: '2030-06-12T12:00:00.000Z',
     isRunTime: true,

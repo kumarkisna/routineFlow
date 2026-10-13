@@ -11,6 +11,8 @@ export function RoutinePdfExportButton({
   title,
   kind,
   routines,
+  personName,
+  personId,
   testID,
   buttonStyle,
   iconColor,
@@ -18,6 +20,8 @@ export function RoutinePdfExportButton({
   title: string;
   kind: 'routine' | 'playlist';
   routines: (Routine | undefined)[];
+  personName: string;
+  personId: string;
   testID: string;
   buttonStyle?: StyleProp<ViewStyle>;
   iconColor?: string;
@@ -35,7 +39,7 @@ export function RoutinePdfExportButton({
     setBusy(true);
     setError('');
     try {
-      const html = buildRoutinePdfHtml({ title, kind, routines, includeNotes });
+      const html = buildRoutinePdfHtml({ title, kind, routines, personName, personId, includeNotes });
       if (Platform.OS === 'web') {
         if (typeof window === 'undefined') throw new Error('Browser printing is unavailable.');
         const printWindow = window.open('', '_blank');

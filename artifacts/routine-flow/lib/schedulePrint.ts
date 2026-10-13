@@ -3,6 +3,7 @@ import { formatLocalDateTime } from './localDateTime';
 
 export type SchedulePrintInput = {
   personName: string;
+  personId: string;
   scheduledAt: string;
   title: string;
   targetType: 'routine' | 'playlist';
@@ -20,6 +21,9 @@ function escapeHtml(value: string): string {
 }
 
 export function buildSchedulePrintHtml(input: SchedulePrintInput): string {
+  if (!input.personName.trim() || !input.personId.trim()) {
+    throw new Error('The active person details are unavailable.');
+  }
   const scheduledDate = new Date(input.scheduledAt);
   if (!Number.isFinite(scheduledDate.getTime())) {
     throw new Error('The scheduled date is invalid.');
@@ -67,6 +71,7 @@ export function buildSchedulePrintHtml(input: SchedulePrintInput): string {
     * { box-sizing: border-box; }
     body { max-width: 780px; margin: 0 auto; padding: 34px; color: #1e2d28; font: 16px/1.5 Arial, sans-serif; }
     .eyebrow, .sequence { margin: 0 0 6px; color: #537267; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .person-details { margin: 0 0 8px; color: #63736d; font-size: 12px; }
     h1 { margin: 0; font-size: 30px; line-height: 1.2; }
     .metadata { display: flex; flex-wrap: wrap; gap: 12px 36px; margin: 22px 0 26px; padding: 16px 0; border-top: 1px solid #d9e2dc; border-bottom: 1px solid #d9e2dc; }
     .metadata div { min-width: 190px; }
@@ -95,9 +100,9 @@ export function buildSchedulePrintHtml(input: SchedulePrintInput): string {
 <body>
   <header>
     <p class="eyebrow">${scheduleLabel}</p>
+    <p class="person-details">Person: ${escapeHtml(input.personName)} · Profile ID: ${escapeHtml(input.personId)}</p>
     <h1>${escapeHtml(input.title)}</h1>
     <dl class="metadata">
-      <div><dt>Person</dt><dd>${escapeHtml(input.personName)}</dd></div>
       <div><dt>Date and time</dt><dd><time datetime="${scheduledDate.toISOString()}">${escapeHtml(dateLabel)}</time></dd></div>
     </dl>
   </header>

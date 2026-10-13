@@ -165,6 +165,8 @@ export default function HistoryScreen() {
     setExportError(null);
     try {
       const html = buildSkillRatingReportHtml({
+        personName: activePerson.name,
+        personId: activePerson.id,
         routineTitle,
         dateTime: event.dateTime,
         isRunTime: event.isRunTime,

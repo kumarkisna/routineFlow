@@ -175,6 +175,8 @@ export default function PlaylistsScreen() {
                     title={item.title}
                     kind="playlist"
                     routines={item.routineIds.map(routineId => routines.find(routine => routine.id === routineId))}
+                    personName={activePerson.name}
+                    personId={activePerson.id}
                     testID={`print-playlist-${item.id}`}
                     buttonStyle={styles.icon}
                     iconColor={colors.primary}

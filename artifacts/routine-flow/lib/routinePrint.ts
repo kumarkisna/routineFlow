@@ -41,13 +41,18 @@ export function buildRoutinePdfHtml({
   title,
   kind,
   routines,
+  personName,
+  personId,
   includeNotes,
 }: {
   title: string;
   kind: 'routine' | 'playlist';
   routines: (Routine | undefined)[];
+  personName: string;
+  personId: string;
   includeNotes: boolean;
 }): string {
+  if (!personName.trim() || !personId.trim()) throw new Error('The active person details are unavailable.');
   const sections = routines.map((routine, routineIndex) => {
     const routineTitle = routine?.title ?? 'Unavailable routine';
     const subtitle = includeNotes && routine?.subtitle?.trim()
@@ -80,6 +85,7 @@ export function buildRoutinePdfHtml({
   h1 { font-size: 25px; line-height: 1.2; margin: 0 0 7px; }
   h2 { font-size: 18px; margin: 0 0 10px; }
   .kind { color: #526071; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 20px; }
+  .person-details { color: #667181; font-size: 12px; margin: 0 0 8px; overflow-wrap: anywhere; }
   .routine { border-top: 1px solid #ded9cf; margin-top: 20px; padding-top: 16px; break-inside: avoid; }
   .category { color: #526071; font-size: 12px; margin: -5px 0 10px; }
   .steps { margin: 8px 0 0; padding-left: 25px; }
@@ -99,6 +105,7 @@ export function buildRoutinePdfHtml({
 </style>
 </head>
 <body>
+  <p class="person-details">Person: ${escapeHtml(personName)} · Profile ID: ${escapeHtml(personId)}</p>
   <h1>${escapeHtml(title)}</h1>
   <div class="kind">${kind === 'playlist' ? 'Playlist' : 'Routine'}</div>
   ${sections}
