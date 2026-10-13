@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createPlaylistRunLaunch, mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylists, playablePlaylistIds,
+import { createPlaylistRunLaunch, getPlaylistSpeechSteps, mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylists, playablePlaylistIds,
   remapPlaylistReferences, resolvePlaylistReminderSettings, validatePlaylist } from './playlists';
 import type { Routine } from '../types/routines';
 import { getNextRoutineStepIndex, getPlayableRoutine, getRoutinePlaybackStep, getRoutinePlaybackStepSeconds } from './routinePlayback';
@@ -52,6 +52,17 @@ test('playlist playback uses a routine’s saved step order before advancing onc
   const launch = createPlaylistRunLaunch(playlist, routines);
   assert.ok(launch);
   assert.deepEqual(launch.ids, ['first', 'next']);
+  assert.deepEqual(
+    getPlaylistSpeechSteps(playlist, routines).map(({ routine: spokenRoutine, stepIndex }) => [
+      spokenRoutine.id,
+      spokenRoutine.steps[stepIndex].id,
+    ]),
+    [
+      ['first', 'drink-water'],
+      ['first', 'warm-up'],
+      ['next', 'next-step'],
+    ],
+  );
   assert.equal(launch.params.id, 'first');
   assert.equal(launch.params.cursor, '0');
   assert.equal(launch.params.autoStart, '1');

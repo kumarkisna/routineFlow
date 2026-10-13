@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import * as Speech from 'expo-speech';
+import { router, useFocusEffect } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,7 +11,9 @@ import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { SkillTagList } from '@/components/SkillPicker';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
-import { createPlaylistRunLaunch, playablePlaylistIds, type RoutinePlaylist } from '@/lib/playlists';
+import { useSkills } from '@/context/SkillContext';
+import { buildStepAnnouncement } from '@/lib/routineSpeech';
+import { createPlaylistRunLaunch, getPlaylistSpeechSteps, playablePlaylistIds, type RoutinePlaylist } from '@/lib/playlists';
 import { formatDuration, getStepSeconds } from '@/types/routines';
 
 export default function PlaylistsScreen() {
@@ -19,11 +22,113 @@ export default function PlaylistsScreen() {
   const { activePerson } = usePeople();
   const { playlists, loading, error, reload, deletePlaylist } = usePlaylists();
   const { routines, loading: routinesLoading } = useRoutines();
+  const { skills } = useSkills();
   const disclosure = usePersistentDisclosure('playlists', activePerson.id);
   const [pendingDelete, setPendingDelete] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const lock = React.useRef(false);
+  const [speakingPlaylistId, setSpeakingPlaylistId] = React.useState<string | null>(null);
+  const [playlistSpeechPaused, setPlaylistSpeechPaused] = React.useState(false);
+  const speechSessionToken = React.useRef(0);
+  const speechUtteranceToken = React.useRef(0);
+  const speakingPlaylistRef = React.useRef<string | null>(null);
+  const playlistSpeechPausedRef = React.useRef(false);
+  const speechPosition = React.useRef(0);
+
+  const stopPlaylistSpeech = React.useCallback(() => {
+    speechSessionToken.current += 1;
+    speechUtteranceToken.current += 1;
+    speakingPlaylistRef.current = null;
+    playlistSpeechPausedRef.current = false;
+    setSpeakingPlaylistId(null);
+    setPlaylistSpeechPaused(false);
+    void Speech.stop();
+  }, []);
+
+  useFocusEffect(React.useCallback(
+    () => () => stopPlaylistSpeech(),
+    [stopPlaylistSpeech],
+  ));
+
+  function speakPlaylistStepAt(playlist: RoutinePlaylist, position: number, sessionToken: number) {
+    const steps = getPlaylistSpeechSteps(playlist, routines);
+    if (speechSessionToken.current !== sessionToken || playlistSpeechPausedRef.current) return;
+    if (position >= steps.length) {
+      speakingPlaylistRef.current = null;
+      setSpeakingPlaylistId(null);
+      setPlaylistSpeechPaused(false);
+      return;
+    }
+    speechPosition.current = position;
+    const utteranceToken = ++speechUtteranceToken.current;
+    const entry = steps[position];
+    const currentUtterance = () => (
+      speechSessionToken.current === sessionToken
+      && speechUtteranceToken.current === utteranceToken
+    );
+    try {
+      Speech.speak(buildStepAnnouncement(
+        entry.routine,
+        entry.stepIndex,
+        skills,
+        position === 0 ? { title: playlist.title, skillIds: playlist.skillIds ?? [] } : undefined,
+      ), {
+        rate: 0.92,
+        pitch: 1,
+        onDone: () => {
+          if (currentUtterance() && !playlistSpeechPausedRef.current) {
+            speakPlaylistStepAt(playlist, position + 1, sessionToken);
+          }
+        },
+        onStopped: () => {
+          if (currentUtterance() && !playlistSpeechPausedRef.current) stopPlaylistSpeech();
+        },
+        onError: () => {
+          if (currentUtterance() && !playlistSpeechPausedRef.current) stopPlaylistSpeech();
+        },
+      });
+    } catch {
+      if (currentUtterance()) stopPlaylistSpeech();
+    }
+  }
+
+  function togglePlaylistSpeech(playlist: RoutinePlaylist) {
+    if (speakingPlaylistRef.current === playlist.id) {
+      const sessionToken = speechSessionToken.current;
+      if (!playlistSpeechPausedRef.current) {
+        playlistSpeechPausedRef.current = true;
+        setPlaylistSpeechPaused(true);
+        if (Platform.OS === 'android') {
+          // Android cannot pause an utterance in place; resume by replaying this step.
+          speechUtteranceToken.current += 1;
+          void Speech.stop();
+        } else {
+          void Speech.pause();
+        }
+      } else {
+        playlistSpeechPausedRef.current = false;
+        setPlaylistSpeechPaused(false);
+        if (Platform.OS === 'android') {
+          speakPlaylistStepAt(playlist, speechPosition.current, sessionToken);
+        } else {
+          void Speech.resume();
+        }
+      }
+      return;
+    }
+
+    const sessionToken = ++speechSessionToken.current;
+    speechUtteranceToken.current += 1;
+    speechPosition.current = 0;
+    speakingPlaylistRef.current = playlist.id;
+    playlistSpeechPausedRef.current = false;
+    setSpeakingPlaylistId(playlist.id);
+    setPlaylistSpeechPaused(false);
+    void Speech.stop().finally(() => {
+      if (speechSessionToken.current === sessionToken) speakPlaylistStepAt(playlist, 0, sessionToken);
+    });
+  }
 
   function seconds(ids: string[]) {
     return playablePlaylistIds(ids, routines).reduce((sum, id) => {
@@ -36,6 +141,7 @@ export default function PlaylistsScreen() {
     return r && !r.hidden ? r.title : 'Unavailable routine';
   }
   function start(p: RoutinePlaylist) {
+    if (speakingPlaylistRef.current) stopPlaylistSpeech();
     const launch = createPlaylistRunLaunch(p, routines);
     if (!launch) return;
     const skipped = p.routineIds.length - launch.ids.length;
@@ -47,6 +153,7 @@ export default function PlaylistsScreen() {
   }
   async function remove(id: string) {
     if (lock.current) return;
+    if (speakingPlaylistRef.current === id) stopPlaylistSpeech();
     lock.current = true;
     setBusy(true);
     setMessage('');
@@ -122,7 +229,11 @@ export default function PlaylistsScreen() {
               <View style={styles.cardHeading}>
                 <Text style={[styles.cardTitle, { color: colors.foreground, flex: 1 }]} numberOfLines={2}>{item.title}</Text>
                 <Pressable accessibilityRole="button" accessibilityLabel={`${expanded ? 'Collapse' : 'Expand'} playlist ${item.title}`}
-                  accessibilityState={{ expanded }} testID={`toggle-playlist-${item.id}`} onPress={() => disclosure.toggle(item.id)} style={styles.icon}>
+                  accessibilityState={{ expanded }} testID={`toggle-playlist-${item.id}`}
+                  onPress={() => {
+                    if (expanded && speakingPlaylistRef.current === item.id) stopPlaylistSpeech();
+                    disclosure.toggle(item.id);
+                  }} style={styles.icon}>
                   <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.inkSoft} />
                 </Pressable>
               </View>
@@ -153,6 +264,7 @@ export default function PlaylistsScreen() {
                   </View>
                 </View>
               ) : expanded ? (
+                <>
                 <View style={styles.row}>
                   <Pressable accessibilityRole="button" accessibilityLabel={`Start playlist ${item.title}`} accessibilityState={{ disabled: !playable.length }}
                     testID={`start-playlist-${item.id}`} disabled={!playable.length} onPress={() => start(item)}
@@ -186,6 +298,42 @@ export default function PlaylistsScreen() {
                     <Ionicons name="trash-outline" size={19} color={colors.destructive} />
                   </Pressable>
                 </View>
+                <View style={[styles.playlistSpeechBar, { borderColor: colors.border }]}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      speakingPlaylistId !== item.id ? `Speak all routines in ${item.title}`
+                        : playlistSpeechPaused ? `Play ${item.title} speech` : `Pause ${item.title} speech`
+                    }
+                    accessibilityState={{ disabled: playable.length === 0 }}
+                    testID={`speak-playlist-${item.id}`}
+                    disabled={playable.length === 0}
+                    onPress={() => togglePlaylistSpeech(item)}
+                    style={({ pressed }) => [styles.playlistSpeechToggle, pressed && styles.pressed]}
+                  >
+                    <Ionicons
+                      name={speakingPlaylistId !== item.id ? 'volume-high-outline' : playlistSpeechPaused ? 'play' : 'pause'}
+                      size={17}
+                      color={playable.length ? colors.primary : colors.border}
+                    />
+                    <Text style={[styles.playlistSpeechText, { color: playable.length ? colors.primary : colors.mutedForeground }]}>
+                      {speakingPlaylistId !== item.id ? 'Speak' : playlistSpeechPaused ? 'Play' : 'Pause'}
+                    </Text>
+                  </Pressable>
+                  {speakingPlaylistId === item.id ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Stop speaking ${item.title}`}
+                      testID={`stop-speak-playlist-${item.id}`}
+                      onPress={stopPlaylistSpeech}
+                      style={({ pressed }) => [styles.playlistSpeechStop, pressed && styles.pressed]}
+                    >
+                      <Ionicons name="stop" size={16} color={colors.primary} />
+                      <Text style={[styles.playlistSpeechText, { color: colors.primary }]}>Stop</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                </>
               ) : null}
             </View>
           );
@@ -215,6 +363,10 @@ const styles = StyleSheet.create({
   meta: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 4 },
   preview: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
   row: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 6 },
+  playlistSpeechBar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: 14, marginTop: 9, paddingHorizontal: 12 },
+  playlistSpeechToggle: { flex: 1, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  playlistSpeechStop: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingLeft: 12 },
+  playlistSpeechText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   start: { flex: 1, minHeight: 44, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   icon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   confirm: { borderRadius: 14, padding: 12, marginTop: 12 },

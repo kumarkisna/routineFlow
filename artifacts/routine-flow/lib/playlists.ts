@@ -1,4 +1,5 @@
 import type { Routine, RoutineNotificationSettings } from '../types/routines';
+import { getPlayableRoutine } from './routinePlayback';
 
 export const DEFAULT_PLAYLIST_REMINDER_SETTINGS: RoutineNotificationSettings = {
   stepCompletion: false,
@@ -31,6 +32,18 @@ export function playablePlaylistIds(ids: string[], routines: Routine[]): string[
     .filter(routine => !routine.hidden && routine.steps.some(step => !step.hidden))
     .map(routine => routine.id));
   return ids.filter(id => available.has(id));
+}
+
+export function getPlaylistSpeechSteps(
+  playlist: Pick<RoutinePlaylist, 'routineIds'>,
+  routines: Routine[],
+): { routine: Routine; stepIndex: number }[] {
+  return playablePlaylistIds(playlist.routineIds, routines).flatMap(id => {
+    const routine = routines.find(entry => entry.id === id);
+    if (!routine) return [];
+    const playableRoutine = getPlayableRoutine(routine);
+    return playableRoutine.steps.map((_, stepIndex) => ({ routine: playableRoutine, stepIndex }));
+  });
 }
 
 export function createPlaylistRunLaunch(
