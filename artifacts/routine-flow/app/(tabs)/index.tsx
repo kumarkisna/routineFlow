@@ -3,6 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File as ExpoFile } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
+import * as Speech from 'expo-speech';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React from 'react';
@@ -25,6 +26,7 @@ import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
+import { buildStepAnnouncement } from '@/lib/routineSpeech';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
 import { remapRoutineSkillIds } from '@/lib/skills';
 import { remapPlaylistReferences } from '@/lib/playlists';
@@ -69,7 +71,7 @@ export default function HomeScreen() {
     importRoutines, importProgress, resetToday, renameCategory, removeCategory,
   } = useRoutines();
   const { mergeImportedPlaylists } = usePlaylists();
-  const { mergeImportedSkills, setRatingWindow } = useSkills();
+  const { skills, mergeImportedSkills, setRatingWindow } = useSkills();
   const [showHidden, setShowHidden] = React.useState(false);
   const [categoryFilter, setCategoryFilter] = React.useState<string | null>(null);
   const [renameDraft, setRenameDraft] = React.useState<string | null>(null);
@@ -87,6 +89,13 @@ export default function HomeScreen() {
   const [transferBusy, setTransferBusy] = React.useState<'export' | 'export-all' | 'import' | null>(null);
   const [transferStatus, setTransferStatus] = React.useState<{ message: string; error: boolean } | null>(null);
   const transferLock = React.useRef(false);
+  const [speakingRoutineId, setSpeakingRoutineId] = React.useState<string | null>(null);
+  const [routineSpeechPaused, setRoutineSpeechPaused] = React.useState(false);
+  const speechSessionToken = React.useRef(0);
+  const speechUtteranceToken = React.useRef(0);
+  const speakingRoutineRef = React.useRef<string | null>(null);
+  const routineSpeechPausedRef = React.useRef(false);
+  const speechStepIndex = React.useRef(0);
   const [includeHistory, setIncludeHistory] = React.useState(false);
   const [pendingBackup, setPendingBackup] = React.useState<RoutineBackup | null>(null);
   const [pendingAllProfilesBackup, setPendingAllProfilesBackup] = React.useState<AllPeopleBackup | null>(null);
@@ -94,6 +103,99 @@ export default function HomeScreen() {
   const importPending = pendingBackup !== null || pendingAllProfilesBackup !== null;
   const pendingAllHasProgress = pendingAllProfilesBackup?.people.some(({ backup }) =>
     Object.values(backup.progress ?? {}).some(entries => Object.keys(entries).length > 0)) ?? false;
+
+  React.useEffect(() => () => {
+    speechSessionToken.current += 1;
+    speechUtteranceToken.current += 1;
+    void Speech.stop();
+  }, []);
+
+  function stopRoutineSpeech() {
+    speechSessionToken.current += 1;
+    speechUtteranceToken.current += 1;
+    speakingRoutineRef.current = null;
+    routineSpeechPausedRef.current = false;
+    setSpeakingRoutineId(null);
+    setRoutineSpeechPaused(false);
+    void Speech.stop();
+  }
+
+  function speakRoutineStepAt(routine: Routine, index: number, sessionToken: number) {
+    const steps = routine.steps.filter(step => !step.hidden);
+    if (speechSessionToken.current !== sessionToken || routineSpeechPausedRef.current) return;
+    if (index >= steps.length) {
+      speakingRoutineRef.current = null;
+      setSpeakingRoutineId(null);
+      setRoutineSpeechPaused(false);
+      return;
+    }
+    speechStepIndex.current = index;
+    const utteranceToken = ++speechUtteranceToken.current;
+    const step = steps[index];
+    const isCurrentUtterance = () => (
+      speechSessionToken.current === sessionToken
+      && speechUtteranceToken.current === utteranceToken
+    );
+    try {
+      Speech.speak(buildStepAnnouncement(routine, index, skills), {
+        rate: 0.92,
+        pitch: 1,
+        onDone: () => {
+          if (isCurrentUtterance() && !routineSpeechPausedRef.current) {
+            speakRoutineStepAt(routine, index + 1, sessionToken);
+          }
+        },
+        onStopped: () => {
+          if (isCurrentUtterance() && !routineSpeechPausedRef.current) stopRoutineSpeech();
+        },
+        onError: () => {
+          if (isCurrentUtterance() && !routineSpeechPausedRef.current) stopRoutineSpeech();
+        },
+      });
+    } catch {
+      if (isCurrentUtterance()) stopRoutineSpeech();
+    }
+  }
+
+  function toggleRoutineSpeech(routine: Routine) {
+    if (speakingRoutineRef.current === routine.id) {
+      const sessionToken = speechSessionToken.current;
+      if (!routineSpeechPausedRef.current) {
+        routineSpeechPausedRef.current = true;
+        setRoutineSpeechPaused(true);
+        if (Platform.OS === 'android') {
+          // Android cannot pause mid-utterance. Keep the step index and replay
+          // only that step when resumed.
+          speechUtteranceToken.current += 1;
+          void Speech.stop();
+        } else {
+          void Speech.pause();
+        }
+      } else {
+        routineSpeechPausedRef.current = false;
+        setRoutineSpeechPaused(false);
+        if (Platform.OS === 'android') {
+          speakRoutineStepAt(routine, speechStepIndex.current, sessionToken);
+        } else {
+          void Speech.resume();
+        }
+      }
+      return;
+    }
+
+    const sessionToken = ++speechSessionToken.current;
+    speechUtteranceToken.current += 1;
+    speechStepIndex.current = 0;
+    speakingRoutineRef.current = routine.id;
+    routineSpeechPausedRef.current = false;
+    setSpeakingRoutineId(routine.id);
+    setRoutineSpeechPaused(false);
+    void Speech.stop().finally(() => {
+      if (speechSessionToken.current === sessionToken) {
+        speakRoutineStepAt(routine, 0, sessionToken);
+      }
+    });
+  }
   const pendingAllProfileNamePlan = pendingAllProfilesBackup
     ? getAllProfilesRestoreNamePlan(pendingAllProfilesBackup, people)
     : [];
@@ -836,16 +938,52 @@ export default function HomeScreen() {
                 <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={19} color={colors.inkSoft} />
               </Pressable>
               {expanded && !reordering ? (
-                <RoutinePdfExportButton
-                  title={item.title}
-                  kind="routine"
-                  routines={[item]}
-                  personName={activePerson.name}
-                  personId={activePerson.id}
-                  testID={`print-routine-${item.id}`}
-                  buttonStyle={[styles.visibilityButton, { borderLeftColor: colors.border }]}
-                  iconColor={colors.primary}
-                />
+                <View style={[styles.routineActionColumn, { borderLeftColor: colors.border }]}>
+                  <RoutinePdfExportButton
+                    title={item.title}
+                    kind="routine"
+                    routines={[item]}
+                    personName={activePerson.name}
+                    personId={activePerson.id}
+                    testID={`print-routine-${item.id}`}
+                    buttonStyle={styles.routineActionButton}
+                    iconColor={colors.primary}
+                  />
+                  <View style={[styles.routineSpeechActions, { borderTopColor: colors.border }]}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        speakingRoutineId !== item.id ? `Speak all steps in ${item.title}`
+                          : routineSpeechPaused ? `Play ${item.title} speech` : `Pause ${item.title} speech`
+                      }
+                      accessibilityState={{ disabled: !!item.hidden || visibleStepCount === 0 }}
+                      testID={`today-speak-routine-${item.id}`}
+                      disabled={!!item.hidden || visibleStepCount === 0}
+                      onPress={() => toggleRoutineSpeech(item)}
+                      style={({ pressed }) => [styles.routineSpeakButton, pressed && styles.pressed]}
+                    >
+                      <Ionicons
+                        name={speakingRoutineId !== item.id ? 'volume-high-outline' : routineSpeechPaused ? 'play' : 'pause'}
+                        size={16}
+                        color={item.hidden || visibleStepCount === 0 ? colors.border : colors.primary}
+                      />
+                      <Text style={[styles.routineSpeakText, { color: item.hidden || visibleStepCount === 0 ? colors.mutedForeground : colors.primary }]}>
+                        {speakingRoutineId !== item.id ? 'Speak' : routineSpeechPaused ? 'Play' : 'Pause'}
+                      </Text>
+                    </Pressable>
+                    {speakingRoutineId === item.id ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Stop speaking ${item.title}`}
+                        testID={`today-stop-speak-routine-${item.id}`}
+                        onPress={stopRoutineSpeech}
+                        style={({ pressed }) => [styles.routineStopButton, pressed && styles.pressed]}
+                      >
+                        <Ionicons name="stop" size={15} color={colors.primary} />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
               ) : null}
               {reordering ? (
                 <View style={[styles.orderActions, { borderLeftColor: colors.border }]}>
@@ -1320,6 +1458,12 @@ const styles = StyleSheet.create({
   routineCardContent: { flex: 1, minWidth: 0, minHeight: 98, paddingLeft: 13, paddingVertical: 13, paddingRight: 8, flexDirection: 'row', alignItems: 'center' },
   collapseButton: { width: 38, alignSelf: 'stretch', borderLeftWidth: 1, alignItems: 'center', justifyContent: 'center' },
   visibilityButton: { width: 44, alignSelf: 'stretch', borderLeftWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  routineActionColumn: { width: 72, alignSelf: 'stretch', borderLeftWidth: 1, alignItems: 'stretch' },
+  routineActionButton: { width: 71, height: 46, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  routineSpeechActions: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1 },
+  routineSpeakButton: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  routineSpeakText: { fontFamily: 'Inter_600SemiBold', fontSize: 10 },
+  routineStopButton: { width: 23, height: '100%', alignItems: 'center', justifyContent: 'center' },
   orderActions: { width: 44, alignSelf: 'stretch', borderLeftWidth: 1 },
   orderButton: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   routineIcon: { width: 54, height: 54, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginRight: 13 },
