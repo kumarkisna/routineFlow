@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { performance } from 'node:perf_hooks';
 
 import {
   cleanupOrphanedStepDetailAttachmentCopies,
@@ -9,6 +10,7 @@ import {
   saveRoutinesWithStepDetailAttachments,
   STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY,
   StepDetailAttachmentCleanupError,
+  type StepDetailAttachmentCleanupResult,
 } from './stepDetailAttachmentCleanup';
 import { PERSON_DATA_KEYS, personStorageKey } from './personStorage';
 import type { Routine } from '@/types/routines';
@@ -231,7 +233,7 @@ test('stops later deletions if routine data becomes unreadable during cleanup', 
 });
 
 test('reuses parsed references across a large cleanup while rechecking every saved routine', async () => {
-  const profileIds = ['me', ...Array.from({ length: 79 }, (_, index) => `person-${index + 1}`)];
+  const profileIds = ['me', ...Array.from({ length: 119 }, (_, index) => `person-${index + 1}`)];
   const entries: Array<[string, string]> = [
     [PEOPLE_KEY, peopleRegistry(profileIds)],
     [PERSON_DATA_KEYS.routines, JSON.stringify([routine(`${attachmentDirectory}kept-me.pdf`)])],
@@ -242,19 +244,43 @@ test('reuses parsed references across a large cleanup while rechecking every sav
       JSON.stringify([routine(`${attachmentDirectory}kept-${id}.pdf`)]),
     ]);
   }
-  const fileNames = Array.from({ length: 40 }, (_, index) => `orphan-${index}.pdf`);
+  const fileNames = Array.from({ length: 300 }, (_, index) => `orphan-${index}.pdf`);
   const adapters = createAdapters(entries, fileNames);
   const metrics = { referenceChecks: 0, routineRecordsRead: 0, routineRecordsParsed: 0 };
+  const yieldToEventLoop = () => new Promise<void>(resolve => setImmediate(resolve));
+  const readDirectory = adapters.fileSystem.readDirectoryAsync;
+  const deleteFile = adapters.fileSystem.deleteAsync;
+  adapters.fileSystem.readDirectoryAsync = async () => {
+    await yieldToEventLoop();
+    return readDirectory();
+  };
+  adapters.fileSystem.deleteAsync = async uri => {
+    await yieldToEventLoop();
+    await deleteFile(uri);
+  };
+  let responsivenessTicks = 0;
+  const heartbeat = setInterval(() => { responsivenessTicks += 1; }, 0);
+  const start = performance.now();
+  let result: StepDetailAttachmentCleanupResult | undefined;
+  try {
+    result = await cleanupOrphanedStepDetailAttachmentCopies(
+      directory, adapters.storage, adapters.fileSystem, undefined, undefined, metrics,
+    );
+  } finally {
+    clearInterval(heartbeat);
+  }
+  const elapsedMs = performance.now() - start;
 
-  const result = await cleanupOrphanedStepDetailAttachmentCopies(
-    directory, adapters.storage, adapters.fileSystem, undefined, undefined, metrics,
-  );
-
-  assert.deepEqual(result, { removedCount: 40, estimatedBytes: null });
-  assert.equal(metrics.referenceChecks, 41);
+  assert.deepEqual(result, { removedCount: 300, estimatedBytes: null });
+  assert.equal(metrics.referenceChecks, 301);
   assert.equal(metrics.routineRecordsRead, profileIds.length * metrics.referenceChecks);
   assert.equal(metrics.routineRecordsParsed, profileIds.length);
-  assert.equal(adapters.deleted.length, 40);
+  assert.equal(adapters.deleted.length, 300);
+  assert.ok(responsivenessTicks > 0, 'the event loop should continue running during cleanup');
+  console.info(
+    `300-file/120-profile cleanup: ${elapsedMs.toFixed(1)}ms, ${responsivenessTicks} event-loop ticks, `
+      + `${metrics.routineRecordsParsed} routine records parsed across ${metrics.referenceChecks} safety scans.`,
+  );
 });
 
 test('reports failed file removals after still cleaning other orphaned files', async () => {
