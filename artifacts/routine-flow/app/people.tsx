@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { SpeechVoicePreference } from '@/components/SpeechVoicePreference';
@@ -53,6 +53,7 @@ export default function PeopleScreen() {
   const [backgroundSavingId, setBackgroundSavingId] = React.useState<string | null>(null);
   const [backgroundError, setBackgroundError] = React.useState('');
   const [backgroundNotice, setBackgroundNotice] = React.useState('');
+  const [cameraBlockedPersonId, setCameraBlockedPersonId] = React.useState<string | null>(null);
   function reportBackgroundError(personId: string, error: unknown, fallback: string) {
     if (error instanceof PersonBackgroundStateUncertainError) {
       setPersonBackgrounds(current => {
@@ -181,7 +182,11 @@ export default function PeopleScreen() {
     setBackgroundNotice('');
     try {
       await capturePersonBackground(
-        () => ImagePicker.requestCameraPermissionsAsync(),
+        async () => {
+          const permission = await ImagePicker.requestCameraPermissionsAsync();
+          setCameraBlockedPersonId(!permission.granted && !permission.canAskAgain ? personId : null);
+          return permission;
+        },
         () => ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.8 }),
         asset => saveBackgroundAsset(personId, asset),
       );
@@ -189,6 +194,27 @@ export default function PeopleScreen() {
       reportBackgroundError(personId, e, 'Could not take or save this background picture.');
     } finally {
       setBackgroundSavingId(null);
+    }
+  }
+
+  React.useEffect(() => {
+    if (!cameraBlockedPersonId) return;
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') return;
+      void ImagePicker.getCameraPermissionsAsync().then(permission => {
+        if (!permission.granted) return;
+        setCameraBlockedPersonId(current => current === cameraBlockedPersonId ? null : current);
+        setBackgroundError('');
+      }).catch(() => undefined);
+    });
+    return () => subscription.remove();
+  }, [cameraBlockedPersonId]);
+
+  async function openCameraSettings() {
+    try {
+      await Linking.openSettings();
+    } catch {
+      setBackgroundError('Could not open device settings. Open this app’s settings to allow camera access.');
     }
   }
 
@@ -601,6 +627,16 @@ export default function PeopleScreen() {
                               <Text style={[styles.linkText, { color: colors.foreground }]}>No photo</Text>
                             </Pressable>
                           </View>
+                          {cameraBlockedPersonId === p.id && Platform.OS !== 'web' ? (
+                            <Pressable
+                              testID={`person-background-open-settings-${p.id}`}
+                              accessibilityRole="button"
+                              onPress={() => void openCameraSettings()}
+                              style={[styles.backgroundAction, { alignSelf: 'flex-start', borderColor: colors.border, borderWidth: 1 }]}
+                            >
+                              <Text style={[styles.linkText, { color: colors.foreground }]}>Open Settings</Text>
+                            </Pressable>
+                          ) : null}
                         </View>
                       ) : null}
                     </View>
