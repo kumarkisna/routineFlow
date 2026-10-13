@@ -7,7 +7,7 @@ import * as Sharing from 'expo-sharing';
 import React, { useState } from 'react';
 import { Alert, Image, Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
-import { STEP_DETAIL_ATTACHMENT_MAX_BYTES, type StepDetailAttachment } from '@/types/routines';
+import { STEP_DETAIL_ATTACHMENT_MAX_BYTES, STEP_DETAIL_ATTACHMENT_MAX_COUNT, type StepDetailAttachment } from '@/types/routines';
 import { compressImageToSize } from '@/lib/stepDetailImageCompression';
 
 function getImageFileName(asset: Pick<ImagePicker.ImagePickerAsset, 'fileName' | 'uri' | 'mimeType'>, fallbackLabel: string) {
@@ -99,29 +99,48 @@ export function StepDetailAttachments({
   }
 
   async function addImage() {
+    const remaining = STEP_DETAIL_ATTACHMENT_MAX_COUNT - attachments.length;
+    if (remaining <= 0) {
+      Alert.alert('Attachment limit reached', `You can attach up to ${STEP_DETAIL_ATTACHMENT_MAX_COUNT} files to this detail.`);
+      return;
+    }
+    const added: StepDetailAttachment[] = [];
+    setBusy(true);
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.9,
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+      });
       if (result.canceled) return;
-      setBusy(true);
-      const asset = result.assets[0];
-      const file = await saveCopy(
-        asset.uri,
-        getImageFileName(asset, 'Image'),
-        asset.mimeType || 'image/jpeg',
-        'image',
-        { width: asset.width, height: asset.height },
-      );
-      if (onAddAttachment) onAddAttachment(file);
-      else onChange?.([...attachments, file]);
+      for (const asset of result.assets.slice(0, remaining)) {
+        added.push(await saveCopy(
+          asset.uri,
+          getImageFileName(asset, 'Image'),
+          asset.mimeType || 'image/jpeg',
+          'image',
+          { width: asset.width, height: asset.height },
+        ));
+      }
     } catch (error) {
       Alert.alert('Could not attach image', error instanceof Error ? error.message : 'Try again.');
     } finally {
+      if (added.length) {
+        if (onAddAttachment) added.forEach(onAddAttachment);
+        else onChange?.([...attachments, ...added]);
+      }
       setBusy(false);
     }
   }
 
   async function takePhoto() {
+    if (attachments.length >= STEP_DETAIL_ATTACHMENT_MAX_COUNT) {
+      Alert.alert('Attachment limit reached', `You can attach up to ${STEP_DETAIL_ATTACHMENT_MAX_COUNT} files to this detail.`);
+      return;
+    }
     try {
+      setBusy(true);
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
         Alert.alert('Camera access needed', 'Allow camera access in system settings to take a photo for this step.', [
@@ -130,7 +149,6 @@ export function StepDetailAttachments({
         ]);
         return;
       }
-      setBusy(true);
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: false });
       if (result.canceled) return;
       const asset = result.assets[0];
@@ -151,17 +169,30 @@ export function StepDetailAttachments({
   }
 
   async function addDocument() {
+    const remaining = STEP_DETAIL_ATTACHMENT_MAX_COUNT - attachments.length;
+    if (remaining <= 0) {
+      Alert.alert('Attachment limit reached', `You can attach up to ${STEP_DETAIL_ATTACHMENT_MAX_COUNT} files to this detail.`);
+      return;
+    }
+    const added: StepDetailAttachment[] = [];
+    setBusy(true);
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
       if (result.canceled) return;
-      setBusy(true);
-      const asset = result.assets[0];
-      const file = await saveCopy(asset.uri, asset.name, asset.mimeType || 'application/octet-stream', 'document');
-      if (onAddAttachment) onAddAttachment(file);
-      else onChange?.([...attachments, file]);
+      for (const asset of result.assets.slice(0, remaining)) {
+        added.push(await saveCopy(asset.uri, asset.name, asset.mimeType || 'application/octet-stream', 'document'));
+      }
     } catch (error) {
       Alert.alert('Could not attach document', error instanceof Error ? error.message : 'Try again.');
     } finally {
+      if (added.length) {
+        if (onAddAttachment) added.forEach(onAddAttachment);
+        else onChange?.([...attachments, ...added]);
+      }
       setBusy(false);
     }
   }
@@ -206,18 +237,18 @@ export function StepDetailAttachments({
       {onChange || onAddAttachment ? (
         <View style={styles.actions}>
           {Platform.OS !== 'web' ? (
-            <Pressable accessibilityRole="button" accessibilityLabel="Take a photo" testID={`${testID}-take-photo`} disabled={disabled || busy}
+            <Pressable accessibilityRole="button" accessibilityLabel="Take a photo" testID={`${testID}-take-photo`} disabled={disabled || busy || attachments.length >= STEP_DETAIL_ATTACHMENT_MAX_COUNT}
               onPress={() => void takePhoto()} style={[styles.addButton, { borderColor: colors.border }]}>
               <Ionicons name="camera-outline" size={16} color={colors.primary} /><Text style={[styles.addText, { color: colors.primary }]}>Camera</Text>
             </Pressable>
           ) : null}
-          <Pressable accessibilityRole="button" accessibilityLabel="Attach an image" testID={`${testID}-add-image`} disabled={disabled || busy}
+          <Pressable accessibilityRole="button" accessibilityLabel="Attach images" testID={`${testID}-add-image`} disabled={disabled || busy || attachments.length >= STEP_DETAIL_ATTACHMENT_MAX_COUNT}
             onPress={() => void addImage()} style={[styles.addButton, { borderColor: colors.border }]}>
-            <Ionicons name="image-outline" size={16} color={colors.primary} /><Text style={[styles.addText, { color: colors.primary }]}>Image</Text>
+            <Ionicons name="image-outline" size={16} color={colors.primary} /><Text style={[styles.addText, { color: colors.primary }]}>Images</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Attach a document" testID={`${testID}-add-document`} disabled={disabled || busy}
+          <Pressable accessibilityRole="button" accessibilityLabel="Attach documents" testID={`${testID}-add-document`} disabled={disabled || busy || attachments.length >= STEP_DETAIL_ATTACHMENT_MAX_COUNT}
             onPress={() => void addDocument()} style={[styles.addButton, { borderColor: colors.border }]}>
-            <Ionicons name="document-attach-outline" size={16} color={colors.primary} /><Text style={[styles.addText, { color: colors.primary }]}>Document</Text>
+            <Ionicons name="document-attach-outline" size={16} color={colors.primary} /><Text style={[styles.addText, { color: colors.primary }]}>Documents</Text>
           </Pressable>
         </View>
       ) : null}

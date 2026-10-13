@@ -353,6 +353,13 @@ export default function RoutineDetailScreen() {
             linkColor={colors.accent}
             backgroundColor={colors.hero}
           />
+          {currentRoutine.descriptionAttachments?.length ? (
+            <StepDetailAttachments
+              attachments={currentRoutine.descriptionAttachments}
+              testID="routine-description-images-preview"
+              label="Description attachments"
+            />
+          ) : null}
           {currentRoutine.category ? (
             <Text style={[styles.heroCategory, { color: colors.heroForeground }]}>{currentRoutine.category}</Text>
           ) : null}

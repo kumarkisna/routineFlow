@@ -74,13 +74,21 @@ function createAdapters(
 
 test('removes orphaned local attachment copies across all profiles but keeps shared copies and backup bytes', async () => {
   const sharedUri = `${attachmentDirectory}shared.pdf`;
+  const descriptionImageUri = `${attachmentDirectory}description.png`;
   const orphanUri = `${attachmentDirectory}orphan.pdf`;
-  const rawRoutine = JSON.stringify([routine(sharedUri, 'YmFja3VwLWNvbnRlbnQ=')]);
+  const routineWithDescriptionImage = {
+    ...routine(sharedUri, 'YmFja3VwLWNvbnRlbnQ='),
+    descriptionAttachments: [{
+      id: 'description-image', name: 'routine.png', uri: descriptionImageUri,
+      mimeType: 'image/png', kind: 'image', contentBase64: 'aW1hZ2UtYnl0ZXM=',
+    }],
+  };
+  const rawRoutine = JSON.stringify([routineWithDescriptionImage]);
   const adapters = createAdapters([
     [PEOPLE_KEY, peopleRegistry(['me', 'person-2'])],
     [PERSON_DATA_KEYS.routines, rawRoutine],
     [personStorageKey('person-2', PERSON_DATA_KEYS.routines), JSON.stringify([routine(sharedUri)])],
-  ], ['shared.pdf', 'orphan.pdf'], { 'shared.pdf': 1200, 'orphan.pdf': 845 });
+  ], ['shared.pdf', 'description.png', 'orphan.pdf'], { 'shared.pdf': 1200, 'description.png': 300, 'orphan.pdf': 845 });
 
   const removed = await cleanupOrphanedStepDetailAttachmentCopies(
     directory, adapters.storage, adapters.fileSystem,
@@ -90,6 +98,32 @@ test('removes orphaned local attachment copies across all profiles but keeps sha
   assert.deepEqual(adapters.deleted, [orphanUri]);
   assert.equal(adapters.values.get(PERSON_DATA_KEYS.routines), rawRoutine);
   assert.match(adapters.values.get(PERSON_DATA_KEYS.routines)!, /YmFja3VwLWNvbnRlbnQ=/);
+});
+
+test('removes a description attachment file only after its saved reference is removed', async () => {
+  const descriptionUri = `${attachmentDirectory}description.png`;
+  const attachedRoutine = {
+    ...routine('description'),
+    descriptionAttachments: [{
+      id: 'description-image',
+      name: 'description.png',
+      uri: descriptionUri,
+      mimeType: 'image/png',
+      kind: 'image',
+      contentBase64: 'aW1hZ2U=',
+    }],
+  };
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([attachedRoutine])],
+  ], ['description.png']);
+
+  await cleanupOrphanedStepDetailAttachmentCopies(directory, adapters.storage, adapters.fileSystem);
+  assert.deepEqual(adapters.deleted, []);
+
+  adapters.values.set(PERSON_DATA_KEYS.routines, JSON.stringify([routine('description')]));
+  await cleanupOrphanedStepDetailAttachmentCopies(directory, adapters.storage, adapters.fileSystem);
+  assert.deepEqual(adapters.deleted, [descriptionUri]);
 });
 
 test('marks the size estimate unavailable when a removed file has no reported size', async () => {
@@ -204,6 +238,37 @@ test('restores an attachment when a routine save waits for its in-flight cleanup
   assert.equal(fileExists, true);
   assert.equal(savedContents, contentBase64);
   assert.match(adapters.values.get(PERSON_DATA_KEYS.routines)!, /in-flight\.pdf/);
+});
+
+test('restores a missing routine description image from its embedded backup bytes', async () => {
+  const uri = `${attachmentDirectory}description.png`;
+  let contents = '';
+  let exists = false;
+  const descriptionImage: NonNullable<Routine['descriptionAttachments']>[number] = {
+    id: 'description-image',
+    name: 'routine.png',
+    uri,
+    mimeType: 'image/png',
+    kind: 'image',
+    contentBase64: 'aW1hZ2UtYnl0ZXM=',
+  };
+
+  await saveRoutinesWithStepDetailAttachments(
+    [{ ...routine('with-image'), descriptionAttachments: [descriptionImage] }],
+    async () => {
+      assert.equal(exists, true);
+      assert.equal(contents, descriptionImage.contentBase64);
+    },
+    directory,
+    {
+      getInfoAsync: async () => ({ exists }),
+      makeDirectoryAsync: async () => {},
+      writeAsStringAsync: async (_uri, value) => {
+        exists = true;
+        contents = value;
+      },
+    },
+  );
 });
 
 test('stops later deletions if routine data becomes unreadable during cleanup', async () => {

@@ -1,4 +1,4 @@
-import { getStepSeconds, isCompleted, type CompletionMap, type Routine, type RoutineStep, type RoutineTone } from '@/types/routines';
+import { getStepSeconds, isCompleted, STEP_DETAIL_ATTACHMENT_MAX_COUNT, type CompletionMap, type Routine, type RoutineStep, type RoutineTone } from '@/types/routines';
 import { MAX_CATEGORY_LENGTH, categoryKey } from '@/lib/routineCategories';
 import { detachedHistoryId, progressRoutineIds, splitProgressKey } from '@/lib/historyIdentity';
 import { parsePlaylists, type RoutinePlaylist } from './playlists';
@@ -87,7 +87,7 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     !Array.isArray(value.detailAttachments)
     || value.detailAttachments.length !== detailCount
     || value.detailAttachments.some(group => {
-      if (!Array.isArray(group) || group.length > 20) return true;
+      if (!Array.isArray(group) || group.length > STEP_DETAIL_ATTACHMENT_MAX_COUNT) return true;
       return group.some(attachment => !isRecord(attachment) || !isId(attachment.id)
         || !isText(attachment.name) || attachment.name.length > 240
         || !isText(attachment.mimeType) || attachment.mimeType.length > 160
@@ -107,6 +107,15 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
   }
   if (value.speakSubtitle !== undefined && typeof value.speakSubtitle !== 'boolean') {
     throw new Error(`${label} has an invalid description speech setting.`);
+  }
+  if (value.descriptionAttachments !== undefined &&
+      (!Array.isArray(value.descriptionAttachments) || value.descriptionAttachments.length > STEP_DETAIL_ATTACHMENT_MAX_COUNT
+        || value.descriptionAttachments.some(attachment => !isRecord(attachment)
+          || !isId(attachment.id) || !isText(attachment.name) || attachment.name.length > 240
+          || !isText(attachment.mimeType) || attachment.mimeType.length > 160
+          || typeof attachment.contentBase64 !== 'string' || attachment.contentBase64.length > 2_800_000
+          || !['image', 'document'].includes(String(attachment.kind))))) {
+    throw new Error(`${label} has invalid description attachments.`);
   }
   if (value.speakDetails !== undefined && typeof value.speakDetails !== 'boolean') {
     throw new Error(`${label} has an invalid spoken-details setting.`);
@@ -167,6 +176,8 @@ function parseRoutine(value: unknown, index: number): Routine {
     subtitle: value.subtitle,
     ...(value.subtitleHtml !== undefined ? { subtitleHtml: value.subtitleHtml as string } : {}),
     ...(value.speakSubtitle !== undefined ? { speakSubtitle: value.speakSubtitle as boolean } : {}),
+    ...(value.descriptionAttachments !== undefined
+      ? { descriptionAttachments: [...(value.descriptionAttachments as NonNullable<Routine['descriptionAttachments']>)] } : {}),
     ...(value.category !== undefined ? { category: (value.category as string).trim() } : {}),
     ...(skillIds !== undefined ? { skillIds } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden } : {}),

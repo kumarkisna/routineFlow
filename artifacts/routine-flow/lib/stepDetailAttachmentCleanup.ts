@@ -352,6 +352,20 @@ function collectReferencedAttachmentUris(routines: unknown): Set<string> {
     if (!isRecord(routine) || !Array.isArray(routine.steps)) {
       throw new Error('A saved routine could not be checked for attachments.');
     }
+    if (routine.descriptionAttachments !== undefined) {
+      if (!Array.isArray(routine.descriptionAttachments)) {
+        throw new Error('Saved routine description attachments could not be checked safely.');
+      }
+      for (const attachment of routine.descriptionAttachments) {
+        if (!isRecord(attachment)) throw new Error('A saved description attachment could not be checked safely.');
+        if (attachment.uri !== undefined) {
+          if (typeof attachment.uri !== 'string') {
+            throw new Error('A saved description attachment path could not be checked safely.');
+          }
+          uris.add(attachment.uri);
+        }
+      }
+    }
     for (const step of routine.steps) {
       if (!isRecord(step)) throw new Error('A saved routine step could not be checked for attachments.');
       if (step.detailAttachments === undefined) continue;
@@ -480,6 +494,16 @@ export function saveRoutinesWithStepDetailAttachments<T>(
       : null;
 
     for (const routine of routines) {
+      for (const attachment of routine.descriptionAttachments ?? []) {
+        const uri = attachment.uri;
+        if (!uri || !attachmentDirectory || !uri.startsWith(attachmentDirectory)) continue;
+        const fileName = uri.slice(attachmentDirectory.length);
+        if (!fileName || fileName === '.' || fileName === '..' || /[/\\]/.test(fileName)) continue;
+        const info = await fileSystem.getInfoAsync(uri);
+        if (info.exists) continue;
+        await fileSystem.makeDirectoryAsync(attachmentDirectory, { intermediates: true });
+        await fileSystem.writeAsStringAsync(uri, attachment.contentBase64, { encoding: 'base64' });
+      }
       for (const step of routine.steps) {
         for (const group of step.detailAttachments ?? []) {
           for (const attachment of group) {

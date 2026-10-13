@@ -1,5 +1,6 @@
 export type RoutineTone = 'coral' | 'sage' | 'lavender' | 'sun';
 export const STEP_DETAIL_ATTACHMENT_MAX_BYTES = 2_000_000;
+export const STEP_DETAIL_ATTACHMENT_MAX_COUNT = 20;
 export type StepDetailAttachment = { id: string; name: string; uri?: string; mimeType: string; kind: 'image' | 'document'; contentBase64: string };
 
 export type RoutineStep = {
@@ -36,6 +37,8 @@ export type Routine = {
   subtitleHtml?: string;
   /** Routine descriptions are spoken by default, matching step-detail speech defaults. */
   speakSubtitle?: boolean;
+  /** Optional images attached to the routine description. */
+  descriptionAttachments?: StepDetailAttachment[];
   /** Optional links to reusable, person-specific skills. */
   skillIds?: string[];
   /** Hidden routines remain saved but are omitted from the main list and progress. */

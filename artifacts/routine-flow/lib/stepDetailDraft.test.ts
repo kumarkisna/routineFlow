@@ -100,17 +100,22 @@ test('editing a step appends files to the selected detail and preserves them aft
     id: 'document-1', name: 'guide.pdf', uri: 'file:///old/guide.pdf',
     mimeType: 'application/pdf', kind: 'document' as const, contentBase64: 'JVBERi0=',
   };
+  const secondPhoto = {
+    id: 'photo-2', name: 'after.png', uri: 'file:///old/after.png',
+    mimeType: 'image/png', kind: 'image' as const, contentBase64: 'c2Vjb25kLWltYWdl',
+  };
   const originalStep: RoutineStep = {
     id: 'practice', title: 'Practice', description: 'Read the note',
     additionalDetails: ['Open the guide'], detailAttachments: [[photo], []], durationSeconds: 60,
   };
   let draft = createStepDetailDraft(originalStep);
-  draft = addStepDetailAttachment(draft, 1, document);
+  draft = addStepDetailAttachment(draft, 0, document);
+  draft = addStepDetailAttachment(draft, 0, secondPhoto);
   const updatedStep = { ...originalStep, ...buildStepDetailFields(draft) };
   const reopened = createStepDetailDraft(updatedStep);
-  assert.deepEqual(updatedStep.detailAttachments, [[photo], [document]]);
-  assert.deepEqual(reopened.detailAttachments, [[photo], [document]]);
-  assert.equal(reopened.detailAttachments[1][0].contentBase64, 'JVBERi0=');
+  assert.deepEqual(updatedStep.detailAttachments, [[photo, document, secondPhoto], []]);
+  assert.deepEqual(reopened.detailAttachments, [[photo, document, secondPhoto], []]);
+  assert.equal(reopened.detailAttachments[0][1].contentBase64, 'JVBERi0=');
 });
 
 test('step speech choices stay with their details when the routine is reordered and reopened', () => {

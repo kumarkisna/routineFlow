@@ -240,6 +240,13 @@ test('routine backups retain rich step details and attachment bytes', () => {
   source.subtitle = 'Start well and take your time.';
   source.subtitleHtml = '<h2>Start well</h2><p>Take your time.</p>';
   source.speakSubtitle = false;
+  source.descriptionAttachments = [{
+    id: 'description-image', name: 'routine.png', uri: 'file:///old-device/routine.png',
+    mimeType: 'image/png', kind: 'image', contentBase64: 'cm91dGluZS1waG90bw==',
+  }, {
+    id: 'description-document', name: 'reference.pdf', uri: 'file:///old-device/reference.pdf',
+    mimeType: 'application/pdf', kind: 'document', contentBase64: 'cGRmLWJ5dGVz',
+  }];
   source.steps[0].description = 'Drink water slowly.';
   source.steps[0].additionalDetails = ['Use the glass marked “water”.'];
   source.steps[0].detailSpeech = [true, false];
@@ -254,6 +261,7 @@ test('routine backups retain rich step details and attachment bytes', () => {
   const restored = parseRoutinesFile(serializeRoutines([source])).routines[0];
   assert.equal(restored.subtitleHtml, source.subtitleHtml);
   assert.equal(restored.speakSubtitle, false);
+  assert.deepEqual(restored.descriptionAttachments, source.descriptionAttachments);
   assert.equal(restored.steps[0].description, source.steps[0].description);
   assert.deepEqual(restored.steps[0].additionalDetails, source.steps[0].additionalDetails);
   assert.deepEqual(restored.steps[0].detailSpeech, source.steps[0].detailSpeech);

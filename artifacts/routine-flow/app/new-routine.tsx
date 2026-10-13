@@ -61,6 +61,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
   const [subtitleHtml, setSubtitleHtml] = useState(editingRoutine?.subtitleHtml ?? '');
   const [speakSubtitle, setSpeakSubtitle] = useState(editingRoutine?.speakSubtitle ?? true);
+  const [descriptionAttachments, setDescriptionAttachments] = useState(editingRoutine?.descriptionAttachments ?? []);
   const [category, setCategory] = useState(editingRoutine?.category ?? '');
   const [stepDraft, setStepDraft] = useState('');
   const [stepDetailDraft, setStepDetailDraft] = useState<StepDetailDraft>(createEmptyStepDetailDraft);
@@ -220,10 +221,10 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
         ...(step.skillIds ? { skillIds: step.skillIds.filter(id => availableSkills.has(id)) } : {}),
       }));
       if (editingRoutine) {
-        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle);
+        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments);
         router.back();
       } else {
-        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle);
+        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments);
         router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -307,6 +308,14 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             setSubtitle(text);
             setSubtitleHtml(html);
           }}
+        />
+        <StepDetailAttachments
+          attachments={descriptionAttachments}
+          onAddAttachment={attachment => setDescriptionAttachments(current => [...current, attachment])}
+          onRemoveAttachment={id => setDescriptionAttachments(current => current.filter(attachment => attachment.id !== id))}
+          disabled={saving}
+          testID="routine-description-attachments"
+          label="Files in routine description"
         />
         <View style={[styles.speechPreference, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <View style={styles.speechPreferenceText}>
