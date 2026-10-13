@@ -112,6 +112,62 @@ test('does not delete files when any saved routine data cannot be inspected safe
   assert.deepEqual(adapters.deleted, []);
 });
 
+test('keeps a file when a routine starts referencing it during cleanup', async () => {
+  const attachedUri = `${attachmentDirectory}newly-attached.pdf`;
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], ['newly-attached.pdf']);
+  let resumeMetadataRead!: () => void;
+  let signalMetadataRead!: () => void;
+  const metadataReadStarted = new Promise<void>(resolve => { signalMetadataRead = resolve; });
+  const allowMetadataRead = new Promise<void>(resolve => { resumeMetadataRead = resolve; });
+  adapters.fileSystem.getInfoAsync = async () => {
+    signalMetadataRead();
+    await allowMetadataRead;
+    return { exists: true, isDirectory: false, size: 500 };
+  };
+
+  const cleanup = cleanupOrphanedStepDetailAttachmentCopies(
+    directory, adapters.storage, adapters.fileSystem,
+  );
+  await metadataReadStarted;
+  // This represents a routine save completing while cleanup is between its
+  // initial reference scan and the actual file deletion.
+  adapters.values.set(PERSON_DATA_KEYS.routines, JSON.stringify([routine(attachedUri)]));
+  resumeMetadataRead();
+
+  assert.deepEqual(await cleanup, { removedCount: 0, estimatedBytes: 0 });
+  assert.deepEqual(adapters.deleted, []);
+});
+
+test('stops later deletions if routine data becomes unreadable during cleanup', async () => {
+  const firstUri = `${attachmentDirectory}first-orphan.pdf`;
+  const secondUri = `${attachmentDirectory}second-orphan.pdf`;
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], ['first-orphan.pdf', 'second-orphan.pdf'], {
+    'first-orphan.pdf': 125,
+    'second-orphan.pdf': 250,
+  });
+  adapters.fileSystem.deleteAsync = async uri => {
+    adapters.deleted.push(uri);
+    if (uri === firstUri) adapters.values.set(PERSON_DATA_KEYS.routines, '{invalid json');
+  };
+
+  await assert.rejects(
+    cleanupOrphanedStepDetailAttachmentCopies(directory, adapters.storage, adapters.fileSystem),
+    error => {
+      assert.ok(error instanceof StepDetailAttachmentCleanupError);
+      assert.deepEqual(error.partialResult, { removedCount: 1, estimatedBytes: 125 });
+      return true;
+    },
+  );
+  assert.deepEqual(adapters.deleted, [firstUri]);
+  assert.ok(!adapters.deleted.includes(secondUri));
+});
+
 test('reports failed file removals after still cleaning other orphaned files', async () => {
   const adapters = createAdapters([
     [PEOPLE_KEY, peopleRegistry(['me'])],

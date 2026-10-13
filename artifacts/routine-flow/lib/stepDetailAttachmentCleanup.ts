@@ -128,20 +128,7 @@ function collectReferencedAttachmentUris(routines: unknown): Set<string> {
   return uris;
 }
 
-/**
- * Delete only unreferenced files in the app-managed attachment directory.
- * The routine records (including embedded backup bytes) are never modified.
- * If any saved routine data cannot be inspected, fail closed and delete nothing.
- */
-export async function cleanupOrphanedStepDetailAttachmentCopies(
-  documentDirectory: string | null | undefined,
-  storage: CleanupStorage,
-  fileSystem: CleanupFileSystem,
-): Promise<StepDetailAttachmentCleanupResult> {
-  if (!documentDirectory) throw new Error('App file storage is unavailable.');
-  const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
-  const attachmentDirectory = `${documentRoot}step-detail-attachments/`;
-
+async function readReferencedAttachmentUris(storage: CleanupStorage): Promise<Set<string>> {
   const allKeys = await storage.getAllKeys();
   const keysToRead = allKeys.filter(key => key === PEOPLE_KEY
     || key === ROUTINES_KEY || PERSON_ROUTINES_KEY.test(key));
@@ -163,6 +150,24 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
     const routines: unknown = JSON.parse(serialized);
     for (const uri of collectReferencedAttachmentUris(routines)) referencedUris.add(uri);
   }
+  return referencedUris;
+}
+
+/**
+ * Delete only unreferenced files in the app-managed attachment directory.
+ * The routine records (including embedded backup bytes) are never modified.
+ * If any saved routine data cannot be inspected, fail closed and delete nothing.
+ */
+export async function cleanupOrphanedStepDetailAttachmentCopies(
+  documentDirectory: string | null | undefined,
+  storage: CleanupStorage,
+  fileSystem: CleanupFileSystem,
+): Promise<StepDetailAttachmentCleanupResult> {
+  if (!documentDirectory) throw new Error('App file storage is unavailable.');
+  const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
+  const attachmentDirectory = `${documentRoot}step-detail-attachments/`;
+
+  const referencedUris = await readReferencedAttachmentUris(storage);
 
   const fileNames = await fileSystem.readDirectoryAsync(attachmentDirectory);
   let removedCount = 0;
@@ -173,9 +178,36 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
     if (!fileName || fileName === '.' || fileName === '..' || /[/\\]/.test(fileName)) continue;
     const uri = `${attachmentDirectory}${fileName}`;
     if (referencedUris.has(uri)) continue;
+    let info: { exists: boolean; isDirectory: boolean; size?: number };
     try {
-      const info = await fileSystem.getInfoAsync(uri);
-      if (!info.exists || info.isDirectory) continue;
+      info = await fileSystem.getInfoAsync(uri);
+    } catch {
+      failed = true;
+      continue;
+    }
+    if (!info.exists || info.isDirectory) continue;
+    // A routine may have saved this attachment since the initial scan (or
+    // while the file metadata was being read). Re-check immediately before
+    // deletion so cleanup never acts on a stale orphan decision. Keep this
+    // outside the best-effort file-operation catch: unreadable routine data
+    // must stop cleanup instead of being treated as a per-file failure.
+    let latestReferences: Set<string>;
+    try {
+      latestReferences = await readReferencedAttachmentUris(storage);
+    } catch (error) {
+      throw new StepDetailAttachmentCleanupError(
+        error instanceof Error ? error.message : 'Saved routines could not be checked safely.',
+        {
+          removedCount,
+          estimatedBytes: hasAllSizes ? estimatedBytes : null,
+        },
+      );
+    }
+    if (latestReferences.has(uri)) {
+      referencedUris.add(uri);
+      continue;
+    }
+    try {
       await fileSystem.deleteAsync(uri, { idempotent: true });
       removedCount += 1;
       if (typeof info.size === 'number' && Number.isFinite(info.size) && info.size >= 0) {
