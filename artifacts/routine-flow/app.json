@@ -29,7 +29,7 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Allow Routine Flow to take photos for routine step details."
+          "cameraPermission": "Allow Routine Flow to take photos for routine steps and your app background."
         }
       ],
       "@react-native-community/datetimepicker"

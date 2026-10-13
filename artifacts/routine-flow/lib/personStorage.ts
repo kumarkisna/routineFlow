@@ -10,6 +10,7 @@ export const PERSON_DATA_KEYS = {
   skills: '@routine-flow/skills',
   skillRatingWindow: '@routine-flow/skill-rating-window',
   appearance: '@routine-flow/appearance',
+  backgroundImage: '@routine-flow/background-image',
 } as const;
 
 export function personStorageKey(personId: string, key: string) {

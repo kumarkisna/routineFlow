@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { SpeechVoicePreference } from '@/components/SpeechVoicePreference';
@@ -11,6 +11,9 @@ import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { useAppearance } from '@/context/AppearanceContext';
 import { APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, type ThemeGroup } from '@/lib/appThemes';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { createPersonStorage, PERSON_DATA_KEYS } from '@/lib/personStorage';
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
 import type { RoutineNotificationSettings } from '@/types/routines';
@@ -22,8 +25,9 @@ export default function PeopleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { people, activePerson, busy, notice, addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, loadPersonTheme, savePersonTheme } = usePeople();
-  const { theme, loading: appearanceLoading, selectTheme } = useAppearance();
+  const { theme, loading: appearanceLoading, selectTheme, backgroundImage, setBackgroundImage } = useAppearance();
   const themeDisclosure = usePersistentDisclosure('person-theme-settings', activePerson.id, false);
+  const backgroundDisclosure = usePersistentDisclosure('person-background-settings', activePerson.id, false);
   const [name, setName] = React.useState('');
   const [newPersonPlaylistRatingDefault, setNewPersonPlaylistRatingDefault] = React.useState(true);
   const [newPersonSpeakRoutineDescription, setNewPersonSpeakRoutineDescription] = React.useState(true);
@@ -43,6 +47,11 @@ export default function PeopleScreen() {
   const [themeGroup, setThemeGroup] = React.useState<ThemeGroup | 'All'>('All');
   const [themeScheme, setThemeScheme] = React.useState<'all' | 'light' | 'dark'>('all');
   const [themeError, setThemeError] = React.useState('');
+  const [personBackgrounds, setPersonBackgrounds] = React.useState<Record<string, string | null>>({});
+  const [backgroundLoadingId, setBackgroundLoadingId] = React.useState<string | null>(null);
+  const [backgroundSavingId, setBackgroundSavingId] = React.useState<string | null>(null);
+  const [backgroundError, setBackgroundError] = React.useState('');
+  const [backgroundNotice, setBackgroundNotice] = React.useState('');
   const [editingSpeechVoiceId, setEditingSpeechVoiceId] = React.useState<string | null>(null);
   const [editingReminderSettings, setEditingReminderSettings] = React.useState<RoutineNotificationSettings>(
     { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
@@ -95,6 +104,90 @@ export default function PeopleScreen() {
       setThemeError(msg(e, 'Could not save this theme.'));
     } finally {
       setThemeSavingId(null);
+    }
+  }
+
+  async function togglePersonBackground(personId: string) {
+    const opening = !backgroundDisclosure.isExpanded(personId);
+    backgroundDisclosure.toggle(personId);
+    setBackgroundError('');
+    if (opening && !(personId in personBackgrounds)) {
+      setBackgroundLoadingId(personId);
+      try {
+        const uri = await createPersonStorage(personId).getItem(PERSON_DATA_KEYS.backgroundImage);
+        setPersonBackgrounds(current => ({ ...current, [personId]: uri }));
+      } catch (e) {
+        setBackgroundError(msg(e, 'Could not load this person’s background photo.'));
+      } finally {
+        setBackgroundLoadingId(null);
+      }
+    }
+  }
+
+  async function saveBackgroundAsset(personId: string, asset: ImagePicker.ImagePickerAsset) {
+    const fit = Math.min(1200 / asset.width, 800 / asset.height, 1);
+    const compressed = await ImageManipulator.manipulateAsync(
+      asset.uri, [{ resize: { width: Math.round(asset.width * fit), height: Math.round(asset.height * fit) } }],
+      { compress: 0.72, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+    );
+    if (!compressed.base64) throw new Error('The selected picture could not be prepared for saving.');
+    const uri = `data:image/jpeg;base64,${compressed.base64}`;
+    await createPersonStorage(personId).setItem(PERSON_DATA_KEYS.backgroundImage, uri);
+    setPersonBackgrounds(current => ({ ...current, [personId]: uri }));
+    if (personId === activePerson.id) await setBackgroundImage(uri);
+    setBackgroundNotice('Background photo saved for this person.');
+    void Haptics.selectionAsync();
+  }
+
+  async function choosePersonBackground(personId: string) {
+    setBackgroundSavingId(personId);
+    setBackgroundError('');
+    setBackgroundNotice('');
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) throw new Error('Allow photo library access to choose a background picture.');
+      const picked = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'], allowsEditing: false, quality: 0.8,
+      });
+      if (picked.canceled || !picked.assets[0]) return;
+      await saveBackgroundAsset(personId, picked.assets[0]);
+    } catch (e) {
+      setBackgroundError(msg(e, 'Could not save this background picture.'));
+    } finally {
+      setBackgroundSavingId(null);
+    }
+  }
+
+  async function takePersonBackgroundPhoto(personId: string) {
+    setBackgroundSavingId(personId);
+    setBackgroundError('');
+    setBackgroundNotice('');
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) throw new Error('Allow camera access to take a background picture.');
+      const captured = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 0.8 });
+      if (captured.canceled || !captured.assets[0]) return;
+      await saveBackgroundAsset(personId, captured.assets[0]);
+    } catch (e) {
+      setBackgroundError(msg(e, 'Could not take or save this background picture.'));
+    } finally {
+      setBackgroundSavingId(null);
+    }
+  }
+
+  async function clearPersonBackground(personId: string) {
+    setBackgroundSavingId(personId);
+    setBackgroundError('');
+    setBackgroundNotice('');
+    try {
+      await createPersonStorage(personId).removeItem(PERSON_DATA_KEYS.backgroundImage);
+      setPersonBackgrounds(current => ({ ...current, [personId]: null }));
+      if (personId === activePerson.id) await setBackgroundImage(null);
+      setBackgroundNotice('No background picture is set for this person.');
+    } catch (e) {
+      setBackgroundError(msg(e, 'Could not remove this background picture.'));
+    } finally {
+      setBackgroundSavingId(null);
     }
   }
 
@@ -434,6 +527,66 @@ export default function PeopleScreen() {
                         </View>
                       ) : null}
                     </View>
+                    <View style={[styles.themeSettings, { borderColor: colors.border }]}>
+                      <Pressable
+                        testID={`person-background-toggle-${p.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${backgroundDisclosure.isExpanded(p.id) ? 'Collapse' : 'Expand'} ${p.name} background photo settings`}
+                        accessibilityState={{ expanded: backgroundDisclosure.isExpanded(p.id) }}
+                        onPress={() => void togglePersonBackground(p.id)}
+                        style={styles.themeSettingsHeading}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.itemText, { color: colors.foreground }]}>App background photo</Text>
+                          <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                            {personBackgrounds[p.id] === undefined ? 'Optional · choose none or a saved photo' : personBackgrounds[p.id] ? 'Photo selected' : 'No photo'}
+                          </Text>
+                        </View>
+                        <Ionicons name={backgroundDisclosure.isExpanded(p.id) ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
+                      </Pressable>
+                      {backgroundDisclosure.isExpanded(p.id) ? (
+                        <View style={{ gap: 8 }}>
+                          <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                            This picture is automatically fitted behind the app for this person. Choose a saved photo or take a new one; it stays on this device.
+                          </Text>
+                          {personBackgrounds[p.id] ? (
+                            <Image source={{ uri: personBackgrounds[p.id] ?? undefined }} resizeMode="cover" style={styles.backgroundPreview} />
+                          ) : null}
+                          {backgroundLoadingId === p.id || backgroundSavingId === p.id ? <ActivityIndicator color={colors.primary} /> : null}
+                          {backgroundError ? <Text accessibilityRole="alert" style={[styles.sub, { color: colors.destructive }]}>{backgroundError}</Text> : null}
+                          {backgroundNotice ? <Text accessibilityLiveRegion="polite" style={[styles.sub, { color: colors.success }]}>{backgroundNotice}</Text> : null}
+                          <View style={styles.backgroundActions}>
+                            <Pressable
+                              testID={`person-background-choose-${p.id}`}
+                              accessibilityRole="button"
+                              disabled={backgroundSavingId === p.id || backgroundLoadingId === p.id || (p.id === activePerson.id && appearanceLoading)}
+                              onPress={() => void choosePersonBackground(p.id)}
+                              style={[styles.backgroundAction, { backgroundColor: colors.primary }]}
+                            >
+                              <Text style={[styles.linkText, { color: colors.primaryForeground }]}>Choose photo</Text>
+                            </Pressable>
+                            <Pressable
+                              testID={`person-background-camera-${p.id}`}
+                              accessibilityRole="button"
+                              disabled={backgroundSavingId === p.id || backgroundLoadingId === p.id || (p.id === activePerson.id && appearanceLoading)}
+                              onPress={() => void takePersonBackgroundPhoto(p.id)}
+                              style={[styles.backgroundAction, { borderColor: colors.border, borderWidth: 1 }]}
+                            >
+                              <Text style={[styles.linkText, { color: colors.foreground }]}>Take photo</Text>
+                            </Pressable>
+                            <Pressable
+                              testID={`person-background-clear-${p.id}`}
+                              accessibilityRole="button"
+                              disabled={backgroundSavingId === p.id || backgroundLoadingId === p.id}
+                              onPress={() => void clearPersonBackground(p.id)}
+                              style={[styles.backgroundAction, { borderColor: colors.border, borderWidth: 1 }]}
+                            >
+                              <Text style={[styles.linkText, { color: colors.foreground }]}>No photo</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      ) : null}
+                    </View>
                     <View style={styles.profileRatingSetting}>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.itemText, { color: colors.foreground }]}>Ask for skill ratings at playlist end</Text>
@@ -689,6 +842,9 @@ const styles = StyleSheet.create({
   themeChoice: { width: '48%', minHeight: 52, borderWidth: 1, borderRadius: 12, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
   themeSwatch: { width: 15, height: 15, borderRadius: 8 },
   themeChoiceName: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  backgroundPreview: { width: '100%', height: 120, borderRadius: 12 },
+  backgroundActions: { flexDirection: 'row', gap: 8 },
+  backgroundAction: { minHeight: 40, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   profileRatingSetting: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 12 },
   reminderDefaults: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 8 },
   reminderDefaultsCopy: { gap: 3, paddingBottom: 2 },

@@ -9,6 +9,12 @@ People are local profiles, with default “Me.” A selected person owns their r
 
 **How to apply:** Scope future saved preferences and data to the active person. Preserve existing data as Me without a destructive migration. Profile switching must not expose another person’s in-memory run or editing state.
 
+Theme selection belongs in each person’s expandable settings, with every theme available and group/light-dark filters; the separate Themes bottom tab is removed. Each person may also choose an optional app background photo or take one with the camera, and can clear it to return to no photo.
+
+**Why:** The user asked to manage appearance within the person’s settings and to be able to leave the app background unset.
+
+**How to apply:** Keep theme, background-photo data, and disclosure state scoped to each local profile. Fit a chosen image to app screens automatically. Do not require a background photo; “No photo” must always work as an explicit choice.
+
 Speech voice choice is person-specific. New profiles use the device default, all-profile backups preserve each selection, and an unavailable voice falls back to the current device default.
 
 **Why:** The user approved a voice selector in person settings rather than one global choice and confirmed it works.

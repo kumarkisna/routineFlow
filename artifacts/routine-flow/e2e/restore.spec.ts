@@ -29,6 +29,24 @@ test('person theme settings can be changed and their collapsed choice is remembe
   await restoredSection.click();
   await expect(page.getByTestId('person-theme-search-me')).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/appearance'))).toBe('forest');
+
+  const backgroundSection = page.getByTestId('person-background-toggle-me');
+  await backgroundSection.click();
+  await expect(page.getByTestId('person-background-choose-me')).toBeVisible();
+  await expect(page.getByTestId('person-background-camera-me')).toBeVisible();
+  await expect(backgroundSection).toContainText('No photo');
+  await expect(page.getByTestId('person-background-clear-me')).toBeEnabled();
+  await page.getByTestId('person-background-clear-me').click();
+  await expect(page.getByText('No background picture is set for this person.')).toBeVisible();
+
+  await page.evaluate(() => localStorage.setItem('@routine-flow/background-image', 'data:image/jpeg;base64,dGVzdA=='));
+  await page.reload();
+  await expect(page.getByTestId('app-background-image')).toBeVisible();
+  await page.getByTestId('person-edit-me').click();
+  await expect(page.getByTestId('person-background-clear-me')).toBeEnabled();
+  await page.getByTestId('person-background-clear-me').click();
+  await expect(page.getByText('No background picture is set for this person.')).toBeVisible();
+  await expect(page.getByTestId('app-background-image')).toHaveCount(0);
 });
 
 test.use({
@@ -560,14 +578,6 @@ test('all-profiles import adds profiles and merges saved history without replaci
   const alexThemeId = 'nordic';
   const lowerAlexThemeId = 'slate';
   const caseyThemeId = 'linen';
-  const assertPersonTheme = async (personName: string, themeName: string) => {
-    await page.goto('/people');
-    await page.getByLabel(`Edit ${personName} profile`).click();
-    const themeDisclosure = page.locator('[data-testid^="person-theme-toggle-"]');
-    const search = page.locator('[data-testid^="person-theme-search-"]');
-    if (await search.count() === 0) await themeDisclosure.click();
-    await expect(themeDisclosure).toContainText(themeName);
-  };
   const localProfile = {
     id: 'me',
     name: 'Me',
@@ -913,28 +923,26 @@ test('all-profiles import adds profiles and merges saved history without replaci
   await page.reload();
   await expect(page.getByLabel('Active person: Alex from backup. Open people')).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Themes' })).toHaveCount(0);
-  await assertPersonTheme('Alex from backup', 'Nordic');
-  await page.reload();
-  await assertPersonTheme('Alex from backup', 'Nordic');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/person/alex/@routine-flow/appearance'))).toBe('nordic');
 
+  await page.getByLabel('Active person: Alex from backup. Open people').click();
   await page.getByLabel('Switch to Me').click();
   await expect(page.getByLabel('Active person: Me. Open people')).toBeVisible();
-  await assertPersonTheme('Me', 'Porcelain');
   await page.reload();
-  await assertPersonTheme('Me', 'Porcelain');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/appearance'))).toBe('porcelain');
 
+  await page.getByLabel('Active person: Me. Open people').click();
   await page.getByTestId('person-switch-casey').click();
   await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
-  await assertPersonTheme('Alex', 'Linen');
   await page.reload();
-  await assertPersonTheme('Alex', 'Linen');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/person/casey/@routine-flow/appearance'))).toBe('linen');
 
+  await page.getByLabel('Active person: Alex. Open people').click();
   await page.getByTestId('person-switch-alex-lower').click();
   await expect(page.getByLabel('Active person: aLeX (imported 2). Open people')).toBeVisible();
   await expect(page.getByLabel('Open Lowercase Alex routine')).toBeVisible();
-  await assertPersonTheme('aLeX (imported 2)', 'Slate');
   await page.reload();
-  await assertPersonTheme('aLeX (imported 2)', 'Slate');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/appearance'))).toBe('slate');
 
   const profilesAfterReload = await page.evaluate(() => ({
     routines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),

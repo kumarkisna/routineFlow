@@ -1,10 +1,12 @@
 import { usePersonStorage } from '@/context/PeopleContext';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Appearance, Platform } from 'react-native';
+import { Image, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme, saveThemePreference, type AppTheme } from '@/lib/appThemes';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
+import { PERSON_DATA_KEYS } from '@/lib/personStorage';
 
 const KEY = '@routine-flow/appearance';
 type AppearanceContextValue = {
@@ -13,22 +15,28 @@ type AppearanceContextValue = {
   saving: boolean;
   error: string;
   selectTheme: (id: string) => Promise<void>;
+  backgroundImage: string | null;
+  setBackgroundImage: (image: string | null) => Promise<void>;
 };
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
 
 export function AppearanceProvider({ children }: { children: React.ReactNode }) {
   const AsyncStorage = usePersonStorage();
   const [theme, setTheme] = useState<AppTheme>(APP_THEMES[0]);
+  const [backgroundImage, setBackgroundImageState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const runWrite = useRef(createRoutineWriteGuard()).current;
   useEffect(() => {
     let active = true;
-    void AsyncStorage.getItem(KEY).then(id => {
+    void Promise.all([AsyncStorage.getItem(KEY), AsyncStorage.getItem(PERSON_DATA_KEYS.backgroundImage)]).then(([id, image]) => {
       const saved = findAppTheme(id ?? DEFAULT_THEME_ID);
       if (!saved) throw new Error('Unknown saved theme');
-      if (active) setTheme(saved);
+      if (active) {
+        setTheme(saved);
+        setBackgroundImageState(image);
+      }
     }).catch(() => {
       if (active) setError('Your saved appearance could not load. Choose a theme to save a new preference.');
     }).finally(() => { if (active) setLoading(false); });
@@ -58,9 +66,27 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       throw new Error(message);
     } finally { setSaving(false); }
   }), [loading, runWrite, AsyncStorage]);
-  return <AppearanceContext.Provider value={{ theme, loading, saving, error, selectTheme }}>
-    <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
-    {children}
+  const saveBackgroundImage = useCallback(async (image: string | null) => {
+    if (loading) throw new Error('Wait for your appearance settings to load.');
+    const previous = backgroundImage;
+    setBackgroundImageState(image);
+    try {
+      if (image === null) await AsyncStorage.removeItem(PERSON_DATA_KEYS.backgroundImage);
+      else await AsyncStorage.setItem(PERSON_DATA_KEYS.backgroundImage, image);
+    } catch {
+      if (await AsyncStorage.getItem(PERSON_DATA_KEYS.backgroundImage) !== image) {
+        setBackgroundImageState(previous);
+        throw new Error('The background photo could not be saved. Your previous setting is still in use.');
+      }
+    }
+  }, [loading, backgroundImage, AsyncStorage]);
+  return <AppearanceContext.Provider value={{ theme, loading, saving, error, selectTheme, backgroundImage, setBackgroundImage: saveBackgroundImage }}>
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      {backgroundImage ? <Image testID="app-background-image" accessibilityLabel="Custom app background photo" source={{ uri: backgroundImage }} resizeMode="cover"
+        style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, opacity: 0.22 }} /> : null}
+      <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
+      {children}
+    </View>
   </AppearanceContext.Provider>;
 }
 
