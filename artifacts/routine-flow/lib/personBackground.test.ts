@@ -112,16 +112,29 @@ test('denied camera permission leaves the selected background untouched and expl
   assert.equal(cameraLaunches, 0);
 });
 
-test('camera capture can be retried and saved after permission is granted', async () => {
+test('camera access changed in settings can be retried without restarting or losing the current photo', async () => {
   let selectedPhoto = 'saved-background-photo';
-  const result = await capturePersonBackground(
-    async () => ({ granted: true, canAskAgain: true }),
-    async () => ({ canceled: false, assets: ['new-photo'] }),
+  let cameraPermission = { granted: false, canAskAgain: false };
+  let cameraLaunches = 0;
+  const capture = () => capturePersonBackground(
+    async () => cameraPermission,
+    async () => {
+      cameraLaunches++;
+      return { canceled: false, assets: ['new-photo'] };
+    },
     async asset => { selectedPhoto = asset; },
   );
 
+  await assert.rejects(capture(), /device settings.*try again/i);
+  assert.equal(selectedPhoto, 'saved-background-photo');
+  assert.equal(cameraLaunches, 0);
+
+  cameraPermission = { granted: true, canAskAgain: true };
+  assert.equal(selectedPhoto, 'saved-background-photo');
+  const result = await capture();
   assert.equal(result, 'saved');
   assert.equal(selectedPhoto, 'new-photo');
+  assert.equal(cameraLaunches, 1);
 });
 
 test('a failed background clear restores the selected photo and can be retried without changing another profile', async () => {
