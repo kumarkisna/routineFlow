@@ -13,26 +13,61 @@ export type StepDetailAttachmentCleanupResult = {
   estimatedBytes: number | null;
 };
 
+export class StepDetailAttachmentCleanupError extends Error {
+  constructor(
+    message: string,
+    readonly partialResult: StepDetailAttachmentCleanupResult,
+  ) {
+    super(message);
+    this.name = 'StepDetailAttachmentCleanupError';
+  }
+}
+
 export type StepDetailAttachmentCleanupStatus = 'running' | 'retry' | 'complete';
+
+function addCleanupResults(
+  previous: StepDetailAttachmentCleanupResult,
+  next: StepDetailAttachmentCleanupResult,
+): StepDetailAttachmentCleanupResult {
+  return {
+    removedCount: previous.removedCount + next.removedCount,
+    estimatedBytes: previous.estimatedBytes === null || next.estimatedBytes === null
+      ? null
+      : previous.estimatedBytes + next.estimatedBytes,
+  };
+}
 
 export function createStepDetailAttachmentCleanupRunner(
   cleanup: () => Promise<StepDetailAttachmentCleanupResult>,
-  onStatus: (status: StepDetailAttachmentCleanupStatus) => void,
+  onStatus: (
+    status: StepDetailAttachmentCleanupStatus,
+    progress?: StepDetailAttachmentCleanupResult,
+  ) => void,
 ): () => Promise<StepDetailAttachmentCleanupResult | null> {
   let inFlight: Promise<StepDetailAttachmentCleanupResult | null> | null = null;
+  let previousAttempts: StepDetailAttachmentCleanupResult = {
+    removedCount: 0,
+    estimatedBytes: 0,
+  };
   return () => {
     if (inFlight) return inFlight;
     onStatus('running');
-    inFlight = cleanup().then(
-      removed => {
-        onStatus('complete');
-        return removed;
-      },
-      () => {
-        onStatus('retry');
+    inFlight = (async () => {
+      let removed: StepDetailAttachmentCleanupResult;
+      try {
+        removed = await cleanup();
+      } catch (error) {
+        if (error instanceof StepDetailAttachmentCleanupError) {
+          previousAttempts = addCleanupResults(previousAttempts, error.partialResult);
+        }
+        onStatus('retry', previousAttempts);
         return null;
-      },
-    ).finally(() => { inFlight = null; });
+      }
+      const total = addCleanupResults(previousAttempts, removed);
+      previousAttempts = { removedCount: 0, estimatedBytes: 0 };
+      onStatus('complete', total);
+      return total;
+    })().finally(() => { inFlight = null; });
     return inFlight;
   };
 }
@@ -153,9 +188,15 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
       failed = true;
     }
   }
-  if (failed) throw new Error('Some unused attachment files could not be removed.');
-  return {
+  const result = {
     removedCount,
     estimatedBytes: hasAllSizes ? estimatedBytes : null,
   };
+  if (failed) {
+    throw new StepDetailAttachmentCleanupError(
+      'Some unused attachment files could not be removed.',
+      result,
+    );
+  }
+  return result;
 }

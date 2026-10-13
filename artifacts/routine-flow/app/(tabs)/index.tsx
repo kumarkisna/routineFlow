@@ -896,7 +896,10 @@ export default function HomeScreen() {
               {attachmentCleanupPending ? (
                 <View style={[styles.cleanupNotice, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
                   <Text accessibilityRole="alert" style={[styles.transferDescription, { color: colors.foreground }]}>
-                    Some unused attachment files could not be cleaned up. Your saved attachments are safe; retry when storage is available.
+                    {attachmentCleanupResult !== null && attachmentCleanupResult.removedCount > 0
+                      ? `Cleanup is still incomplete. Removed ${attachmentCleanupResult.removedCount} unused attachment ${attachmentCleanupResult.removedCount === 1 ? 'file' : 'files'} so far. `
+                      : 'Cleanup is still incomplete. '}
+                    Some files could not be safely checked or removed. Your saved attachments are safe; retry when storage is available.
                   </Text>
                   <Pressable
                     accessibilityRole="button"

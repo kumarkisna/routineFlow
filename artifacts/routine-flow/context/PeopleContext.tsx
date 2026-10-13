@@ -141,9 +141,9 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     () => cleanupOrphanedStepDetailAttachmentCopies(
       FileSystem.documentDirectory, AsyncStorage, FileSystem,
     ),
-    status => {
+    (status, progress) => {
       setAttachmentCleanupBusy(status === 'running');
-      if (status === 'running') setAttachmentCleanupResult(null);
+      if (progress) setAttachmentCleanupResult(progress);
       if (status === 'complete') setAttachmentCleanupPending(false);
       if (status === 'retry') setAttachmentCleanupPending(true);
     },

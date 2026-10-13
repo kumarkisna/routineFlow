@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import {
   cleanupOrphanedStepDetailAttachmentCopies,
   createStepDetailAttachmentCleanupRunner,
+  StepDetailAttachmentCleanupError,
 } from './stepDetailAttachmentCleanup';
 import { PERSON_DATA_KEYS, personStorageKey } from './personStorage';
 import type { Routine } from '@/types/routines';
@@ -124,12 +125,70 @@ test('reports failed file removals after still cleaning other orphaned files', a
 
   await assert.rejects(
     cleanupOrphanedStepDetailAttachmentCopies(directory, adapters.storage, adapters.fileSystem),
-    /Some unused attachment files could not be removed/,
+    error => {
+      assert.ok(error instanceof StepDetailAttachmentCleanupError);
+      assert.match(error.message, /Some unused attachment files could not be removed/);
+      assert.deepEqual(error.partialResult, { removedCount: 1, estimatedBytes: null });
+      return true;
+    },
   );
   assert.deepEqual(adapters.deleted, [`${attachmentDirectory}remove-now.pdf`]);
   storageAvailable = true;
   await cleanupOrphanedStepDetailAttachmentCopies(directory, adapters.storage, adapters.fileSystem);
   assert.ok(adapters.deleted.includes(`${attachmentDirectory}retry-later.pdf`));
+});
+
+test('keeps partial cleanup progress visible across retries without counting saved attachments', async () => {
+  const sharedUri = `${attachmentDirectory}shared.pdf`;
+  const retryUri = `${attachmentDirectory}retry-later.pdf`;
+  const removeUri = `${attachmentDirectory}remove-now.pdf`;
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me', 'person-2'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([routine(sharedUri)])],
+    [personStorageKey('person-2', PERSON_DATA_KEYS.routines), JSON.stringify([routine(sharedUri)])],
+  ], ['shared.pdf', 'retry-later.pdf', 'remove-now.pdf'], {
+    'shared.pdf': 100,
+    'retry-later.pdf': 200,
+    'remove-now.pdf': 300,
+  });
+  const remainingFiles = ['shared.pdf', 'retry-later.pdf', 'remove-now.pdf'];
+  let storageAvailable = false;
+  adapters.fileSystem.readDirectoryAsync = async () => [...remainingFiles];
+  adapters.fileSystem.deleteAsync = async uri => {
+    if (uri === retryUri && !storageAvailable) throw new Error('Temporary storage error');
+    adapters.deleted.push(uri);
+    const fileName = uri.slice(uri.lastIndexOf('/') + 1);
+    const index = remainingFiles.indexOf(fileName);
+    if (index >= 0) remainingFiles.splice(index, 1);
+  };
+
+  const statuses: Array<{
+    status: string;
+    progress?: { removedCount: number; estimatedBytes: number | null };
+  }> = [];
+  const runCleanup = createStepDetailAttachmentCleanupRunner(
+    () => cleanupOrphanedStepDetailAttachmentCopies(
+      directory, adapters.storage, adapters.fileSystem,
+    ),
+    (status, progress) => statuses.push({ status, progress }),
+  );
+
+  assert.equal(await runCleanup(), null);
+  assert.deepEqual(statuses.at(-1), {
+    status: 'retry',
+    progress: { removedCount: 1, estimatedBytes: 300 },
+  });
+  assert.deepEqual(adapters.deleted, [removeUri]);
+  assert.ok(!adapters.deleted.includes(sharedUri));
+
+  storageAvailable = true;
+  assert.deepEqual(await runCleanup(), { removedCount: 2, estimatedBytes: 500 });
+  assert.deepEqual(statuses.at(-1), {
+    status: 'complete',
+    progress: { removedCount: 2, estimatedBytes: 500 },
+  });
+  assert.deepEqual(adapters.deleted, [removeUri, retryUri]);
+  assert.ok(!adapters.deleted.includes(sharedUri));
 });
 
 test('reports when local attachment storage is unavailable', async () => {
