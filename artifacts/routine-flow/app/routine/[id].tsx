@@ -1,4 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
@@ -14,12 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
 import { SkillTagList } from '@/components/SkillPicker';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
-import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
+import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
-import { createSkillRatingRun, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
+import { buildStepAnnouncement } from '@/lib/routineSpeech';
 import { formatDuration, getStepDetails, getStepSeconds, isCompleted } from '@/types/routines';
 
 export default function RoutineDetailScreen() {
@@ -27,7 +28,8 @@ export default function RoutineDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { activePerson } = usePeople();
-  const { routines, loading, progress, getCompletedCount, toggleStep, completeRoutine, updateRoutine, copyRoutine, setStepHidden, deleteRoutine } = useRoutines();
+  const { routines, loading, progress, getCompletedCount, updateRoutine, copyRoutine, setStepHidden, deleteRoutine } = useRoutines();
+  const { skills } = useSkills();
   const [reorderBusy, setReorderBusy] = React.useState(false);
   const [copyBusy, setCopyBusy] = React.useState(false);
   const [copyError, setCopyError] = React.useState('');
@@ -39,11 +41,14 @@ export default function RoutineDetailScreen() {
   const [visibilityBusy, setVisibilityBusy] = React.useState(false);
   const [showHiddenSteps, setShowHiddenSteps] = React.useState(false);
   const [reorderError, setReorderError] = React.useState('');
-  const [ratingSkillIds, setRatingSkillIds] = React.useState<string[]>([]);
-  const [ratingRun, setRatingRun] = React.useState<SkillRatingRun | null>(null);
-  const [showRatingPrompt, setShowRatingPrompt] = React.useState(false);
+  const [speakingStepId, setSpeakingStepId] = React.useState<string | null>(null);
+  const speechToken = React.useRef(0);
   const reorderLock = React.useRef(false);
   const routine = routines.find((item) => item.id === id);
+  React.useEffect(() => () => {
+    speechToken.current += 1;
+    void Speech.stop();
+  }, []);
 
   if (loading) {
     return (
@@ -93,36 +98,30 @@ export default function RoutineDetailScreen() {
     }
   }
 
-  async function handleStep(stepId: string) {
-    const progressKey = `${currentRoutine.id}:${stepId}`;
-    const wasComplete = isCompleted(todayProgress[progressKey]);
-    const completesRoutine = !wasComplete && visibleSteps.every(step =>
-      step.id === stepId || isCompleted(todayProgress[`${currentRoutine.id}:${step.id}`]));
-    const run = completesRoutine ? createSkillRatingRun(currentRoutine.id) : undefined;
-    await toggleStep(currentRoutine.id, stepId);
-    void Haptics.selectionAsync();
-    if (run) openRatingPrompt(run);
-  }
-
-  async function handleComplete() {
-    const run = createSkillRatingRun(currentRoutine.id);
-    await completeRoutine(currentRoutine.id);
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    openRatingPrompt(run);
-  }
-
-  function openRatingPrompt(run: SkillRatingRun) {
-    const assigned = getRoutineSkillIds(currentRoutine);
-    if (!assigned.length) return;
-    setRatingSkillIds(assigned);
-    setRatingRun(run);
-    setShowRatingPrompt(true);
-  }
-
-  function closeRatingPrompt() {
-    setShowRatingPrompt(false);
-    setRatingSkillIds([]);
-    setRatingRun(null);
+  function speakStep(stepId: string, index: number) {
+    if (speakingStepId === stepId) {
+      speechToken.current += 1;
+      setSpeakingStepId(null);
+      void Speech.stop();
+      return;
+    }
+    const token = ++speechToken.current;
+    void Speech.stop();
+    setSpeakingStepId(stepId);
+    const finish = () => {
+      if (speechToken.current === token) setSpeakingStepId(null);
+    };
+    try {
+      Speech.speak(buildStepAnnouncement(currentRoutine, index, skills), {
+        rate: 0.92,
+        pitch: 1,
+        onDone: finish,
+        onStopped: finish,
+        onError: finish,
+      });
+    } catch {
+      finish();
+    }
   }
 
   async function handleCopy() {
@@ -316,7 +315,7 @@ export default function RoutineDetailScreen() {
             </Text>
           </View>
           <Text style={[styles.reorderHint, { color: colors.mutedForeground }]}>
-            Use the arrows to reorder. Hidden steps are skipped when running.
+            Use the arrows to reorder. Tap the speaker to hear a step; run the routine to record progress.
           </Text>
           {hiddenCount > 0 ? (
             <Pressable
@@ -351,12 +350,7 @@ export default function RoutineDetailScreen() {
                   { backgroundColor: step.hidden ? colors.secondary : isDone ? colors.sageSoft : colors.card, borderColor: isDone && !step.hidden ? colors.sage : colors.border },
                 ]}
               >
-                <Pressable
-                  accessibilityLabel={step.hidden ? `${step.title} is hidden` : `${isDone ? 'Uncomplete' : 'Complete'} ${step.title}`}
-                  disabled={Boolean(step.hidden)}
-                  onPress={() => void handleStep(step.id)}
-                  style={({ pressed }) => [styles.stepContent, pressed && styles.pressed]}
-                >
+                <View style={styles.stepContent}>
                   <View style={[styles.stepNumber, { backgroundColor: isDone ? colors.success : colors.secondary }]}>
                     {step.hidden ? (
                       <Ionicons name="eye-off-outline" size={18} color={colors.mutedForeground} />
@@ -390,7 +384,19 @@ export default function RoutineDetailScreen() {
                     </Text>
                   </View>
                   {!step.hidden ? <Ionicons name={isDone ? 'checkmark-circle' : 'ellipse-outline'} size={23} color={isDone ? colors.success : colors.border} /> : null}
-                </Pressable>
+                </View>
+                {!step.hidden ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={speakingStepId === step.id ? `Stop speaking ${step.title}` : `Speak ${step.title}`}
+                    testID={`speak-step-${step.id}`}
+                    onPress={() => speakStep(step.id, visibleIndex)}
+                    style={({ pressed }) => [styles.speakerButton, { borderLeftColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <Ionicons name={speakingStepId === step.id ? 'volume-mute-outline' : 'volume-high-outline'}
+                      size={20} color={colors.primary} />
+                  </Pressable>
+                ) : null}
                 <Pressable
                   accessibilityLabel={`${step.hidden ? 'Show' : 'Hide'} step ${step.title}`}
                   testID={`toggle-step-visibility-${step.id}`}
@@ -458,31 +464,8 @@ export default function RoutineDetailScreen() {
             <Text style={[styles.completeButtonText, { color: visibleSteps.length ? colors.inkSoft : colors.mutedForeground }]}>Schedule for later</Text>
           </Pressable>
 
-          <Pressable
-            accessibilityLabel={done ? 'Routine complete' : 'Complete routine'}
-            disabled={done || visibleSteps.length === 0}
-            onPress={() => void handleComplete()}
-            style={({ pressed }) => [
-              styles.completeButton,
-              { backgroundColor: done ? colors.sageSoft : colors.secondary },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Feather name={done ? 'check' : 'check-circle'} size={17} color={done ? colors.success : colors.inkSoft} />
-            <Text style={[styles.completeButtonText, { color: done ? colors.success : colors.inkSoft }]}>
-              {done ? 'Routine complete' : 'Mark all complete'}
-            </Text>
-          </Pressable>
         </View>
       </ScrollView>
-      <SkillRatingPrompt
-        visible={showRatingPrompt}
-        skillIds={ratingSkillIds}
-        routineTitle={currentRoutine.title}
-        run={ratingRun ?? undefined}
-        onSkip={closeRatingPrompt}
-        onSaved={closeRatingPrompt}
-      />
     </View>
   );
 }
@@ -526,6 +509,7 @@ const styles = StyleSheet.create({
   reorderError: { fontFamily: 'Inter_500Medium', fontSize: 12, marginBottom: 10 },
   stepCard: { minHeight: 84, borderRadius: 17, borderWidth: 1, flexDirection: 'row', alignItems: 'center', overflow: 'hidden', marginBottom: 9 },
   stepContent: { flex: 1, minHeight: 84, flexDirection: 'row', alignItems: 'center', paddingLeft: 13, paddingRight: 10, paddingVertical: 8 },
+  speakerButton: { width: 40, alignSelf: 'stretch', borderLeftWidth: 1, alignItems: 'center', justifyContent: 'center' },
   visibilityButton: { width: 40, alignSelf: 'stretch', borderLeftWidth: 1, alignItems: 'center', justifyContent: 'center' },
   reorderControls: { borderLeftWidth: 1, width: 44, alignSelf: 'stretch', justifyContent: 'center' },
   reorderButton: { height: 42, alignItems: 'center', justifyContent: 'center' },

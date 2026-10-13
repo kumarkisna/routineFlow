@@ -80,7 +80,6 @@ type RoutineContextValue = {
   routines: Routine[];
   progress: CompletionMap;
   loading: boolean;
-  toggleStep: (routineId: string, stepId: string) => Promise<void>;
   completeRoutine: (routineId: string, playlistRun?: PlaylistCompletionSource) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[]) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
@@ -160,27 +159,6 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
     setProgress(nextProgress);
     await AsyncStorage.setItem(PROGRESS_KEY, JSON.stringify(nextProgress));
   }, []);
-
-  const toggleStep = useCallback(
-    async (routineId: string, stepId: string) => {
-      const routine = routines.find((item) => item.id === routineId);
-      const step = routine?.steps.find((item) => item.id === stepId);
-      if (!routine || !step) throw new Error('Step not found');
-      const day = todayKey();
-      const key = `${routineId}:${stepId}`;
-      const nextProgress = {
-        ...progress,
-        [day]: {
-          ...(progress[day] ?? {}),
-          [key]: isCompleted(progress[day]?.[key])
-            ? false
-            : recordCompletion(routine.title, step.title, progress[day]?.[key]),
-        },
-      };
-      await saveProgress(nextProgress);
-    },
-    [progress, routines, saveProgress],
-  );
 
   const completeRoutine = useCallback(
     async (routineId: string, playlistRun?: PlaylistCompletionSource) => {
@@ -411,7 +389,6 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       routines,
       progress,
       loading,
-      toggleStep,
       completeRoutine,
       createRoutine,
       copyRoutine,
@@ -432,7 +409,6 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       routines,
       progress,
       loading,
-      toggleStep,
       completeRoutine,
       createRoutine,
       copyRoutine,
