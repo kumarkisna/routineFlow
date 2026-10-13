@@ -6,7 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme, saveThemePreference, type AppTheme } from '@/lib/appThemes';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
-import { PERSON_DATA_KEYS } from '@/lib/personStorage';
+import { PERSON_DATA_KEYS, persistPersonBackgroundImage } from '@/lib/personStorage';
 
 const KEY = '@routine-flow/appearance';
 type AppearanceContextValue = {
@@ -68,18 +68,9 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
   }), [loading, runWrite, AsyncStorage]);
   const saveBackgroundImage = useCallback(async (image: string | null) => {
     if (loading) throw new Error('Wait for your appearance settings to load.');
-    const previous = backgroundImage;
+    await persistPersonBackgroundImage(AsyncStorage, image);
     setBackgroundImageState(image);
-    try {
-      if (image === null) await AsyncStorage.removeItem(PERSON_DATA_KEYS.backgroundImage);
-      else await AsyncStorage.setItem(PERSON_DATA_KEYS.backgroundImage, image);
-    } catch {
-      if (await AsyncStorage.getItem(PERSON_DATA_KEYS.backgroundImage) !== image) {
-        setBackgroundImageState(previous);
-        throw new Error('The background photo could not be saved. Your previous setting is still in use.');
-      }
-    }
-  }, [loading, backgroundImage, AsyncStorage]);
+  }, [loading, AsyncStorage]);
   return <AppearanceContext.Provider value={{ theme, loading, saving, error, selectTheme, backgroundImage, setBackgroundImage: saveBackgroundImage }}>
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       {backgroundImage ? <Image testID="app-background-image" accessibilityLabel="Custom app background photo" source={{ uri: backgroundImage }} resizeMode="cover"

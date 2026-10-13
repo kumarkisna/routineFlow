@@ -13,7 +13,7 @@ import { useAppearance } from '@/context/AppearanceContext';
 import { APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, type ThemeGroup } from '@/lib/appThemes';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { createPersonStorage, PERSON_DATA_KEYS } from '@/lib/personStorage';
+import { createPersonStorage, PERSON_DATA_KEYS, persistPersonBackgroundImage } from '@/lib/personStorage';
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
 import type { RoutineNotificationSettings } from '@/types/routines';
@@ -132,9 +132,9 @@ export default function PeopleScreen() {
     );
     if (!compressed.base64) throw new Error('The selected picture could not be prepared for saving.');
     const uri = `data:image/jpeg;base64,${compressed.base64}`;
-    await createPersonStorage(personId).setItem(PERSON_DATA_KEYS.backgroundImage, uri);
-    setPersonBackgrounds(current => ({ ...current, [personId]: uri }));
     if (personId === activePerson.id) await setBackgroundImage(uri);
+    else await persistPersonBackgroundImage(createPersonStorage(personId), uri);
+    setPersonBackgrounds(current => ({ ...current, [personId]: uri }));
     setBackgroundNotice('Background photo saved for this person.');
     void Haptics.selectionAsync();
   }
@@ -180,9 +180,9 @@ export default function PeopleScreen() {
     setBackgroundError('');
     setBackgroundNotice('');
     try {
-      await createPersonStorage(personId).removeItem(PERSON_DATA_KEYS.backgroundImage);
-      setPersonBackgrounds(current => ({ ...current, [personId]: null }));
       if (personId === activePerson.id) await setBackgroundImage(null);
+      else await persistPersonBackgroundImage(createPersonStorage(personId), null);
+      setPersonBackgrounds(current => ({ ...current, [personId]: null }));
       setBackgroundNotice('No background picture is set for this person.');
     } catch (e) {
       setBackgroundError(msg(e, 'Could not remove this background picture.'));
@@ -550,7 +550,7 @@ export default function PeopleScreen() {
                             This picture is automatically fitted behind the app for this person. Choose a saved photo or take a new one; it stays on this device.
                           </Text>
                           {personBackgrounds[p.id] ? (
-                            <Image source={{ uri: personBackgrounds[p.id] ?? undefined }} resizeMode="cover" style={styles.backgroundPreview} />
+                            <Image testID={`person-background-preview-${p.id}`} source={{ uri: personBackgrounds[p.id] ?? undefined }} resizeMode="cover" style={styles.backgroundPreview} />
                           ) : null}
                           {backgroundLoadingId === p.id || backgroundSavingId === p.id ? <ActivityIndicator color={colors.primary} /> : null}
                           {backgroundError ? <Text accessibilityRole="alert" style={[styles.sub, { color: colors.destructive }]}>{backgroundError}</Text> : null}

@@ -26,6 +26,46 @@ type PersonStorageBackend = {
   removeItem: (key: string) => Promise<void>;
 };
 
+export type PersonStorage = ReturnType<typeof createPersonStorage>;
+
+export async function persistPersonBackgroundImage(storage: PersonStorage, image: string | null) {
+  const action = image === null ? 'cleared' : 'saved';
+  const failureMessage = `The background photo could not be ${action}. Your previous photo is still selected. Please try again.`;
+  let previous: string | null;
+  try {
+    previous = await storage.getItem(PERSON_DATA_KEYS.backgroundImage);
+  } catch {
+    throw new Error(failureMessage);
+  }
+
+  try {
+    if (image === null) await storage.removeItem(PERSON_DATA_KEYS.backgroundImage);
+    else await storage.setItem(PERSON_DATA_KEYS.backgroundImage, image);
+    if (await storage.getItem(PERSON_DATA_KEYS.backgroundImage) !== image) {
+      throw new Error('Background photo update could not be verified.');
+    }
+  } catch {
+    // A storage driver can reject after applying a write. Restore and verify the
+    // prior value before reporting failure so the UI and saved profile agree.
+    try {
+      if (previous === null) await storage.removeItem(PERSON_DATA_KEYS.backgroundImage);
+      else await storage.setItem(PERSON_DATA_KEYS.backgroundImage, previous);
+    } catch {
+      // Verify below because some drivers reject after committing the rollback.
+    }
+    let restored: string | null;
+    try {
+      restored = await storage.getItem(PERSON_DATA_KEYS.backgroundImage);
+    } catch {
+      throw new Error(`The background photo could not be ${action}, and its previous setting could not be verified. Please try again.`);
+    }
+    if (restored !== previous) {
+      throw new Error(`The background photo could not be ${action}, and its previous setting could not be restored. Please try again.`);
+    }
+    throw new Error(failureMessage);
+  }
+}
+
 function trackWrite<T>(personId: string, operation: Promise<T>): Promise<T> {
   const pending = pendingWrites.get(personId) ?? new Set<Promise<unknown>>();
   pendingWrites.set(personId, pending);

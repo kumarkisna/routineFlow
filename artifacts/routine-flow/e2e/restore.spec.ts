@@ -200,6 +200,117 @@ test('background photos stay with their person across switches, reloads, and cle
   await expectRenderedPhoto(alexPhoto!);
 });
 
+test('failed background saves and clears keep the selected photo and can be retried', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const oldMePhoto = 'data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
+  const newMePhotoBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
+  const alexPhoto = 'data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==';
+  await page.addInitScript(({ oldMePhoto, alexPhoto }) => {
+    localStorage.setItem('@routine-flow/people', JSON.stringify({
+      version: 1,
+      activePersonId: 'me',
+      people: [
+        {
+          id: 'me', name: 'Me', speechVoiceId: null, defaultRateSkillsAtPlaylistEnd: true,
+          defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
+          defaultSpeakRoutineDescription: true,
+        },
+        {
+          id: 'alex', name: 'Alex', speechVoiceId: null, defaultRateSkillsAtPlaylistEnd: true,
+          defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
+          defaultSpeakRoutineDescription: true,
+        },
+      ],
+    }));
+    localStorage.setItem('@routine-flow/routines', '[]');
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/playlists', '[]');
+    localStorage.setItem('@routine-flow/schedules', '[]');
+    localStorage.setItem('@routine-flow/skills', '[]');
+    localStorage.setItem('@routine-flow/background-image', oldMePhoto);
+    localStorage.setItem('@routine-flow/person/alex/@routine-flow/background-image', alexPhoto);
+
+    const nativeSetItem = Storage.prototype.setItem;
+    const nativeRemoveItem = Storage.prototype.removeItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === '@routine-flow/background-image' && nativeGetItem.call(this, '__fail_next_background_set') === '1') {
+        nativeSetItem.call(this, key, value);
+        nativeSetItem.call(this, '__fail_next_background_set', '0');
+        throw new Error('Temporary storage failure after commit.');
+      }
+      nativeSetItem.call(this, key, value);
+    };
+    Storage.prototype.removeItem = function (key) {
+      if (key === '@routine-flow/background-image' && nativeGetItem.call(this, '__fail_next_background_remove') === '1') {
+        nativeRemoveItem.call(this, key);
+        nativeSetItem.call(this, '__fail_next_background_remove', '0');
+        throw new Error('Temporary storage failure after removal.');
+      }
+      nativeRemoveItem.call(this, key);
+    };
+    const nativeGetItem = Storage.prototype.getItem;
+  }, { oldMePhoto, alexPhoto });
+
+  await page.goto('/people');
+  const expectRenderedPhoto = async (uri: string) => {
+    const image = page.getByTestId('app-background-image').locator('div').last();
+    await expect.poll(() => image.evaluate(element => getComputedStyle(element).backgroundImage))
+      .toContain(uri.slice(uri.indexOf(',') + 1));
+  };
+  const expectSelectedProfilePhoto = async (uri: string) => {
+    const image = page.getByTestId('person-background-preview-me').locator('div').last();
+    await expect.poll(() => image.evaluate(element => getComputedStyle(element).backgroundImage))
+      .toContain(uri.slice(uri.indexOf(',') + 1));
+  };
+  await expectRenderedPhoto(oldMePhoto);
+  await page.getByTestId('person-edit-me').click();
+  await page.getByTestId('person-background-toggle-me').click();
+  await expectSelectedProfilePhoto(oldMePhoto);
+
+  await page.evaluate(() => localStorage.setItem('__fail_next_background_set', '1'));
+  let chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('person-background-choose-me').click();
+  await (await chooserPromise).setFiles({
+    name: 'new-me-background.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(newMePhotoBase64, 'base64'),
+  });
+  await expect(page.getByText(/background photo could not be saved.*previous photo is still selected/i)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/background-image'))).toBe(oldMePhoto);
+  await expectRenderedPhoto(oldMePhoto);
+  await expectSelectedProfilePhoto(oldMePhoto);
+
+  chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('person-background-choose-me').click();
+  await (await chooserPromise).setFiles({
+    name: 'new-me-background.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(newMePhotoBase64, 'base64'),
+  });
+  await expect(page.getByText('Background photo saved for this person.', { exact: true })).toBeVisible();
+  const savedMePhoto = await page.evaluate(() => localStorage.getItem('@routine-flow/background-image'));
+  expect(savedMePhoto).not.toBe(oldMePhoto);
+  await expectRenderedPhoto(savedMePhoto!);
+  await expectSelectedProfilePhoto(savedMePhoto!);
+
+  await page.evaluate(() => localStorage.setItem('__fail_next_background_remove', '1'));
+  await page.getByTestId('person-background-clear-me').click();
+  await expect(page.getByText(/background photo could not be cleared.*previous photo is still selected/i)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/background-image'))).toBe(savedMePhoto);
+  await expectRenderedPhoto(savedMePhoto!);
+  await expectSelectedProfilePhoto(savedMePhoto!);
+
+  await page.getByTestId('person-background-clear-me').click();
+  await expect(page.getByText('No background picture is set for this person.', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('app-background-image')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() =>
+    localStorage.getItem('@routine-flow/person/alex/@routine-flow/background-image'))).toBe(alexPhoto);
+
+  await page.getByTestId('person-switch-alex').click();
+  await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
+  await expectRenderedPhoto(alexPhoto);
+});
+
 test.use({
   baseURL,
   timezoneId: 'UTC',
