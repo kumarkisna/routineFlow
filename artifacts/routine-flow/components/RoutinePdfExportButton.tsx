@@ -50,6 +50,10 @@ export function RoutinePdfExportButton({
         printWindow.onafterprint = () => printWindow.close();
         printWindow.focus();
         printWindow.print();
+      } else if (Platform.OS === 'android') {
+        // Expo Sharing rejects some Expo Print cache URLs on Android. Open
+        // Android's native print sheet directly so users can save as PDF.
+        await Print.printAsync({ html });
       } else {
         const file = await Print.printToFileAsync({ html });
         if (await Sharing.isAvailableAsync()) {

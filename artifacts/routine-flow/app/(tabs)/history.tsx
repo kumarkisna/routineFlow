@@ -182,6 +182,10 @@ export default function HistoryScreen() {
         printWindow.document.close();
         printWindow.focus();
         printWindow.print();
+      } else if (Platform.OS === 'android') {
+        // Android sharing may reject Expo Print's generated file URL; the
+        // native print sheet supports both printing and saving the report.
+        await Print.printAsync({ html });
       } else {
         const file = await Print.printToFileAsync({ html });
         if (await Sharing.isAvailableAsync()) {

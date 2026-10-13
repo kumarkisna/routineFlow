@@ -18,6 +18,7 @@
 - [Expo preview warmup](expo-web-preview.md) — early cold-start screenshots can be blank; wait for visible UI before diagnosing broken layout.
 - [Locked-run platform behavior](android-locked-runs.md) — Android keeps active runs alive with a foreground service; iOS alerts and resumes; Expo Go cannot exercise the native service.
 - [Android backup files](android-backup-imports.md) — use Expo FileSystem pickers for provider-backed imports and local folder saves; sharing opens an app chooser, not a save dialog.
+- [Android PDF printing](android-pdf-printing.md) — send generated PDF HTML to Android's native print sheet instead of sharing Expo Print's file URL.
 - [Local person profiles](person-profiles.md) — skill ratings, reflections, and their shared average window belong to the person; cross-person copies do not transfer ratings.
 - [Combined skill charts](skill-score-charts.md) — offer cumulative and shared-N averages across linked skill histories, with optional raw skill traces.
 - [Post-merge setup duration](post-merge-setup.md) — workspace dependency linking can exceed two minutes; retain a generous post-merge timeout and verify the full setup.
