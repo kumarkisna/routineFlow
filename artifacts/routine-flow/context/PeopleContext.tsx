@@ -59,8 +59,9 @@ type PeopleContextValue = {
   ) => Promise<AllProfilesRestoreSummary>;
   attachmentCleanupPending: boolean;
   attachmentCleanupBusy: boolean;
-  retryAttachmentCleanup: () => Promise<boolean>;
-  runAttachmentCleanup: () => Promise<boolean>;
+  attachmentCleanupRemovedCount: number | null;
+  retryAttachmentCleanup: () => Promise<number | null>;
+  runAttachmentCleanup: () => Promise<number | null>;
 };
 const PeopleContext = createContext<PeopleContextValue | null>(null);
 const colors = APP_THEMES[0].colors;
@@ -132,17 +133,23 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const [notice, setNotice] = useState('');
   const [attachmentCleanupPending, setAttachmentCleanupPending] = useState(false);
   const [attachmentCleanupBusy, setAttachmentCleanupBusy] = useState(false);
+  const [attachmentCleanupRemovedCount, setAttachmentCleanupRemovedCount] = useState<number | null>(null);
   const runAttachmentCleanup = useMemo(() => createStepDetailAttachmentCleanupRunner(
     () => cleanupOrphanedStepDetailAttachmentCopies(
       FileSystem.documentDirectory, AsyncStorage, FileSystem,
     ),
     status => {
       setAttachmentCleanupBusy(status === 'running');
+      if (status === 'running') setAttachmentCleanupRemovedCount(null);
       if (status === 'complete') setAttachmentCleanupPending(false);
       if (status === 'retry') setAttachmentCleanupPending(true);
     },
   ), []);
-  const retryAttachmentCleanup = runAttachmentCleanup;
+  const retryAttachmentCleanup = useCallback(async () => {
+    const removedCount = await runAttachmentCleanup();
+    if (removedCount !== null) setAttachmentCleanupRemovedCount(removedCount);
+    return removedCount;
+  }, [runAttachmentCleanup]);
 
   const hydrate = useCallback(async (): Promise<boolean> => {
     setLoading(true);
@@ -475,10 +482,12 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const canRepairDurations = repairPersonId !== null && /needs a valid duration|invalid legacy duration/.test(error);
   const value = useMemo(() => ({
     people: registry.people, activePerson, revision, busy, notice,
-    attachmentCleanupPending, attachmentCleanupBusy, retryAttachmentCleanup, runAttachmentCleanup,
+    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupRemovedCount,
+    retryAttachmentCleanup, runAttachmentCleanup,
     addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles,
   }), [registry.people, activePerson, revision, busy, notice, attachmentCleanupPending, attachmentCleanupBusy,
-    retryAttachmentCleanup, runAttachmentCleanup, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
+    attachmentCleanupRemovedCount, retryAttachmentCleanup, runAttachmentCleanup,
+    addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
 
   if (loading || error) {
     return <View style={styles.loading} testID="people-startup">

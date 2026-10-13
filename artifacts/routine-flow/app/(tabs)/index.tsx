@@ -42,7 +42,7 @@ export default function HomeScreen() {
   const colors = useColors();
   const {
     people, activePerson, busy: peopleBusy, restoreAllProfiles,
-    attachmentCleanupPending, attachmentCleanupBusy, retryAttachmentCleanup,
+    attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupRemovedCount, retryAttachmentCleanup,
   } = usePeople();
   const disclosure = usePersistentDisclosure('routines', activePerson.id);
   const backupDisclosure = usePersistentDisclosure('home-backup-sections', activePerson.id);
@@ -900,6 +900,14 @@ export default function HomeScreen() {
                     </Text>
                   </Pressable>
                 </View>
+              ) : null}
+              {attachmentCleanupRemovedCount !== null && !attachmentCleanupPending ? (
+                <Text accessibilityLiveRegion="polite" testID="attachment-cleanup-result"
+                  style={[styles.transferDescription, { color: colors.foreground }]}>
+                  {attachmentCleanupRemovedCount === 0
+                    ? 'Cleanup complete. No unused attachment files needed removal.'
+                    : `Removed ${attachmentCleanupRemovedCount} unused attachment ${attachmentCleanupRemovedCount === 1 ? 'file' : 'files'} from this device.`}
+                </Text>
               ) : null}
               <Pressable
                 accessibilityRole="checkbox"

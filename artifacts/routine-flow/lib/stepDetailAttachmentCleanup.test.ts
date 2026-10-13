@@ -142,17 +142,17 @@ test('retries startup cleanup after reopening and hides the retry state after su
     },
   );
 
-  assert.equal(await createRunner()(), false);
+  assert.equal(await createRunner()(), null);
   assert.equal(retryVisible, true);
   assert.equal(busy, false);
 
   // A fresh runner represents app startup after reopening; startup retries too.
   const afterRestart = createRunner();
-  assert.equal(await afterRestart(), false);
+  assert.equal(await afterRestart(), null);
   assert.equal(retryVisible, true);
 
   storageAvailable = true;
-  assert.equal(await afterRestart(), true);
+  assert.equal(await afterRestart(), 1);
   assert.equal(retryVisible, false);
   assert.equal(busy, false);
   assert.ok(adapters.deleted.includes(orphanUri));

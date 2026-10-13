@@ -11,21 +11,21 @@ type CleanupFileSystem = {
 export type StepDetailAttachmentCleanupStatus = 'running' | 'retry' | 'complete';
 
 export function createStepDetailAttachmentCleanupRunner(
-  cleanup: () => Promise<unknown>,
+  cleanup: () => Promise<number>,
   onStatus: (status: StepDetailAttachmentCleanupStatus) => void,
-): () => Promise<boolean> {
-  let inFlight: Promise<boolean> | null = null;
+): () => Promise<number | null> {
+  let inFlight: Promise<number | null> | null = null;
   return () => {
     if (inFlight) return inFlight;
     onStatus('running');
     inFlight = cleanup().then(
-      () => {
+      removed => {
         onStatus('complete');
-        return true;
+        return removed;
       },
       () => {
         onStatus('retry');
-        return false;
+        return null;
       },
     ).finally(() => { inFlight = null; });
     return inFlight;
