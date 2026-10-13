@@ -2,7 +2,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { cleanupOrphanedStepDetailAttachmentCopies } from './stepDetailAttachmentCleanup';
+import {
+  cleanupOrphanedStepDetailAttachmentCopies,
+  createStepDetailAttachmentCleanupRunner,
+} from './stepDetailAttachmentCleanup';
 import { PERSON_DATA_KEYS, personStorageKey } from './personStorage';
 import type { Routine } from '@/types/routines';
 
@@ -113,6 +116,47 @@ test('reports when local attachment storage is unavailable', async () => {
     cleanupOrphanedStepDetailAttachmentCopies(null, adapters.storage, adapters.fileSystem),
     /App file storage is unavailable/,
   );
+});
+
+test('retries startup cleanup after reopening and hides the retry state after success', async () => {
+  const sharedUri = `${attachmentDirectory}shared.pdf`;
+  const orphanUri = `${attachmentDirectory}orphan.pdf`;
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me', 'person-2'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([routine(sharedUri)])],
+    [personStorageKey('person-2', PERSON_DATA_KEYS.routines), JSON.stringify([routine(sharedUri)])],
+  ], ['shared.pdf', 'orphan.pdf']);
+  let storageAvailable = false;
+  adapters.fileSystem.deleteAsync = async uri => {
+    if (uri === orphanUri && !storageAvailable) throw new Error('Temporary storage error');
+    adapters.deleted.push(uri);
+  };
+  let retryVisible = false;
+  let busy = false;
+  const createRunner = () => createStepDetailAttachmentCleanupRunner(
+    () => cleanupOrphanedStepDetailAttachmentCopies(directory, adapters.storage, adapters.fileSystem),
+    status => {
+      busy = status === 'running';
+      if (status === 'retry') retryVisible = true;
+      if (status === 'complete') retryVisible = false;
+    },
+  );
+
+  assert.equal(await createRunner()(), false);
+  assert.equal(retryVisible, true);
+  assert.equal(busy, false);
+
+  // A fresh runner represents app startup after reopening; startup retries too.
+  const afterRestart = createRunner();
+  assert.equal(await afterRestart(), false);
+  assert.equal(retryVisible, true);
+
+  storageAvailable = true;
+  assert.equal(await afterRestart(), true);
+  assert.equal(retryVisible, false);
+  assert.equal(busy, false);
+  assert.ok(adapters.deleted.includes(orphanUri));
+  assert.ok(!adapters.deleted.includes(sharedUri));
 });
 
 test('only examines the dedicated attachment directory and routine storage keys', async () => {

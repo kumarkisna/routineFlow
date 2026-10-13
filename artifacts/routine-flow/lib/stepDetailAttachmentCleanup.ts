@@ -8,6 +8,30 @@ type CleanupFileSystem = {
   deleteAsync: (uri: string, options?: { idempotent?: boolean }) => Promise<void>;
 };
 
+export type StepDetailAttachmentCleanupStatus = 'running' | 'retry' | 'complete';
+
+export function createStepDetailAttachmentCleanupRunner(
+  cleanup: () => Promise<unknown>,
+  onStatus: (status: StepDetailAttachmentCleanupStatus) => void,
+): () => Promise<boolean> {
+  let inFlight: Promise<boolean> | null = null;
+  return () => {
+    if (inFlight) return inFlight;
+    onStatus('running');
+    inFlight = cleanup().then(
+      () => {
+        onStatus('complete');
+        return true;
+      },
+      () => {
+        onStatus('retry');
+        return false;
+      },
+    ).finally(() => { inFlight = null; });
+    return inFlight;
+  };
+}
+
 const ROUTINES_KEY = '@routine-flow/routines';
 const PEOPLE_KEY = '@routine-flow/people';
 const PERSON_ROUTINES_KEY = /^@routine-flow\/person\/([A-Za-z0-9_-]{1,160})\/@routine-flow\/routines$/;

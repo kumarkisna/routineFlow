@@ -14,7 +14,9 @@ import { persistScheduleChange, type RoutineSchedule } from '@/lib/schedules';
 import { DEFAULT_SKILL_RATING_WINDOW } from '@/lib/skills';
 import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from '@/lib/personStorage';
 import { mergePersonRestore, type PersonRestoreSnapshot } from '@/lib/personRestore';
-import { cleanupOrphanedStepDetailAttachmentCopies } from '@/lib/stepDetailAttachmentCleanup';
+import {
+  cleanupOrphanedStepDetailAttachmentCopies, createStepDetailAttachmentCleanupRunner,
+} from '@/lib/stepDetailAttachmentCleanup';
 import type { AllPeopleBackup } from '@/lib/routineTransfer';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
@@ -130,26 +132,16 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const [notice, setNotice] = useState('');
   const [attachmentCleanupPending, setAttachmentCleanupPending] = useState(false);
   const [attachmentCleanupBusy, setAttachmentCleanupBusy] = useState(false);
-  const cleanupInFlight = useRef<Promise<boolean> | null>(null);
-
-  const runAttachmentCleanup = useCallback((): Promise<boolean> => {
-    if (cleanupInFlight.current) return cleanupInFlight.current;
-    setAttachmentCleanupBusy(true);
-    const attempt = cleanupOrphanedStepDetailAttachmentCopies(
+  const runAttachmentCleanup = useMemo(() => createStepDetailAttachmentCleanupRunner(
+    () => cleanupOrphanedStepDetailAttachmentCopies(
       FileSystem.documentDirectory, AsyncStorage, FileSystem,
-    ).then(() => {
-      setAttachmentCleanupPending(false);
-      return true;
-    }, () => {
-      setAttachmentCleanupPending(true);
-      return false;
-    }).finally(() => {
-      cleanupInFlight.current = null;
-      setAttachmentCleanupBusy(false);
-    });
-    cleanupInFlight.current = attempt;
-    return attempt;
-  }, []);
+    ),
+    status => {
+      setAttachmentCleanupBusy(status === 'running');
+      if (status === 'complete') setAttachmentCleanupPending(false);
+      if (status === 'retry') setAttachmentCleanupPending(true);
+    },
+  ), []);
   const retryAttachmentCleanup = runAttachmentCleanup;
 
   const hydrate = useCallback(async (): Promise<boolean> => {
