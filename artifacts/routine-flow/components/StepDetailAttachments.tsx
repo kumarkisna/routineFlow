@@ -4,8 +4,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as Sharing from 'expo-sharing';
-import React, { useState } from 'react';
-import { Alert, Image, Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Image, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { STEP_DETAIL_ATTACHMENT_MAX_BYTES, STEP_DETAIL_ATTACHMENT_MAX_COUNT, type StepDetailAttachment } from '@/types/routines';
 import { compressImageToSize } from '@/lib/stepDetailImageCompression';
@@ -32,8 +32,21 @@ export function StepDetailAttachments({
   label?: string;
 }) {
   const colors = useColors();
-  const [viewing, setViewing] = useState<StepDetailAttachment | null>(null);
+  const [viewingIndex, setViewingIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const viewerRef = useRef<ScrollView>(null);
+  const viewportWidth = useWindowDimensions().width;
+  const images = attachments.filter(file => file.kind === 'image');
+  useEffect(() => {
+    if (viewingIndex !== null && images.length) {
+      viewerRef.current?.scrollTo({ x: viewingIndex * viewportWidth, animated: false });
+    }
+  }, [viewingIndex, viewportWidth, images.length]);
+
+  function openImage(file: StepDetailAttachment) {
+    const index = images.findIndex(image => image.id === file.id);
+    if (index >= 0) setViewingIndex(index);
+  }
 
   async function saveCopy(
     uri: string,
@@ -223,7 +236,7 @@ export function StepDetailAttachments({
       {attachments.map(file => (
         <View key={file.id} style={[styles.fileRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
           <Pressable accessibilityRole="button" accessibilityLabel={file.kind === 'image' ? `View image ${file.name}` : `Open ${file.name} in another app`}
-            onPress={() => file.kind === 'image' ? setViewing(file) : void openDocument(file)} style={styles.fileButton}>
+            onPress={() => file.kind === 'image' ? openImage(file) : void openDocument(file)} style={styles.fileButton}>
             {file.kind === 'image' ? <Image source={{ uri: `data:${file.mimeType};base64,${file.contentBase64}` }} style={styles.thumbnail} /> :
               <Ionicons name="document-text-outline" size={22} color={colors.primary} />}
             <Text numberOfLines={1} style={[styles.fileName, { color: colors.foreground }]}>{file.name}</Text>
@@ -234,6 +247,9 @@ export function StepDetailAttachments({
           </Pressable> : null}
         </View>
       ))}
+      {images.length > 1 ? (
+        <Text style={[styles.groupLabel, { color: colors.mutedForeground }]}>Tap any image to swipe through this detail’s {images.length} images.</Text>
+      ) : null}
       {onChange || onAddAttachment ? (
         <View style={styles.actions}>
           {Platform.OS !== 'web' ? (
@@ -252,12 +268,52 @@ export function StepDetailAttachments({
           </Pressable>
         </View>
       ) : null}
-      <Modal visible={viewing !== null} transparent animationType="fade" onRequestClose={() => setViewing(null)}>
+      <Modal visible={viewingIndex !== null} transparent animationType="fade" onRequestClose={() => setViewingIndex(null)}>
         <View style={styles.viewer}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Close image" onPress={() => setViewing(null)} style={styles.close}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Close image viewer" onPress={() => setViewingIndex(null)} style={styles.close}>
             <Ionicons name="close" size={26} color="#fff" />
           </Pressable>
-          {viewing ? <Image accessibilityLabel={viewing.name} source={{ uri: `data:${viewing.mimeType};base64,${viewing.contentBase64}` }} resizeMode="contain" style={styles.fullImage} /> : null}
+          {viewingIndex !== null && images.length ? (
+            <>
+              <ScrollView
+                ref={viewerRef}
+                testID="step-detail-image-slideshow"
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={16}
+                contentOffset={{ x: viewingIndex * viewportWidth, y: 0 }}
+                onMomentumScrollEnd={event => {
+                  const index = Math.round(event.nativeEvent.contentOffset.x / Math.max(viewportWidth, 1));
+                  setViewingIndex(Math.max(0, Math.min(images.length - 1, index)));
+                }}
+                style={styles.slides}
+              >
+                {images.map(image => (
+                  <View key={image.id} style={[styles.slide, { width: viewportWidth }]}>
+                    <Image accessibilityLabel={image.name}
+                      source={{ uri: `data:${image.mimeType};base64,${image.contentBase64}` }}
+                      resizeMode="contain" style={styles.fullImage} />
+                  </View>
+                ))}
+              </ScrollView>
+              {viewingIndex > 0 ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="Previous image"
+                  onPress={() => setViewingIndex(index => Math.max(0, (index ?? 0) - 1))}
+                  style={[styles.navButton, styles.previous]}>
+                  <Ionicons name="chevron-back" size={25} color="#fff" />
+                </Pressable>
+              ) : null}
+              {viewingIndex < images.length - 1 ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="Next image"
+                  onPress={() => setViewingIndex(index => Math.min(images.length - 1, (index ?? 0) + 1))}
+                  style={[styles.navButton, styles.next]}>
+                  <Ionicons name="chevron-forward" size={25} color="#fff" />
+                </Pressable>
+              ) : null}
+              <Text accessibilityLiveRegion="polite" style={styles.counter}>{viewingIndex + 1} / {images.length}</Text>
+            </>
+          ) : null}
         </View>
       </Modal>
     </View>
@@ -277,5 +333,11 @@ const styles = StyleSheet.create({
   remove: { width: 32, height: 34, alignItems: 'center', justifyContent: 'center' },
   viewer: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
   fullImage: { width: '100%', height: '85%' },
+  slides: { flex: 1, width: '100%' },
+  slide: { height: '100%', alignItems: 'center', justifyContent: 'center' },
+  navButton: { position: 'absolute', top: '50%', marginTop: -22, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  previous: { left: 12 },
+  next: { right: 12 },
+  counter: { position: 'absolute', top: 52, alignSelf: 'center', color: '#fff', fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   close: { position: 'absolute', top: 48, right: 20, zIndex: 2, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
 });

@@ -14,3 +14,9 @@ Attachment picker callbacks are asynchronous. When adding or removing a file whi
 **Why:** Returning from a device picker can happen after the editor has rerendered; replacing from an old prop snapshot can discard files already added to that detail.
 
 **How to apply:** Append/remove attachments with functional state updates, and keep file groups aligned with the main detail and each additional detail through step update and routine save.
+
+When a step detail has multiple images, tapping any image opens a swipeable viewer at that image. The slideshow includes only images attached to that one detail; it must not mix images from other details or steps.
+
+**Why:** The user asked to browse multiple images as slides and clarified that the viewer starts from the image tapped and stays within that detail.
+
+**How to apply:** Keep the image viewer scoped to the attachments passed for one detail. Leave document attachments in the existing open/share list.

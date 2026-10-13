@@ -5,6 +5,55 @@ import type { CompletionMap } from '../types/routines';
 const baseURL = process.env.RESTORE_TEST_BASE_URL
   ?? (process.env.REPLIT_EXPO_DEV_DOMAIN ? `https://${process.env.REPLIT_EXPO_DEV_DOMAIN}` : undefined);
 
+test('step detail image slideshow starts at the tapped image and stays within that detail', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const image = (id: string, name: string) => ({
+    id, name, uri: `local://${id}`, mimeType: 'image/png', kind: 'image' as const,
+    contentBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p2sAAAAASUVORK5CYII=',
+  });
+  await page.addInitScript(({ routinesKey, routine }) => {
+    localStorage.setItem(routinesKey, JSON.stringify([routine]));
+  }, {
+    routinesKey: '@routine-flow/routines',
+    routine: {
+      id: 'image-carousel',
+      title: 'Image carousel routine',
+      subtitle: 'Test',
+      icon: 'sunny-outline',
+      tone: 'coral',
+      createdAt: '2026-10-14T00:00:00.000Z',
+      steps: [
+        {
+          id: 'carousel-step',
+          title: 'First step',
+          durationSeconds: 60,
+          description: 'Main instructions',
+          additionalDetails: ['Additional instructions'],
+          detailAttachments: [[image('main-1', 'main-one.png'), image('main-2', 'main-two.png')], [image('additional-1', 'other-detail.png')]],
+        },
+        {
+          id: 'second-step',
+          title: 'Second step',
+          durationSeconds: 60,
+          description: 'Another step',
+          detailAttachments: [[image('step-two-1', 'other-step.png')]],
+        },
+      ],
+    },
+  });
+  await page.goto('/routine/image-carousel');
+
+  await page.getByLabel('View image main-two.png').click();
+  await expect(page.getByText('2 / 2', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Next image')).toHaveCount(0);
+  await page.getByLabel('Previous image').click();
+  await expect(page.getByText('1 / 2', { exact: true })).toBeVisible();
+  await page.getByLabel('Next image').click();
+  await expect(page.getByText('2 / 2', { exact: true })).toBeVisible();
+  await page.getByLabel('Close image viewer').click();
+  await expect(page.getByText('this detail’s 2 images')).toBeVisible();
+});
+
 test('person theme settings can be changed and their collapsed choice is remembered', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   await page.goto('/people');
