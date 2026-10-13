@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   isCompleted, type CompletionMap, type PlaylistCompletionSource, type Routine, type RoutineStep,
 } from '@/types/routines';
@@ -16,9 +17,20 @@ import { recordCompletion } from '@/lib/progressHistory';
 import { removeRoutineCategory, renameRoutineCategory } from '@/lib/routineCategories';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { mergeImportedProgress, mergeImportedRoutines, persistImportedBackup, type RoutineBackup } from '@/lib/routineTransfer';
+import {
+  saveRoutinesWithStepDetailAttachments,
+  type StepDetailAttachmentWriteFileSystem,
+} from '@/lib/stepDetailAttachmentCleanup';
 
 const ROUTINES_KEY = '@routine-flow/routines';
 const PROGRESS_KEY = '@routine-flow/progress';
+const stepDetailAttachmentWriteFileSystem: StepDetailAttachmentWriteFileSystem = {
+  getInfoAsync: async uri => ({ exists: (await FileSystem.getInfoAsync(uri)).exists }),
+  makeDirectoryAsync: (uri, options) => FileSystem.makeDirectoryAsync(uri, options),
+  writeAsStringAsync: (uri, contents) => FileSystem.writeAsStringAsync(uri, contents, {
+    encoding: FileSystem.EncodingType.Base64,
+  }),
+};
 
 const seedRoutines: Routine[] = [
   {
@@ -115,6 +127,14 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const importNeedsRestart = useRef(false);
   const runRoutineWrite = useRef(createRoutineWriteGuard()).current;
+  const persistRoutineList = useCallback((nextRoutines: Routine[]) => (
+    saveRoutinesWithStepDetailAttachments(
+      nextRoutines,
+      () => AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines)),
+      FileSystem.documentDirectory,
+      stepDetailAttachmentWriteFileSystem,
+    )
+  ), [AsyncStorage]);
 
   useEffect(() => {
     async function hydrate() {
@@ -192,11 +212,11 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       };
       const nextRoutines = [...routines, routine];
       setRoutines(nextRoutines);
-      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      await persistRoutineList(nextRoutines);
       void runAttachmentCleanup();
       return routine;
     }),
-    [routines, runRoutineWrite, runAttachmentCleanup],
+    [routines, persistRoutineList, runRoutineWrite, runAttachmentCleanup],
   );
 
   const copyRoutine = useCallback(
@@ -205,11 +225,11 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       if (!source) throw new Error('Routine not found');
       const copied = makeRoutineCopy(source, routines, makeId);
       const nextRoutines = [...routines, copied];
-      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      await persistRoutineList(nextRoutines);
       setRoutines(nextRoutines);
       return copied;
     }),
-    [routines, runRoutineWrite],
+    [routines, persistRoutineList, runRoutineWrite],
   );
 
   const updateRoutine = useCallback(
@@ -223,11 +243,11 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
           ...(skillIds !== undefined ? { skillIds: [...skillIds] } : {}),
         } : routine,
       );
-      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      await persistRoutineList(nextRoutines);
       setRoutines(nextRoutines);
       void runAttachmentCleanup();
     }),
-    [routines, runRoutineWrite, runAttachmentCleanup],
+    [routines, persistRoutineList, runRoutineWrite, runAttachmentCleanup],
   );
 
   const removeSkillAssignments = useCallback((skillId: string) => runRoutineWrite(async () => {
@@ -249,26 +269,26 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       nextRoutines[index].skillIds !== routine.skillIds
       || routine.steps.some((step, stepIndex) => nextRoutines[index].steps[stepIndex].skillIds !== step.skillIds));
     if (!changed) return;
-    await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+    await persistRoutineList(nextRoutines);
     setRoutines(nextRoutines);
-  }), [AsyncStorage, loading, routines, runRoutineWrite]);
+  }), [loading, persistRoutineList, routines, runRoutineWrite]);
 
   const renameCategory = useCallback(
     (source: string, target: string) => runRoutineWrite(async () => {
       const nextRoutines = renameRoutineCategory(routines, source, target);
-      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      await persistRoutineList(nextRoutines);
       setRoutines(nextRoutines);
     }),
-    [routines, runRoutineWrite],
+    [routines, persistRoutineList, runRoutineWrite],
   );
 
   const removeCategory = useCallback(
     (source: string) => runRoutineWrite(async () => {
       const nextRoutines = removeRoutineCategory(routines, source);
-      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      await persistRoutineList(nextRoutines);
       setRoutines(nextRoutines);
     }),
-    [routines, runRoutineWrite],
+    [routines, persistRoutineList, runRoutineWrite],
   );
 
   const importRoutines = useCallback(
@@ -280,18 +300,23 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       const merged = includeProgress && backup.progress
         ? mergeImportedProgress(progress, backup.progress, result.idMap)
         : { progress, added: 0, kept: 0 };
-      await persistImportedBackup(
-        AsyncStorage, ROUTINES_KEY, PROGRESS_KEY, result.routines, merged.progress,
-        result.added, merged.added, setRoutines, saved => {
-          progressRef.current = saved;
-          setProgress(saved);
-        },
-        () => { importNeedsRestart.current = true; },
+      await saveRoutinesWithStepDetailAttachments(
+        result.routines,
+        () => persistImportedBackup(
+          AsyncStorage, ROUTINES_KEY, PROGRESS_KEY, result.routines, merged.progress,
+          result.added, merged.added, setRoutines, saved => {
+            progressRef.current = saved;
+            setProgress(saved);
+          },
+          () => { importNeedsRestart.current = true; },
+        ),
+        FileSystem.documentDirectory,
+        stepDetailAttachmentWriteFileSystem,
       );
       return { added: result.added, skipped: result.skipped, renamed: result.renamed,
         progressAdded: merged.added, progressKept: merged.kept, routineIdMap: result.idMap };
     }),
-    [routines, progress, runRoutineWrite],
+    [AsyncStorage, routines, progress, runRoutineWrite],
   );
 
   const importProgress = useCallback((
@@ -323,10 +348,10 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       }
       const nextRoutines = [...routines];
       [nextRoutines[fromIndex], nextRoutines[toIndex]] = [nextRoutines[toIndex], nextRoutines[fromIndex]];
-      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      await persistRoutineList(nextRoutines);
       setRoutines(nextRoutines);
     }),
-    [routines, runRoutineWrite],
+    [routines, persistRoutineList, runRoutineWrite],
   );
 
   const setRoutineHidden = useCallback(
@@ -335,10 +360,10 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       const nextRoutines = routines.map((routine) =>
         routine.id === routineId ? { ...routine, hidden } : routine,
       );
-      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      await persistRoutineList(nextRoutines);
       setRoutines(nextRoutines);
     }),
-    [routines, runRoutineWrite],
+    [routines, persistRoutineList, runRoutineWrite],
   );
 
   const setStepHidden = useCallback(
@@ -350,21 +375,21 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
           ? { ...item, steps: item.steps.map((step) => step.id === stepId ? { ...step, hidden } : step) }
           : item,
       );
-      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      await persistRoutineList(nextRoutines);
       setRoutines(nextRoutines);
     }),
-    [routines, runRoutineWrite],
+    [routines, persistRoutineList, runRoutineWrite],
   );
 
   const deleteRoutine = useCallback(
     (routineId: string) => runRoutineWrite(async () => {
       if (!routines.some((routine) => routine.id === routineId)) throw new Error('Routine not found');
       const nextRoutines = routines.filter((routine) => routine.id !== routineId);
-      await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      await persistRoutineList(nextRoutines);
       setRoutines(nextRoutines);
       void runAttachmentCleanup();
     }),
-    [routines, runRoutineWrite, runAttachmentCleanup],
+    [routines, persistRoutineList, runRoutineWrite, runAttachmentCleanup],
   );
 
   const resetToday = useCallback(async () => {

@@ -1,3 +1,5 @@
+import type { Routine } from '@/types/routines';
+
 type CleanupStorage = {
   getAllKeys: () => Promise<readonly string[]>;
   multiGet: (keys: string[]) => Promise<ReadonlyArray<readonly [string, string | null]>>;
@@ -7,6 +9,28 @@ type CleanupFileSystem = {
   getInfoAsync: (uri: string) => Promise<{ exists: boolean; isDirectory: boolean; size?: number }>;
   deleteAsync: (uri: string, options?: { idempotent?: boolean }) => Promise<void>;
 };
+
+export type StepDetailAttachmentWriteFileSystem = {
+  getInfoAsync: (uri: string) => Promise<{ exists: boolean }>;
+  makeDirectoryAsync: (uri: string, options?: { intermediates?: boolean }) => Promise<void>;
+  writeAsStringAsync: (
+    uri: string,
+    contents: string,
+    options: { encoding: 'base64' },
+  ) => Promise<void>;
+};
+
+let attachmentOperationQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Serialize routine saves that reference attachments with cleanup's final
+ * reference check and filesystem deletion.
+ */
+export function withStepDetailAttachmentOperationLock<T>(operation: () => Promise<T>): Promise<T> {
+  const result = attachmentOperationQueue.then(operation, operation);
+  attachmentOperationQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
 
 export type StepDetailAttachmentCleanupResult = {
   removedCount: number;
@@ -363,6 +387,44 @@ export async function reconcilePendingStepDetailAttachmentDeletion(
 }
 
 /**
+ * Restore a missing app-managed attachment from its embedded backup bytes
+ * before persisting any routine that references it.
+ */
+export function saveRoutinesWithStepDetailAttachments<T>(
+  routines: readonly Routine[],
+  save: () => Promise<T>,
+  documentDirectory: string | null | undefined,
+  fileSystem: StepDetailAttachmentWriteFileSystem,
+): Promise<T> {
+  return withStepDetailAttachmentOperationLock(async () => {
+    const documentRoot = documentDirectory
+      ? (documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`)
+      : null;
+    const attachmentDirectory = documentRoot
+      ? `${documentRoot}step-detail-attachments/`
+      : null;
+
+    for (const routine of routines) {
+      for (const step of routine.steps) {
+        for (const group of step.detailAttachments ?? []) {
+          for (const attachment of group) {
+            const uri = attachment.uri;
+            if (!uri || !attachmentDirectory || !uri.startsWith(attachmentDirectory)) continue;
+            const fileName = uri.slice(attachmentDirectory.length);
+            if (!fileName || fileName === '.' || fileName === '..' || /[/\\]/.test(fileName)) continue;
+            const info = await fileSystem.getInfoAsync(uri);
+            if (info.exists) continue;
+            await fileSystem.makeDirectoryAsync(attachmentDirectory, { intermediates: true });
+            await fileSystem.writeAsStringAsync(uri, attachment.contentBase64, { encoding: 'base64' });
+          }
+        }
+      }
+    }
+    return save();
+  });
+}
+
+/**
  * Delete only unreferenced files in the app-managed attachment directory.
  * The routine records (including embedded backup bytes) are never modified.
  * If any saved routine data cannot be inspected, fail closed and delete nothing.
@@ -399,52 +461,56 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
       continue;
     }
     if (!info.exists || info.isDirectory) continue;
-    // A routine may have saved this attachment since the initial scan (or
-    // while the file metadata was being read). Re-check immediately before
-    // deletion so cleanup never acts on a stale orphan decision. Keep this
-    // outside the best-effort file-operation catch: unreadable routine data
-    // must stop cleanup instead of being treated as a per-file failure.
-    let latestReferences: Set<string>;
+    // Serialize the final reference check, durable pre-delete checkpoint, and
+    // filesystem delete with routine saves. A save waiting for a deletion
+    // restores the file from its embedded bytes before storing its reference.
+    let deleted = false;
     try {
-      latestReferences = await readReferencedAttachmentUris(storage, parsedRoutineRecords, metrics);
+      await withStepDetailAttachmentOperationLock(async () => {
+        let latestReferences: Set<string>;
+        try {
+          latestReferences = await readReferencedAttachmentUris(storage, parsedRoutineRecords, metrics);
+        } catch (error) {
+          throw new StepDetailAttachmentCleanupError(
+            error instanceof Error ? error.message : 'Saved routines could not be checked safely.',
+            {
+              removedCount,
+              estimatedBytes: hasAllSizes ? estimatedBytes : null,
+            },
+          );
+        }
+        if (latestReferences.has(uri)) {
+          referencedUris.add(uri);
+          return;
+        }
+        if (beforeDelete) {
+          try {
+            await beforeDelete({
+              fileName,
+              size: typeof info.size === 'number' && Number.isFinite(info.size) && info.size >= 0
+                ? info.size
+                : null,
+            });
+          } catch {
+            throw new StepDetailAttachmentCleanupError(
+              'Cleanup progress could not be saved.',
+              {
+                removedCount,
+                estimatedBytes: hasAllSizes ? estimatedBytes : null,
+              },
+            );
+          }
+        }
+        await fileSystem.deleteAsync(uri, { idempotent: true });
+        deleted = true;
+      });
     } catch (error) {
-      throw new StepDetailAttachmentCleanupError(
-        error instanceof Error ? error.message : 'Saved routines could not be checked safely.',
-        {
-          removedCount,
-          estimatedBytes: hasAllSizes ? estimatedBytes : null,
-        },
-      );
-    }
-    if (latestReferences.has(uri)) {
-      referencedUris.add(uri);
-      continue;
-    }
-    if (beforeDelete) {
-      try {
-        await beforeDelete({
-          fileName,
-          size: typeof info.size === 'number' && Number.isFinite(info.size) && info.size >= 0
-            ? info.size
-            : null,
-        });
-      } catch {
-        throw new StepDetailAttachmentCleanupError(
-          'Cleanup progress could not be saved.',
-          {
-            removedCount,
-            estimatedBytes: hasAllSizes ? estimatedBytes : null,
-          },
-        );
-      }
-    }
-    try {
-      await fileSystem.deleteAsync(uri, { idempotent: true });
-    } catch {
+      if (error instanceof StepDetailAttachmentCleanupError) throw error;
       // Continue trying other files, then report failure so the caller can offer a retry.
       failed = true;
       continue;
     }
+    if (!deleted) continue;
     removedCount += 1;
     if (typeof info.size === 'number' && Number.isFinite(info.size) && info.size >= 0) {
       estimatedBytes += info.size;

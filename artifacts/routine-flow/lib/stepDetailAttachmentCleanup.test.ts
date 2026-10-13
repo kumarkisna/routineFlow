@@ -6,6 +6,7 @@ import {
   cleanupOrphanedStepDetailAttachmentCopies,
   createStepDetailAttachmentCleanupRunner,
   reconcilePendingStepDetailAttachmentDeletion,
+  saveRoutinesWithStepDetailAttachments,
   STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY,
   StepDetailAttachmentCleanupError,
 } from './stepDetailAttachmentCleanup';
@@ -141,6 +142,65 @@ test('keeps a file when a routine starts referencing it during cleanup', async (
 
   assert.deepEqual(await cleanup, { removedCount: 0, estimatedBytes: 0 });
   assert.deepEqual(adapters.deleted, []);
+});
+
+test('restores an attachment when a routine save waits for its in-flight cleanup deletion', async () => {
+  const attachedUri = `${attachmentDirectory}in-flight.pdf`;
+  const contentBase64 = 'c2FtcGxl';
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], ['in-flight.pdf']);
+  let fileExists = true;
+  let savedContents = contentBase64;
+  let resumeDeletion!: () => void;
+  let signalDeletionStarted!: () => void;
+  const deletionStarted = new Promise<void>(resolve => { signalDeletionStarted = resolve; });
+  const allowDeletion = new Promise<void>(resolve => { resumeDeletion = resolve; });
+  adapters.fileSystem.deleteAsync = async uri => {
+    adapters.deleted.push(uri);
+    signalDeletionStarted();
+    await allowDeletion;
+    fileExists = false;
+    savedContents = '';
+  };
+
+  const cleanup = cleanupOrphanedStepDetailAttachmentCopies(
+    directory, adapters.storage, adapters.fileSystem,
+  );
+  await deletionStarted;
+
+  const savedRoutines = [routine(attachedUri, contentBase64)];
+  let routineWasSaved = false;
+  const save = saveRoutinesWithStepDetailAttachments(
+    savedRoutines,
+    async () => {
+      assert.equal(fileExists, true, 'the attachment is usable before its routine reference is saved');
+      assert.equal(savedContents, contentBase64);
+      adapters.values.set(PERSON_DATA_KEYS.routines, JSON.stringify(savedRoutines));
+      routineWasSaved = true;
+    },
+    directory,
+    {
+      getInfoAsync: async () => ({ exists: fileExists }),
+      makeDirectoryAsync: async () => {},
+      writeAsStringAsync: async (_uri, contents) => {
+        fileExists = true;
+        savedContents = contents;
+      },
+    },
+  );
+  assert.equal(routineWasSaved, false, 'routine persistence waits for the active file deletion');
+
+  resumeDeletion();
+  assert.deepEqual(await cleanup, { removedCount: 1, estimatedBytes: null });
+  await save;
+
+  assert.deepEqual(adapters.deleted, [attachedUri]);
+  assert.equal(routineWasSaved, true);
+  assert.equal(fileExists, true);
+  assert.equal(savedContents, contentBase64);
+  assert.match(adapters.values.get(PERSON_DATA_KEYS.routines)!, /in-flight\.pdf/);
 });
 
 test('stops later deletions if routine data becomes unreadable during cleanup', async () => {
