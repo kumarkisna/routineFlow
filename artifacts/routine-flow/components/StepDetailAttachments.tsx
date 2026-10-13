@@ -9,10 +9,12 @@ import { useColors } from '@/hooks/useColors';
 import type { StepDetailAttachment } from '@/types/routines';
 
 export function StepDetailAttachments({
-  attachments, onChange, disabled = false, testID = 'step-detail-attachments',
+  attachments, onChange, onAddAttachment, onRemoveAttachment, disabled = false, testID = 'step-detail-attachments',
 }: {
   attachments: StepDetailAttachment[];
   onChange?: (attachments: StepDetailAttachment[]) => void;
+  onAddAttachment?: (attachment: StepDetailAttachment) => void;
+  onRemoveAttachment?: (attachmentId: string) => void;
   disabled?: boolean;
   testID?: string;
 }) {
@@ -41,7 +43,8 @@ export function StepDetailAttachments({
       setBusy(true);
       const asset = result.assets[0];
       const file = await saveCopy(asset.uri, asset.fileName || `image-${Date.now()}.jpg`, asset.mimeType || 'image/jpeg', 'image');
-      onChange?.([...attachments, file]);
+      if (onAddAttachment) onAddAttachment(file);
+      else onChange?.([...attachments, file]);
     } catch (error) {
       Alert.alert('Could not attach image', error instanceof Error ? error.message : 'Try again.');
     } finally {
@@ -64,7 +67,8 @@ export function StepDetailAttachments({
       if (result.canceled) return;
       const asset = result.assets[0];
       const file = await saveCopy(asset.uri, asset.fileName || `step-photo-${Date.now()}.jpg`, asset.mimeType || 'image/jpeg', 'image');
-      onChange?.([...attachments, file]);
+      if (onAddAttachment) onAddAttachment(file);
+      else onChange?.([...attachments, file]);
     } catch (error) {
       Alert.alert('Could not take photo', error instanceof Error ? error.message : 'Try again.');
     } finally {
@@ -79,7 +83,8 @@ export function StepDetailAttachments({
       setBusy(true);
       const asset = result.assets[0];
       const file = await saveCopy(asset.uri, asset.name, asset.mimeType || 'application/octet-stream', 'document');
-      onChange?.([...attachments, file]);
+      if (onAddAttachment) onAddAttachment(file);
+      else onChange?.([...attachments, file]);
     } catch (error) {
       Alert.alert('Could not attach document', error instanceof Error ? error.message : 'Try again.');
     } finally {
@@ -104,7 +109,8 @@ export function StepDetailAttachments({
 
   async function remove(file: StepDetailAttachment) {
     try { if (file.uri) await FileSystem.deleteAsync(file.uri, { idempotent: true }); } catch { /* Removing a stale file is safe. */ }
-    onChange?.(attachments.filter(item => item.id !== file.id));
+    if (onRemoveAttachment) onRemoveAttachment(file.id);
+    else onChange?.(attachments.filter(item => item.id !== file.id));
   }
 
   return (
@@ -117,13 +123,13 @@ export function StepDetailAttachments({
               <Ionicons name="document-text-outline" size={22} color={colors.primary} />}
             <Text numberOfLines={1} style={[styles.fileName, { color: colors.foreground }]}>{file.name}</Text>
           </Pressable>
-          {onChange ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${file.name}`} disabled={disabled || busy}
+          {onChange || onRemoveAttachment ? <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${file.name}`} disabled={disabled || busy}
             onPress={() => void remove(file)} style={styles.remove}>
             <Ionicons name="close-circle-outline" size={20} color={colors.destructive} />
           </Pressable> : null}
         </View>
       ))}
-      {onChange ? (
+      {onChange || onAddAttachment ? (
         <View style={styles.actions}>
           {Platform.OS !== 'web' ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Take a photo" testID={`${testID}-take-photo`} disabled={disabled || busy}

@@ -28,7 +28,8 @@ import {
   createStepDetailDraft,
   removeAdditionalStepDetail,
   setStepDetailSpeech as setDraftDetailSpeech,
-  setStepDetailAttachments as setDraftDetailAttachments,
+  addStepDetailAttachment,
+  removeStepDetailAttachment,
   setStepDetailHtml as setDraftDetailHtml,
   updateAdditionalStepDetail,
   type StepDetailDraft,
@@ -173,12 +174,37 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
       setError('Give your routine a name first.');
       return;
     }
-    if (steps.length === 0) {
-      setError('Add at least one step to make this routine repeatable.');
-      return;
-    }
+    let stepsToSave = steps;
     if (editingStepId) {
-      setError('Update or cancel the step you are editing before saving.');
+      const editedTitle = stepDraft.trim();
+      if (!editedTitle) {
+        setError('Give this step a name before saving the routine.');
+        return;
+      }
+      const hours = Math.max(0, Number.parseInt(hoursDraft, 10) || 0);
+      const minutes = Math.min(59, Math.max(0, Number.parseInt(minutesDraft, 10) || 0));
+      const seconds = Math.min(59, Math.max(0, Number.parseInt(secondsDraft, 10) || 0));
+      const durationSeconds = hours * 3600 + minutes * 60 + seconds;
+      if (durationSeconds === 0) {
+        setError('Give this step a duration before saving the routine.');
+        return;
+      }
+      const detailFields = buildStepDetailFields(stepDetailDraft);
+      if (!steps.some(step => step.id === editingStepId)) {
+        setError('The step being edited is no longer in this routine.');
+        return;
+      }
+      stepsToSave = steps.map(step => step.id === editingStepId ? {
+        ...step,
+        title: editedTitle,
+        ...detailFields,
+        speakDetails: undefined,
+        skillIds: [...stepSkillIds],
+        durationSeconds,
+      } : step);
+    }
+    if (stepsToSave.length === 0) {
+      setError('Add at least one step to make this routine repeatable.');
       return;
     }
     Keyboard.dismiss();
@@ -187,7 +213,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
       const savedCategory = normalizeCategory(category, existingCategories);
       const availableSkills = new Set(skills.map(skill => skill.id));
       const savedSkillIds = skillIds.filter(id => availableSkills.has(id));
-      const savedSteps = steps.map(step => ({
+      const savedSteps = stepsToSave.map(step => ({
         ...step,
         ...(step.skillIds ? { skillIds: step.skillIds.filter(id => availableSkills.has(id)) } : {}),
       }));
@@ -353,7 +379,8 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           <ExpandableRichDetailEditor label="Main step detail" value={stepDescriptionDraft} html={detailHtmlDraft[0] ?? ''} disabled={saving}
             onSave={(description, html) => setStepDetailDraft(current => setDraftDetailHtml({ ...current, description }, 0, html))} />
           <StepDetailAttachments testID="main-detail-files" attachments={detailAttachmentsDraft[0] ?? []} disabled={saving}
-            onChange={files => setStepDetailDraft(current => setDraftDetailAttachments(current, 0, files))} />
+            onAddAttachment={file => setStepDetailDraft(current => addStepDetailAttachment(current, 0, file))}
+            onRemoveAttachment={id => setStepDetailDraft(current => removeStepDetailAttachment(current, 0, id))} />
           <View style={styles.detailSpeechRow}>
             <Text style={[styles.detailSpeechLabel, { color: colors.inkSoft }]}>Speak main detail aloud</Text>
             <Switch
@@ -389,7 +416,8 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 <ExpandableRichDetailEditor label={`Additional detail ${index + 1}`} value={detail} html={detailHtmlDraft[index + 1] ?? ''} disabled={saving}
                   onSave={(text, html) => setStepDetailDraft(current => setDraftDetailHtml(updateAdditionalStepDetail(current, index, text), index + 1, html))} />
                 <StepDetailAttachments testID={`additional-detail-files-${index}`} attachments={detailAttachmentsDraft[index + 1] ?? []} disabled={saving}
-                  onChange={files => setStepDetailDraft(current => setDraftDetailAttachments(current, index + 1, files))} />
+                  onAddAttachment={file => setStepDetailDraft(current => addStepDetailAttachment(current, index + 1, file))}
+                  onRemoveAttachment={id => setStepDetailDraft(current => removeStepDetailAttachment(current, index + 1, id))} />
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Remove additional detail ${index + 1}`}

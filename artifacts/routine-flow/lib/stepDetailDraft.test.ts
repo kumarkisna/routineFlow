@@ -3,6 +3,7 @@ import test from 'node:test';
 import { getSpokenStepDetails, type Routine, type RoutineStep } from '../types/routines';
 import {
   addAdditionalStepDetail,
+  addStepDetailAttachment,
   buildStepDetailFields,
   createStepDetailDraft,
   removeAdditionalStepDetail,
@@ -88,6 +89,28 @@ test('formatted details retain plain editable text and HTML through save and reo
     'Read each instruction in order.',
     'Open the reference.',
   ]);
+});
+
+test('editing a step appends files to the selected detail and preserves them after save and reopen', () => {
+  const photo = {
+    id: 'photo-1', name: 'before.png', uri: 'file:///old/before.png',
+    mimeType: 'image/png', kind: 'image' as const, contentBase64: 'aGVsbG8=',
+  };
+  const document = {
+    id: 'document-1', name: 'guide.pdf', uri: 'file:///old/guide.pdf',
+    mimeType: 'application/pdf', kind: 'document' as const, contentBase64: 'JVBERi0=',
+  };
+  const originalStep: RoutineStep = {
+    id: 'practice', title: 'Practice', description: 'Read the note',
+    additionalDetails: ['Open the guide'], detailAttachments: [[photo], []], durationSeconds: 60,
+  };
+  let draft = createStepDetailDraft(originalStep);
+  draft = addStepDetailAttachment(draft, 1, document);
+  const updatedStep = { ...originalStep, ...buildStepDetailFields(draft) };
+  const reopened = createStepDetailDraft(updatedStep);
+  assert.deepEqual(updatedStep.detailAttachments, [[photo], [document]]);
+  assert.deepEqual(reopened.detailAttachments, [[photo], [document]]);
+  assert.equal(reopened.detailAttachments[1][0].contentBase64, 'JVBERi0=');
 });
 
 test('step speech choices stay with their details when the routine is reordered and reopened', () => {

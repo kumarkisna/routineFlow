@@ -8,3 +8,9 @@ Each routine step keeps its existing detail and lets users add or remove additio
 **Why:** The user clarified that speech must be selectable per individual detail, not as one switch for all details on a step. Preserving the legacy per-step setting avoids changing saved routines unexpectedly.
 
 **How to apply:** Keep each detail's speech flag aligned with the ordered main/additional details through editing, copying, import, and export. Missing flags mean spoken. Turning one off omits only that detail; the step title, assigned skills, other enabled details, and duration remain spoken in the normal announcement sequence.
+
+Attachment picker callbacks are asynchronous. When adding or removing a file while editing a step, update the latest draft by detail index and attachment ID instead of replacing it with a list captured before the picker opened.
+
+**Why:** Returning from a device picker can happen after the editor has rerendered; replacing from an old prop snapshot can discard files already added to that detail.
+
+**How to apply:** Append/remove attachments with functional state updates, and keep file groups aligned with the main detail and each additional detail through step update and routine save.

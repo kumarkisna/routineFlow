@@ -99,6 +99,18 @@ export function setStepDetailAttachments(draft: StepDetailDraft, index: number, 
   return { ...draft, detailAttachments };
 }
 
+export function addStepDetailAttachment(draft: StepDetailDraft, index: number, attachment: StepDetailAttachment): StepDetailDraft {
+  const detailAttachments = [...draft.detailAttachments];
+  detailAttachments[index] = [...(detailAttachments[index] ?? []), attachment];
+  return { ...draft, detailAttachments };
+}
+
+export function removeStepDetailAttachment(draft: StepDetailDraft, index: number, attachmentId: string): StepDetailDraft {
+  const detailAttachments = [...draft.detailAttachments];
+  detailAttachments[index] = (detailAttachments[index] ?? []).filter(attachment => attachment.id !== attachmentId);
+  return { ...draft, detailAttachments };
+}
+
 export function setStepDetailHtml(draft: StepDetailDraft, index: number, html: string): StepDetailDraft {
   const detailHtml = [...draft.detailHtml];
   detailHtml[index] = html;
