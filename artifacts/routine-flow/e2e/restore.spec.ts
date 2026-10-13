@@ -98,6 +98,36 @@ test('person theme settings can be changed and their collapsed choice is remembe
   await expect(page.getByTestId('app-background-image')).toHaveCount(0);
 });
 
+test('canceling a background camera capture keeps the current photo and camera available', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const savedPhoto = 'data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
+  await page.addInitScript(photo => {
+    localStorage.setItem('@routine-flow/background-image', photo);
+  }, savedPhoto);
+  await page.goto('/people');
+
+  const expectRenderedPhoto = async (testId: string) => {
+    const image = page.getByTestId(testId).locator('div').last();
+    await expect.poll(() => image.evaluate(element => getComputedStyle(element).backgroundImage))
+      .toContain(savedPhoto.slice(savedPhoto.indexOf(',') + 1));
+  };
+  await expectRenderedPhoto('app-background-image');
+  await page.getByTestId('person-edit-me').click();
+  await page.getByTestId('person-background-toggle-me').click();
+  await expectRenderedPhoto('person-background-preview-me');
+
+  const pickerPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('person-background-camera-me').click();
+  const cameraPicker = await pickerPromise;
+  expect(await cameraPicker.element().getAttribute('capture')).toBe('camera');
+  await cameraPicker.element().dispatchEvent('cancel');
+
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/background-image'))).toBe(savedPhoto);
+  await expectRenderedPhoto('person-background-preview-me');
+  await expectRenderedPhoto('app-background-image');
+  await expect(page.getByTestId('person-background-camera-me')).toBeEnabled();
+});
+
 test('background photos stay with their person across switches, reloads, and clearing', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   const mePhotoBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
