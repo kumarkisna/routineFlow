@@ -249,6 +249,15 @@ test('failed background saves and clears keep the selected photo and can be retr
       nativeRemoveItem.call(this, key);
     };
     const nativeGetItem = Storage.prototype.getItem;
+    const nativeToBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+      if (type === 'image/jpeg' && nativeGetItem.call(localStorage, '__fail_next_background_jpeg_encode') === '1') {
+        nativeRemoveItem.call(localStorage, '__fail_next_background_jpeg_encode');
+        callback(null);
+        return;
+      }
+      nativeToBlob.call(this, callback, type, quality);
+    };
   }, { oldMePhoto, alexPhoto });
 
   await page.goto('/people');
@@ -304,6 +313,21 @@ test('failed background saves and clears keep the selected photo and can be retr
     buffer: Buffer.from(alexPhoto.slice('data:image/jpeg;base64,'.length), 'base64'),
   });
   await expect(page.getByText(/background photo could not be saved.*previous photo is still selected/i)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/background-image'))).toBe(savedMePhoto);
+  await expectRenderedPhoto(savedMePhoto!);
+  await expectSelectedProfilePhoto(savedMePhoto!);
+
+  await page.evaluate(() => localStorage.setItem('__fail_next_background_jpeg_encode', '1'));
+  cameraChooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('person-background-camera-me').click();
+  cameraChooser = await cameraChooserPromise;
+  expect(await cameraChooser.element().getAttribute('capture')).toBe('camera');
+  await cameraChooser.setFiles({
+    name: 'camera-me-background.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(alexPhoto.slice('data:image/jpeg;base64,'.length), 'base64'),
+  });
+  await expect(page.getByText(/new picture could not be prepared.*current background photo is still selected/i)).toBeVisible();
   await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/background-image'))).toBe(savedMePhoto);
   await expectRenderedPhoto(savedMePhoto!);
   await expectSelectedProfilePhoto(savedMePhoto!);

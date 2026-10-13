@@ -136,11 +136,17 @@ export default function PeopleScreen() {
 
   async function saveBackgroundAsset(personId: string, asset: ImagePicker.ImagePickerAsset) {
     const fit = Math.min(1200 / asset.width, 800 / asset.height, 1);
-    const compressed = await ImageManipulator.manipulateAsync(
-      asset.uri, [{ resize: { width: Math.round(asset.width * fit), height: Math.round(asset.height * fit) } }],
-      { compress: 0.72, format: ImageManipulator.SaveFormat.JPEG, base64: true },
-    );
-    if (!compressed.base64) throw new Error('The selected picture could not be prepared for saving.');
+    const preparationError = 'The new picture could not be prepared. Your current background photo is still selected. Please try another picture.';
+    let compressed: Awaited<ReturnType<typeof ImageManipulator.manipulateAsync>>;
+    try {
+      compressed = await ImageManipulator.manipulateAsync(
+        asset.uri, [{ resize: { width: Math.round(asset.width * fit), height: Math.round(asset.height * fit) } }],
+        { compress: 0.72, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+    } catch {
+      throw new Error(preparationError);
+    }
+    if (!compressed.base64) throw new Error(preparationError);
     const uri = `data:image/jpeg;base64,${compressed.base64}`;
     if (personId === activePerson.id) await setBackgroundImage(uri);
     else await persistPersonBackgroundImage(createPersonStorage(personId), uri);
