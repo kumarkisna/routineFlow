@@ -224,6 +224,7 @@ export function createStepDetailAttachmentCleanupRunner(
         onStatus('retry', previousAttempts, 'progress-storage');
         return null;
       }
+      onStatus('running', previousAttempts);
       if (pendingDeletion) {
         if (!reconcilePendingDeletion || !progressStorage) {
           onStatus('retry', previousAttempts, 'progress-storage');
@@ -260,7 +261,6 @@ export function createStepDetailAttachmentCleanupRunner(
           return null;
         }
       }
-      onStatus('running', previousAttempts);
       let removed: StepDetailAttachmentCleanupResult;
       const progressBeforeAttempt = previousAttempts;
       let lastSavedProgress = progressBeforeAttempt;
@@ -270,6 +270,7 @@ export function createStepDetailAttachmentCleanupRunner(
           await saveProgress(total, undefined);
           pendingDeletion = undefined;
           lastSavedProgress = total;
+          onStatus('running', total);
         }, async pending => {
           const nextPending = { ...pending, counted: false };
           await saveProgress(progressBeforeAttempt, nextPending);

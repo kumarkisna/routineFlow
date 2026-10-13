@@ -432,6 +432,38 @@ test('reports when cleanup progress storage blocks a safe deletion, then clears 
   assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
 });
 
+test('publishes live running progress after a completed file is checkpointed', async () => {
+  const progress = { removedCount: 1, estimatedBytes: 128 };
+  const statuses: Array<{
+    status: string;
+    progress?: { removedCount: number; estimatedBytes: number | null };
+  }> = [];
+  let finishCleanup!: () => void;
+  const cleanupHeld = new Promise<void>(resolve => { finishCleanup = resolve; });
+  let reportProgress!: () => void;
+  const progressReported = new Promise<void>(resolve => { reportProgress = resolve; });
+  const runCleanup = createStepDetailAttachmentCleanupRunner(
+    async onProgress => {
+      await onProgress?.(progress);
+      reportProgress();
+      await cleanupHeld;
+      return progress;
+    },
+    (status, result) => { statuses.push({ status, progress: result }); },
+  );
+
+  const cleanupRun = runCleanup();
+  await progressReported;
+  assert.deepEqual(statuses, [
+    { status: 'running', progress: { removedCount: 0, estimatedBytes: 0 } },
+    { status: 'running', progress },
+  ]);
+
+  finishCleanup();
+  assert.deepEqual(await cleanupRun, progress);
+  assert.deepEqual(statuses.at(-1), { status: 'complete', progress });
+});
+
 test('retains the completed-file count when clearing progress fails and announces completion after retry', async () => {
   const orphanUri = `${attachmentDirectory}orphan.pdf`;
   const adapters = createAdapters([
@@ -486,7 +518,7 @@ test('retains the completed-file count when clearing progress fails and announce
   });
 
   assert.deepEqual(await runCleanup(), { removedCount: 1, estimatedBytes: 128 });
-  assert.deepEqual(statuses, ['running', 'retry', 'running', 'complete']);
+  assert.deepEqual(statuses, ['running', 'running', 'retry', 'running', 'complete']);
   assert.equal(failureReason, undefined);
   assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
 });

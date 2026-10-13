@@ -895,12 +895,28 @@ export default function HomeScreen() {
               <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
                 Export this person’s routines, playlists, schedules, skills and rating history, and selected theme as one JSON file. Daily progress is optional. {Platform.OS === 'android' ? 'On Android, save to a folder on your device or share the backup with another app. ' : ''}Import JSON merges a single-profile backup into the active profile; schedules and theme are not restored.
               </Text>
+              {attachmentCleanupBusy ? (
+                <View style={[styles.cleanupNotice, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                  <View style={styles.cleanupProgressRow}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text accessibilityLiveRegion="polite" testID="attachment-cleanup-progress"
+                      style={[styles.transferDescription, styles.cleanupProgressText, { color: colors.foreground }]}>
+                      Cleaning up unused attachment files…
+                      {attachmentCleanupResult !== null && attachmentCleanupResult.removedCount > 0
+                        ? ` Removed ${attachmentCleanupResult.removedCount} unused attachment ${attachmentCleanupResult.removedCount === 1 ? 'file' : 'files'} so far.`
+                        : ''}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
               {attachmentCleanupPending ? (
                 <View style={[styles.cleanupNotice, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
                   <Text accessibilityRole="alert" accessibilityLiveRegion="assertive"
                     testID="attachment-cleanup-notice"
                     style={[styles.transferDescription, { color: colors.foreground }]}>
-                    {attachmentCleanupResult !== null && attachmentCleanupResult.removedCount > 0
+                    {attachmentCleanupBusy
+                      ? 'A cleanup retry is in progress. '
+                      : attachmentCleanupResult !== null && attachmentCleanupResult.removedCount > 0
                       ? `Cleanup is still incomplete. Removed ${attachmentCleanupResult.removedCount} unused attachment ${attachmentCleanupResult.removedCount === 1 ? 'file' : 'files'} so far. `
                       : 'Cleanup is still incomplete. '}
                     {getStepDetailAttachmentCleanupFailureMessage(
@@ -922,7 +938,7 @@ export default function HomeScreen() {
                   </Pressable>
                 </View>
               ) : null}
-              {attachmentCleanupResult !== null && !attachmentCleanupPending ? (
+              {attachmentCleanupResult !== null && !attachmentCleanupPending && !attachmentCleanupBusy ? (
                 <Text accessibilityLiveRegion="polite" testID="attachment-cleanup-result"
                   style={[styles.transferDescription, { color: colors.foreground }]}>
                   {attachmentCleanupResult.removedCount === 0
@@ -1316,6 +1332,8 @@ const styles = StyleSheet.create({
   transferTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   transferDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
   cleanupNotice: { borderWidth: 1, borderRadius: 13, padding: 11, marginTop: 10, gap: 7 },
+  cleanupProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  cleanupProgressText: { flex: 1, marginTop: 0 },
   profileNameChanges: { gap: 8, marginTop: 12 },
   profileNameTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   profileNameRow: { gap: 2 },
