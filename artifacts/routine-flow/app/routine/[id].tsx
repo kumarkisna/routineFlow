@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -43,7 +44,12 @@ export default function RoutineDetailScreen() {
   const [reorderError, setReorderError] = React.useState('');
   const [speakingStepId, setSpeakingStepId] = React.useState<string | null>(null);
   const [speakingAll, setSpeakingAll] = React.useState(false);
+  const [speakingAllPaused, setSpeakingAllPaused] = React.useState(false);
   const speechToken = React.useRef(0);
+  const speechUtteranceToken = React.useRef(0);
+  const speakingAllRef = React.useRef(false);
+  const speakingAllPausedRef = React.useRef(false);
+  const speakAllIndexRef = React.useRef(0);
   const reorderLock = React.useRef(false);
   const routine = routines.find((item) => item.id === id);
   React.useEffect(() => () => {
@@ -101,24 +107,33 @@ export default function RoutineDetailScreen() {
 
   function stopPreviewSpeech() {
     speechToken.current += 1;
+    speechUtteranceToken.current += 1;
+    speakingAllRef.current = false;
+    speakingAllPausedRef.current = false;
     setSpeakingStepId(null);
     setSpeakingAll(false);
+    setSpeakingAllPaused(false);
     void Speech.stop();
   }
 
   function speakStep(stepId: string, index: number) {
-    if (speakingStepId === stepId && !speakingAll) {
+    if (speakingStepId === stepId && !speakingAllRef.current) {
       stopPreviewSpeech();
       return;
     }
     const token = ++speechToken.current;
+    speechUtteranceToken.current += 1;
     void Speech.stop();
+    speakingAllRef.current = false;
+    speakingAllPausedRef.current = false;
     setSpeakingStepId(stepId);
     setSpeakingAll(false);
+    setSpeakingAllPaused(false);
     const finish = () => {
       if (speechToken.current === token) {
         setSpeakingStepId(null);
         setSpeakingAll(false);
+        setSpeakingAllPaused(false);
       }
     };
     try {
@@ -134,49 +149,78 @@ export default function RoutineDetailScreen() {
     }
   }
 
+  function speakAllStepAt(index: number, sessionToken: number) {
+    if (speechToken.current !== sessionToken || speakingAllPausedRef.current) return;
+    if (index >= visibleSteps.length) {
+      speakingAllRef.current = false;
+      setSpeakingStepId(null);
+      setSpeakingAll(false);
+      setSpeakingAllPaused(false);
+      return;
+    }
+    speakAllIndexRef.current = index;
+    const step = visibleSteps[index];
+    const utteranceToken = ++speechUtteranceToken.current;
+    setSpeakingStepId(step.id);
+    const isCurrentUtterance = () => (
+      speechToken.current === sessionToken
+      && speechUtteranceToken.current === utteranceToken
+    );
+    try {
+      Speech.speak(buildStepAnnouncement(currentRoutine, index, skills), {
+        rate: 0.92,
+        pitch: 1,
+        onDone: () => {
+          if (isCurrentUtterance() && !speakingAllPausedRef.current) {
+            speakAllStepAt(index + 1, sessionToken);
+          }
+        },
+        onStopped: () => {
+          if (isCurrentUtterance() && !speakingAllPausedRef.current) stopPreviewSpeech();
+        },
+        onError: () => {
+          if (isCurrentUtterance() && !speakingAllPausedRef.current) stopPreviewSpeech();
+        },
+      });
+    } catch {
+      if (isCurrentUtterance()) stopPreviewSpeech();
+    }
+  }
+
   function speakAllSteps() {
-    if (speakingAll) {
-      stopPreviewSpeech();
+    if (speakingAllRef.current) {
+      if (!speakingAllPausedRef.current) {
+        speakingAllPausedRef.current = true;
+        setSpeakingAllPaused(true);
+        if (Platform.OS === 'android') {
+          // Android's native speech engine cannot pause mid-utterance. Retain
+          // the current step and replay that step when the user resumes.
+          speechUtteranceToken.current += 1;
+          void Speech.stop();
+        } else {
+          void Speech.pause();
+        }
+      } else {
+        speakingAllPausedRef.current = false;
+        setSpeakingAllPaused(false);
+        if (Platform.OS === 'android') {
+          speakAllStepAt(speakAllIndexRef.current, speechToken.current);
+        } else {
+          void Speech.resume();
+        }
+      }
       return;
     }
     const token = ++speechToken.current;
-    void Speech.stop();
+    speechUtteranceToken.current += 1;
+    speakAllIndexRef.current = 0;
+    speakingAllRef.current = true;
+    speakingAllPausedRef.current = false;
     setSpeakingAll(true);
-    const speakNext = (index: number) => {
-      if (speechToken.current !== token) return;
-      if (index >= visibleSteps.length) {
-        setSpeakingStepId(null);
-        setSpeakingAll(false);
-        return;
-      }
-      const step = visibleSteps[index];
-      setSpeakingStepId(step.id);
-      try {
-        Speech.speak(buildStepAnnouncement(currentRoutine, index, skills), {
-          rate: 0.92,
-          pitch: 1,
-          onDone: () => speakNext(index + 1),
-          onStopped: () => {
-            if (speechToken.current === token) {
-              setSpeakingStepId(null);
-              setSpeakingAll(false);
-            }
-          },
-          onError: () => {
-            if (speechToken.current === token) {
-              setSpeakingStepId(null);
-              setSpeakingAll(false);
-            }
-          },
-        });
-      } catch {
-        if (speechToken.current === token) {
-          setSpeakingStepId(null);
-          setSpeakingAll(false);
-        }
-      }
-    };
-    speakNext(0);
+    setSpeakingAllPaused(false);
+    void Speech.stop().finally(() => {
+      if (speechToken.current === token) speakAllStepAt(0, token);
+    });
   }
 
   async function handleCopy() {
@@ -371,7 +415,7 @@ export default function RoutineDetailScreen() {
               <Text style={[styles.stepCount, { color: colors.mutedForeground }]}>{completed} of {visibleSteps.length}</Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={speakingAll ? 'Stop speaking all steps' : 'Speak all steps'}
+                accessibilityLabel={!speakingAll ? 'Speak all steps' : speakingAllPaused ? 'Resume speaking all steps' : 'Pause speaking all steps'}
                 testID="speak-all-steps"
                 disabled={visibleSteps.length === 0}
                 onPress={speakAllSteps}
@@ -381,9 +425,23 @@ export default function RoutineDetailScreen() {
                   pressed && styles.pressed,
                 ]}
               >
-                <Ionicons name={speakingAll ? 'stop' : 'volume-high-outline'} size={15} color={colors.primary} />
-                <Text style={[styles.speakAllText, { color: colors.primary }]}>{speakingAll ? 'Stop' : 'Speak all'}</Text>
+                <Ionicons name={!speakingAll ? 'volume-high-outline' : speakingAllPaused ? 'play' : 'pause'}
+                  size={15} color={colors.primary} />
+                <Text style={[styles.speakAllText, { color: colors.primary }]}>
+                  {!speakingAll ? 'Speak all' : speakingAllPaused ? 'Play' : 'Pause'}
+                </Text>
               </Pressable>
+              {speakingAll ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Stop speaking all steps"
+                  testID="stop-speak-all-steps"
+                  onPress={stopPreviewSpeech}
+                  style={({ pressed }) => [styles.stopSpeakAllButton, { backgroundColor: colors.secondary }, pressed && styles.pressed]}
+                >
+                  <Ionicons name="stop" size={15} color={colors.primary} />
+                </Pressable>
+              ) : null}
             </View>
           </View>
           <Text style={[styles.reorderHint, { color: colors.mutedForeground }]}>
@@ -576,6 +634,7 @@ const styles = StyleSheet.create({
   stepsHeadingActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stepCount: { fontFamily: 'Inter_400Regular', fontSize: 13 },
   speakAllButton: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 9, borderRadius: 10 },
+  stopSpeakAllButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   speakAllText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   reorderHint: { fontFamily: 'Inter_400Regular', fontSize: 12, marginBottom: 12 },
   showHiddenButton: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, marginTop: -6, marginBottom: 7 },
