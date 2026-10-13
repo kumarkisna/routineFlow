@@ -15,6 +15,12 @@ Speech voice choice is person-specific. New profiles use the device default, all
 
 **How to apply:** Save the platform voice identifier on that profile and use it only when the current device reports that identifier as available.
 
+Each person has a default for speaking routine descriptions. New routines inherit that preference, while every saved routine keeps its own editable override.
+
+**Why:** The user wants the default chosen per person but still adjustable per routine.
+
+**How to apply:** Seed only newly created routines from the active person's setting; editing or running an existing routine follows its saved `speakSubtitle` value.
+
 Copies append independent items and include referenced dependencies. They retain routine settings, playlist order/repeats, schedule dates, date-only overrides, and alert lead times, but not completion history or native notification identifiers.
 
 **Why:** Copying must not alter the source or duplicate its phone alerts. Existing reminders belong to their original person even while another person is active.

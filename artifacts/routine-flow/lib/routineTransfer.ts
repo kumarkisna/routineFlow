@@ -307,6 +307,7 @@ export function serializeAllPeopleBackup(activePersonId: string, entries: AllPeo
         speechVoiceId: person.speechVoiceId,
         defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd,
         defaultPlaylistReminderSettings: person.defaultPlaylistReminderSettings,
+        defaultSpeakRoutineDescription: person.defaultSpeakRoutineDescription,
       },
       backup: JSON.parse(serializePersonBackup(routines, personData, progress)) as RoutineBackup,
     })),
@@ -370,6 +371,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
     const reminderSettings = profileValue.defaultPlaylistReminderSettings;
     const profileNumber = profileValue.profileNumber ?? profileValue.id;
     const speechVoiceId = profileValue.speechVoiceId;
+    const defaultSpeakRoutineDescription = profileValue.defaultSpeakRoutineDescription;
     if (typeof profileValue.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileValue.id)
       || typeof profileNumber !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileNumber)
       || profileNumber !== profileValue.id
@@ -377,6 +379,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
       || (speechVoiceId !== undefined && speechVoiceId !== null
         && (typeof speechVoiceId !== 'string' || !speechVoiceId.trim()))
       || typeof profileValue.defaultRateSkillsAtPlaylistEnd !== 'boolean'
+      || (defaultSpeakRoutineDescription !== undefined && typeof defaultSpeakRoutineDescription !== 'boolean')
       || !isRecord(reminderSettings)
       || typeof reminderSettings.stepCompletion !== 'boolean'
       || typeof reminderSettings.routineCompletion !== 'boolean'
@@ -388,6 +391,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
       name: profileValue.name.trim(),
       speechVoiceId: typeof speechVoiceId === 'string' ? speechVoiceId : null,
       defaultRateSkillsAtPlaylistEnd: profileValue.defaultRateSkillsAtPlaylistEnd,
+      defaultSpeakRoutineDescription: defaultSpeakRoutineDescription ?? true,
       defaultPlaylistReminderSettings: {
         stepCompletion: reminderSettings.stepCompletion,
         routineCompletion: reminderSettings.routineCompletion,

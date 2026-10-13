@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme } from '@/lib/appThemes';
+import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme, saveThemePreference } from '@/lib/appThemes';
 import {
   buildPersonCopy, readPersonExportSnapshot, readPersonSnapshot, repairPersonRoutineDurations,
 } from '@/lib/personCopy';
@@ -56,6 +56,8 @@ type PeopleContextValue = {
   removePerson: (id: string) => Promise<void>;
   switchPerson: (id: string) => Promise<void>;
   loadPerson: (id: string) => Promise<PersonSnapshot>;
+  loadPersonTheme: (id: string) => Promise<string>;
+  savePersonTheme: (id: string, themeId: string) => Promise<void>;
   copyFromPerson: (sourceId: string, selection: PersonCopySelection) => Promise<PersonCopySummary>;
   restoreAllProfiles: (
     backup: AllPeopleBackup,
@@ -266,6 +268,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       name: trimmed,
       speechVoiceId: profile.speechVoiceId ?? null,
       defaultRateSkillsAtPlaylistEnd: profile.defaultRateSkillsAtPlaylistEnd ?? true,
+      defaultSpeakRoutineDescription: profile.defaultSpeakRoutineDescription ?? true,
       defaultPlaylistReminderSettings: {
         stepCompletion: profile.defaultPlaylistReminderSettings?.stepCompletion
           ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,
@@ -311,6 +314,8 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
         : profile.speechVoiceId,
       defaultRateSkillsAtPlaylistEnd:
         profile.defaultRateSkillsAtPlaylistEnd ?? existing.defaultRateSkillsAtPlaylistEnd,
+      defaultSpeakRoutineDescription:
+        profile.defaultSpeakRoutineDescription ?? existing.defaultSpeakRoutineDescription ?? true,
       defaultPlaylistReminderSettings: {
         stepCompletion: profile.defaultPlaylistReminderSettings?.stepCompletion
           ?? existing.defaultPlaylistReminderSettings?.stepCompletion
@@ -360,6 +365,21 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     if (!current.current.people.some(person => person.id === id)) throw new Error('Person not found.');
     await waitForPersonWrites(id);
     return readPersonSnapshot(id);
+  }, []);
+
+  const loadPersonTheme = useCallback(async (id: string) => {
+    if (!current.current.people.some(person => person.id === id)) throw new Error('Person not found.');
+    await waitForPersonWrites(id);
+    const savedId = await createPersonStorage(id).getItem(PERSON_DATA_KEYS.appearance);
+    const themeId = savedId ?? DEFAULT_THEME_ID;
+    if (!findAppTheme(themeId)) throw new Error('This person’s saved theme is not available.');
+    return themeId;
+  }, []);
+
+  const savePersonTheme = useCallback(async (id: string, themeId: string) => {
+    if (!current.current.people.some(person => person.id === id)) throw new Error('Person not found.');
+    await waitForPersonWrites(id);
+    await saveThemePreference(createPersonStorage(id), PERSON_DATA_KEYS.appearance, themeId);
   }, []);
 
   const copyFromPerson = useCallback((sourceId: string, selection: PersonCopySelection) => runOperation(async () => {
@@ -535,10 +555,10 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     people: registry.people, activePerson, revision, busy, notice,
     attachmentCleanupPending, attachmentCleanupBusy, attachmentCleanupResult, attachmentCleanupFailureReason,
     retryAttachmentCleanup, runAttachmentCleanup,
-    addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles,
+    addPerson, updatePerson, removePerson, switchPerson, loadPerson, loadPersonTheme, savePersonTheme, copyFromPerson, restoreAllProfiles,
   }), [registry.people, activePerson, revision, busy, notice, attachmentCleanupPending, attachmentCleanupBusy,
     attachmentCleanupResult, attachmentCleanupFailureReason, retryAttachmentCleanup, runAttachmentCleanup,
-    addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
+    addPerson, updatePerson, removePerson, switchPerson, loadPerson, loadPersonTheme, savePersonTheme, copyFromPerson, restoreAllProfiles]);
 
   if (loading || error) {
     return <View style={styles.loading} testID="people-startup">

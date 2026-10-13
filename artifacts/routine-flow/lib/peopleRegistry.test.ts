@@ -13,6 +13,8 @@ test('legacy person profiles keep skill ratings on and default playlist reminder
   assert.equal(registry.people[1].defaultRateSkillsAtPlaylistEnd, true);
   assert.equal(registry.people[0].speechVoiceId, null);
   assert.equal(registry.people[1].speechVoiceId, null);
+  assert.equal(registry.people[0].defaultSpeakRoutineDescription, true);
+  assert.equal(registry.people[1].defaultSpeakRoutineDescription, true);
   assert.deepEqual(registry.people[0].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
   assert.deepEqual(registry.people[1].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
   assert.equal(initialPeopleRegistry.people[0].defaultRateSkillsAtPlaylistEnd, true);
@@ -56,6 +58,15 @@ test('person registry preserves a selected platform speech voice', () => {
   assert.equal(registry.people[0].speechVoiceId, 'com.example.voice.enhanced');
 });
 
+test('person registry preserves a disabled default for speaking new routine descriptions', () => {
+  const registry = parsePeopleRegistry(JSON.stringify({
+    version: 1,
+    people: [{ id: 'me', name: 'Me', defaultSpeakRoutineDescription: false }],
+    activePersonId: 'me',
+  }));
+  assert.equal(registry.people[0].defaultSpeakRoutineDescription, false);
+});
+
 test('person registry rejects invalid playlist default values', () => {
   assert.throws(() => parsePeopleRegistry(JSON.stringify({
     version: 1,
@@ -70,6 +81,11 @@ test('person registry rejects invalid playlist default values', () => {
   assert.throws(() => parsePeopleRegistry(JSON.stringify({
     version: 1,
     people: [{ id: 'me', name: 'Me', speechVoiceId: '' }],
+    activePersonId: 'me',
+  })));
+  assert.throws(() => parsePeopleRegistry(JSON.stringify({
+    version: 1,
+    people: [{ id: 'me', name: 'Me', defaultSpeakRoutineDescription: 'off' }],
     activePersonId: 'me',
   })));
 });

@@ -64,6 +64,8 @@ export default function HomeScreen() {
   } = usePeople();
   const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const disclosure = usePersistentDisclosure('routines', activePerson.id);
+  const todayFlowDisclosure = usePersistentDisclosure('today-flow', activePerson.id);
+  const todayFlowExpanded = todayFlowDisclosure.isExpanded('today');
   const backupDisclosure = usePersistentDisclosure('home-backup-sections', activePerson.id);
   const personBackupExpanded = backupDisclosure.isExpanded('person');
   const allProfilesBackupExpanded = backupDisclosure.isExpanded('all-profiles');
@@ -673,23 +675,37 @@ export default function HomeScreen() {
               </Pressable>
             </View>
 
-            <View style={[styles.todayCard, { backgroundColor: colors.hero }]}>
-              <View style={styles.todayCopy}>
-                <View style={[styles.overlinePill, { backgroundColor: colors.accent }]}>
+            <View style={[styles.todayCard, !todayFlowExpanded && styles.todayCardCollapsed, { backgroundColor: colors.hero }]}>
+              <Pressable
+                testID="toggle-today-flow"
+                accessibilityRole="button"
+                accessibilityLabel={todayFlowExpanded ? 'Collapse TODAY’S FLOW' : 'Expand TODAY’S FLOW'}
+                accessibilityState={{ expanded: todayFlowExpanded }}
+                onPress={() => todayFlowDisclosure.toggle('today')}
+                style={({ pressed }) => [styles.todayFlowHeading, pressed && styles.pressed]}
+              >
+                <View style={[styles.overlinePill, { backgroundColor: colors.accent, marginBottom: 0 }]}>
                   <Ionicons name="sparkles" size={12} color={colors.accentForeground} />
                   <Text style={[styles.overlineText, { color: colors.accentForeground }]}>TODAY’S FLOW</Text>
                 </View>
-                <Text style={[styles.todayTitle, { color: colors.heroForeground }]}>
-                  Small steps,{"\n"}steady days.
-                </Text>
-                <Text style={[styles.todaySubtitle, { color: colors.heroForeground }]}>
-                  {completedSteps === 0 ? 'Choose a routine and get started.' : `${completedSteps} steps complete today.`}
-                </Text>
-              </View>
-              <View style={[styles.progressCircle, { borderColor: colors.sage }]}>
-                <Text style={[styles.progressValue, { color: colors.heroForeground }]}>{Math.round(progress * 100)}%</Text>
-                <Text style={[styles.progressLabel, { color: colors.heroForeground }]}>done</Text>
-              </View>
+                <Ionicons name={todayFlowExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.heroForeground} />
+              </Pressable>
+              {todayFlowExpanded ? (
+                <View style={styles.todayFlowContent}>
+                  <View style={styles.todayCopy}>
+                    <Text style={[styles.todayTitle, { color: colors.heroForeground }]}>
+                      Small steps,{"\n"}steady days.
+                    </Text>
+                    <Text style={[styles.todaySubtitle, { color: colors.heroForeground }]}>
+                      {completedSteps === 0 ? 'Choose a routine and get started.' : `${completedSteps} steps complete today.`}
+                    </Text>
+                  </View>
+                  <View style={[styles.progressCircle, { borderColor: colors.sage }]}>
+                    <Text style={[styles.progressValue, { color: colors.heroForeground }]}>{Math.round(progress * 100)}%</Text>
+                    <Text style={[styles.progressLabel, { color: colors.heroForeground }]}>done</Text>
+                  </View>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.sectionHeader}>
@@ -1421,7 +1437,10 @@ const styles = StyleSheet.create({
   greeting: { fontFamily: 'Inter_700Bold', fontSize: 27, letterSpacing: -0.7 },
   avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.5 },
-  todayCard: { minHeight: 204, borderRadius: 25, padding: 21, flexDirection: 'row', justifyContent: 'space-between', overflow: 'hidden', marginBottom: 31 },
+  todayCard: { minHeight: 204, borderRadius: 25, padding: 21, overflow: 'hidden', marginBottom: 31 },
+  todayCardCollapsed: { minHeight: 0, paddingVertical: 12, marginBottom: 18 },
+  todayFlowHeading: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  todayFlowContent: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 },
   todayCopy: { flex: 1, paddingRight: 10 },
   overlinePill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 6, marginBottom: 20 },
   overlineText: { fontFamily: 'Inter_700Bold', fontSize: 9, letterSpacing: 0.8 },

@@ -12,6 +12,7 @@ export const initialPeopleRegistry: PeopleRegistry = {
     speechVoiceId: null,
     defaultRateSkillsAtPlaylistEnd: true,
     defaultPlaylistReminderSettings: { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
+    defaultSpeakRoutineDescription: true,
   }],
   activePersonId: DEFAULT_PERSON_ID,
 };
@@ -28,6 +29,8 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
          && (typeof person.speechVoiceId !== 'string' || !person.speechVoiceId.trim()))
       || (person.defaultRateSkillsAtPlaylistEnd !== undefined
         && typeof person.defaultRateSkillsAtPlaylistEnd !== 'boolean')
+      || (person.defaultSpeakRoutineDescription !== undefined
+        && typeof person.defaultSpeakRoutineDescription !== 'boolean')
       || (person.defaultPlaylistReminderSettings !== undefined && (
         !person.defaultPlaylistReminderSettings
         || typeof person.defaultPlaylistReminderSettings.stepCompletion !== 'boolean'
@@ -45,6 +48,7 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
       name: person.name,
       speechVoiceId: person.speechVoiceId ?? null,
       defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd ?? true,
+      defaultSpeakRoutineDescription: person.defaultSpeakRoutineDescription ?? true,
       defaultPlaylistReminderSettings: {
         stepCompletion: person.defaultPlaylistReminderSettings?.stepCompletion
           ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,

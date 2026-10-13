@@ -2,12 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { SpeechVoicePreference } from '@/components/SpeechVoicePreference';
 import { usePeople } from '@/context/PeopleContext';
 import { useColors } from '@/hooks/useColors';
+import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
+import { useAppearance } from '@/context/AppearanceContext';
+import { APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, type ThemeGroup } from '@/lib/appThemes';
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
 import type { RoutineNotificationSettings } from '@/types/routines';
@@ -18,9 +21,12 @@ const msg = (e: unknown, fb: string) => (e instanceof Error && e.message ? e.mes
 export default function PeopleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { people, activePerson, busy, notice, addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson } = usePeople();
+  const { people, activePerson, busy, notice, addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, loadPersonTheme, savePersonTheme } = usePeople();
+  const { theme, loading: appearanceLoading, selectTheme } = useAppearance();
+  const themeDisclosure = usePersistentDisclosure('person-theme-settings', activePerson.id, false);
   const [name, setName] = React.useState('');
   const [newPersonPlaylistRatingDefault, setNewPersonPlaylistRatingDefault] = React.useState(true);
+  const [newPersonSpeakRoutineDescription, setNewPersonSpeakRoutineDescription] = React.useState(true);
   const [newPersonSpeechVoiceId, setNewPersonSpeechVoiceId] = React.useState<string | null>(null);
   const [newPersonReminderSettings, setNewPersonReminderSettings] = React.useState<RoutineNotificationSettings>(
     { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
@@ -29,6 +35,14 @@ export default function PeopleScreen() {
   const [removingPersonId, setRemovingPersonId] = React.useState<string | null>(null);
   const [editingName, setEditingName] = React.useState('');
   const [editingPlaylistRatingDefault, setEditingPlaylistRatingDefault] = React.useState(true);
+  const [editingSpeakRoutineDescription, setEditingSpeakRoutineDescription] = React.useState(true);
+  const [personThemeIds, setPersonThemeIds] = React.useState<Record<string, string>>({});
+  const [themeLoadingId, setThemeLoadingId] = React.useState<string | null>(null);
+  const [themeSavingId, setThemeSavingId] = React.useState<string | null>(null);
+  const [themeSearch, setThemeSearch] = React.useState('');
+  const [themeGroup, setThemeGroup] = React.useState<ThemeGroup | 'All'>('All');
+  const [themeScheme, setThemeScheme] = React.useState<'all' | 'light' | 'dark'>('all');
+  const [themeError, setThemeError] = React.useState('');
   const [editingSpeechVoiceId, setEditingSpeechVoiceId] = React.useState<string | null>(null);
   const [editingReminderSettings, setEditingReminderSettings] = React.useState<RoutineNotificationSettings>(
     { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
@@ -47,6 +61,42 @@ export default function PeopleScreen() {
   const others = people.filter((p) => p.id !== activePerson.id);
   const ordered = [...people].sort((a, b) => (a.id === 'me' || a.name === 'Me' ? -1 : b.id === 'me' || b.name === 'Me' ? 1 : 0));
   const sources = ordered.filter((p) => p.id !== activePerson.id);
+  const filteredThemes = APP_THEMES.filter(item =>
+    (themeGroup === 'All' || item.group === themeGroup)
+    && (themeScheme === 'all' || item.scheme === themeScheme)
+    && item.name.toLocaleLowerCase().includes(themeSearch.trim().toLocaleLowerCase()));
+
+  async function togglePersonThemes(personId: string) {
+    const opening = !themeDisclosure.isExpanded(personId);
+    themeDisclosure.toggle(personId);
+    setThemeError('');
+    if (opening && !personThemeIds[personId]) {
+      setThemeLoadingId(personId);
+      try {
+        const id = await loadPersonTheme(personId);
+        setPersonThemeIds(current => ({ ...current, [personId]: id }));
+      } catch (e) {
+        setThemeError(msg(e, 'Could not load this person’s theme.'));
+      } finally {
+        setThemeLoadingId(null);
+      }
+    }
+  }
+
+  async function choosePersonTheme(personId: string, themeId: string) {
+    setThemeSavingId(personId);
+    setThemeError('');
+    try {
+      if (personId === activePerson.id) await selectTheme(themeId);
+      else await savePersonTheme(personId, themeId);
+      setPersonThemeIds(current => ({ ...current, [personId]: themeId }));
+      void Haptics.selectionAsync();
+    } catch (e) {
+      setThemeError(msg(e, 'Could not save this theme.'));
+    } finally {
+      setThemeSavingId(null);
+    }
+  }
 
   const load = React.useCallback(async (id: string) => {
     const t = ++token.current;
@@ -85,6 +135,7 @@ export default function PeopleScreen() {
     setEditingPersonId(person.id);
     setEditingName(person.name);
     setEditingPlaylistRatingDefault(person.defaultRateSkillsAtPlaylistEnd ?? true);
+    setEditingSpeakRoutineDescription(person.defaultSpeakRoutineDescription ?? true);
     setEditingSpeechVoiceId(person.speechVoiceId ?? null);
     setEditingReminderSettings({ ...person.defaultPlaylistReminderSettings });
     setError('');
@@ -97,10 +148,12 @@ export default function PeopleScreen() {
         speechVoiceId: newPersonSpeechVoiceId,
         defaultRateSkillsAtPlaylistEnd: newPersonPlaylistRatingDefault,
         defaultPlaylistReminderSettings: { ...newPersonReminderSettings },
+        defaultSpeakRoutineDescription: newPersonSpeakRoutineDescription,
       });
       setName('');
       setNewPersonSpeechVoiceId(null);
       setNewPersonPlaylistRatingDefault(true);
+      setNewPersonSpeakRoutineDescription(true);
       setNewPersonReminderSettings({ ...DEFAULT_PLAYLIST_REMINDER_SETTINGS });
     }, 'Could not add person.');
   }
@@ -112,6 +165,7 @@ export default function PeopleScreen() {
         speechVoiceId: editingSpeechVoiceId,
         defaultRateSkillsAtPlaylistEnd: editingPlaylistRatingDefault,
         defaultPlaylistReminderSettings: { ...editingReminderSettings },
+        defaultSpeakRoutineDescription: editingSpeakRoutineDescription,
       });
       setEditingPersonId(null);
     }, 'Could not update person.');
@@ -292,6 +346,94 @@ export default function PeopleScreen() {
                       disabled={disabled}
                       testID={`person-speech-voice-${p.id}`}
                     />
+                    <View style={[styles.themeSettings, { borderColor: colors.border }]}>
+                      <Pressable
+                        testID={`person-theme-toggle-${p.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${themeDisclosure.isExpanded(p.id) ? 'Collapse' : 'Expand'} ${p.name} theme settings`}
+                        accessibilityState={{ expanded: themeDisclosure.isExpanded(p.id) }}
+                        onPress={() => void togglePersonThemes(p.id)}
+                        style={styles.themeSettingsHeading}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.itemText, { color: colors.foreground }]}>Theme</Text>
+                          <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                            {personThemeIds[p.id] ? APP_THEMES.find(item => item.id === personThemeIds[p.id])?.name ?? 'Saved theme' : 'Choose this person’s colors'}
+                          </Text>
+                        </View>
+                        <Ionicons name={themeDisclosure.isExpanded(p.id) ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
+                      </Pressable>
+                      {themeDisclosure.isExpanded(p.id) ? (
+                        <View style={{ gap: 8 }}>
+                          <TextInput
+                            testID={`person-theme-search-${p.id}`}
+                            accessibilityLabel={`Search ${p.name} themes`}
+                            placeholder="Search themes"
+                            placeholderTextColor={colors.mutedForeground}
+                            value={themeSearch}
+                            onChangeText={setThemeSearch}
+                            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+                          />
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.themeFilterRow}>
+                            {(['All', ...THEME_GROUPS] as const).map(group => {
+                              const selected = themeGroup === group;
+                              return (
+                                <Pressable key={group} testID={`person-theme-group-${p.id}-${group.toLowerCase()}`}
+                                  accessibilityRole="button" accessibilityState={{ selected }}
+                                  onPress={() => setThemeGroup(group)}
+                                  style={[styles.themeFilter, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+                                  <Text style={[styles.themeFilterText, { color: selected ? colors.primaryForeground : colors.foreground }]}>{group}</Text>
+                                </Pressable>
+                              );
+                            })}
+                          </ScrollView>
+                          <View style={styles.themeFilterRow}>
+                            {([{ id: 'all', label: 'Any mode' }, { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' }] as const).map(option => {
+                              const selected = themeScheme === option.id;
+                              return (
+                                <Pressable key={option.id} testID={`person-theme-scheme-${p.id}-${option.id}`}
+                                  accessibilityRole="button" accessibilityState={{ selected }}
+                                  onPress={() => setThemeScheme(option.id)}
+                                  style={[styles.themeFilter, { backgroundColor: selected ? colors.primary : colors.card, borderColor: selected ? colors.primary : colors.border }]}>
+                                  <Text style={[styles.themeFilterText, { color: selected ? colors.primaryForeground : colors.foreground }]}>{option.label}</Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                          <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                            Showing {filteredThemes.length} of {APP_THEMES.length} themes
+                          </Text>
+                          {themeLoadingId === p.id ? <ActivityIndicator color={colors.primary} /> : null}
+                          {themeError ? <Text accessibilityRole="alert" style={[styles.sub, { color: colors.destructive }]}>{themeError}</Text> : null}
+                          <ScrollView nestedScrollEnabled style={styles.themeChoices}>
+                            <View style={styles.themeChoiceGrid}>
+                              {filteredThemes.map(item => {
+                                const selected = (personThemeIds[p.id] ?? (p.id === activePerson.id ? theme.id : DEFAULT_THEME_ID)) === item.id;
+                                return (
+                                  <Pressable
+                                    key={item.id}
+                                    testID={`person-theme-choice-${p.id}-${item.id}`}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`${item.name}, ${item.group}, ${item.scheme} theme`}
+                                    accessibilityState={{ selected, disabled: themeSavingId === p.id }}
+                                    disabled={themeSavingId === p.id || themeLoadingId === p.id || (p.id === activePerson.id && appearanceLoading)}
+                                    onPress={() => void choosePersonTheme(p.id, item.id)}
+                                    style={[styles.themeChoice, { borderColor: selected ? colors.primary : colors.border, backgroundColor: colors.card }]}
+                                  >
+                                    <View style={[styles.themeSwatch, { backgroundColor: item.colors.primary }]} />
+                                    <View style={{ flex: 1 }}>
+                                      <Text numberOfLines={1} style={[styles.themeChoiceName, { color: colors.foreground }]}>{item.name}</Text>
+                                      <Text style={[styles.sub, { color: colors.mutedForeground }]}>{item.scheme}</Text>
+                                    </View>
+                                    {selected ? <Ionicons name="checkmark-circle" size={18} color={colors.primary} /> : null}
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          </ScrollView>
+                        </View>
+                      ) : null}
+                    </View>
                     <View style={styles.profileRatingSetting}>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.itemText, { color: colors.foreground }]}>Ask for skill ratings at playlist end</Text>
@@ -305,6 +447,22 @@ export default function PeopleScreen() {
                         disabled={disabled}
                         value={editingPlaylistRatingDefault}
                         onValueChange={setEditingPlaylistRatingDefault}
+                        trackColor={{ true: colors.primary, false: colors.border }}
+                      />
+                    </View>
+                    <View style={styles.profileRatingSetting}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.itemText, { color: colors.foreground }]}>Speak routine descriptions by default</Text>
+                        <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                          New routines use this setting. You can override it in each routine.
+                        </Text>
+                      </View>
+                      <Switch
+                        testID={`person-speak-routine-description-${p.id}`}
+                        accessibilityLabel="Speak routine descriptions by default"
+                        disabled={disabled}
+                        value={editingSpeakRoutineDescription}
+                        onValueChange={setEditingSpeakRoutineDescription}
                         trackColor={{ true: colors.primary, false: colors.border }}
                       />
                     </View>
@@ -376,6 +534,22 @@ export default function PeopleScreen() {
               disabled={disabled}
               value={newPersonPlaylistRatingDefault}
               onValueChange={setNewPersonPlaylistRatingDefault}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+          <View style={[styles.profileRatingSetting, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.itemText, { color: colors.foreground }]}>Speak routine descriptions by default</Text>
+              <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                New routines use this setting. You can override it in each routine.
+              </Text>
+            </View>
+            <Switch
+              testID="new-person-speak-routine-description"
+              accessibilityLabel="Speak routine descriptions by default"
+              disabled={disabled}
+              value={newPersonSpeakRoutineDescription}
+              onValueChange={setNewPersonSpeakRoutineDescription}
               trackColor={{ true: colors.primary, false: colors.border }}
             />
           </View>
@@ -505,6 +679,16 @@ const styles = StyleSheet.create({
   avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontFamily: 'Inter_500Medium', fontSize: 15 },
   profileEditor: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 },
+  themeSettings: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, gap: 8 },
+  themeSettingsHeading: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  themeChoices: { maxHeight: 260, borderRadius: 12 },
+  themeFilterRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  themeFilter: { minHeight: 34, paddingHorizontal: 12, borderWidth: 1, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  themeFilterText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  themeChoiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 2 },
+  themeChoice: { width: '48%', minHeight: 52, borderWidth: 1, borderRadius: 12, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  themeSwatch: { width: 15, height: 15, borderRadius: 8 },
+  themeChoiceName: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   profileRatingSetting: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 12 },
   reminderDefaults: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 8 },
   reminderDefaultsCopy: { gap: 3, paddingBottom: 2 },

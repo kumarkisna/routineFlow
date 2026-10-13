@@ -43,10 +43,6 @@ function NativeTabLayout() {
         <NativeTabs.Trigger.Icon sf={{ default: 'clock', selected: 'clock.fill' }} />
         <NativeTabs.Trigger.Label>Schedule</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="themes">
-        <NativeTabs.Trigger.Icon sf={{ default: 'paintpalette', selected: 'paintpalette.fill' }} />
-        <NativeTabs.Trigger.Label>Themes</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
     </NativeTabsRoot>
   );
 }
@@ -146,18 +142,6 @@ function ClassicTabLayout() {
               <SymbolView name="clock" tintColor={color} size={24} />
             ) : (
               <Feather name="clock" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="themes"
-        options={{
-          title: 'Themes',
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="paintpalette" tintColor={color} size={24} />
-            ) : (
-              <Feather name="droplet" size={22} color={color} />
             ),
         }}
       />

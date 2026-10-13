@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React from 'react';
 
 /** Per-item disclosure state, expanded by default and retained across app restarts. */
-export function usePersistentDisclosure(namespace: string, ownerId: string) {
+export function usePersistentDisclosure(namespace: string, ownerId: string, defaultExpanded = true) {
   const storageKey = `routine-flow:disclosure:v1:${namespace}:${ownerId}`;
   const [collapsed, setCollapsed] = React.useState<Record<string, true>>({});
   const current = React.useRef<Record<string, true>>({});
@@ -55,15 +55,16 @@ export function usePersistentDisclosure(namespace: string, ownerId: string) {
 
   const toggle = React.useCallback((id: string) => {
     const next = { ...current.current };
-    const isCurrentlyCollapsed = next[id] === true;
-    if (isCurrentlyCollapsed) delete next[id];
-    else next[id] = true;
+    const isCurrentlyExpanded = next[id] === true ? !defaultExpanded : defaultExpanded;
+    if (isCurrentlyExpanded === defaultExpanded) next[id] = true;
+    else delete next[id];
     current.current = next;
     setCollapsed(next);
     if (hydrated.current) persist(next);
-    else pending.current[id] = !isCurrentlyCollapsed;
-  }, [storageKey, namespace]);
+    else pending.current[id] = isCurrentlyExpanded === defaultExpanded;
+  }, [storageKey, namespace, defaultExpanded]);
 
-  const isExpanded = React.useCallback((id: string) => collapsed[id] !== true, [collapsed]);
+  const isExpanded = React.useCallback((id: string) => collapsed[id] === true ? !defaultExpanded : defaultExpanded,
+    [collapsed, defaultExpanded]);
   return { isExpanded, toggle };
 }

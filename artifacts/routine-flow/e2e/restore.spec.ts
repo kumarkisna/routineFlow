@@ -5,6 +5,32 @@ import type { CompletionMap } from '../types/routines';
 const baseURL = process.env.RESTORE_TEST_BASE_URL
   ?? (process.env.REPLIT_EXPO_DEV_DOMAIN ? `https://${process.env.REPLIT_EXPO_DEV_DOMAIN}` : undefined);
 
+test('person theme settings can be changed and their collapsed choice is remembered', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await page.goto('/people');
+  await page.getByTestId('person-edit-me').click();
+
+  const section = page.getByTestId('person-theme-toggle-me');
+  await expect(page.getByTestId('person-theme-search-me')).toHaveCount(0);
+  await section.click();
+  await expect(page.getByTestId('person-theme-search-me')).toBeVisible();
+
+  const forestTheme = page.getByTestId('person-theme-choice-me-forest');
+  await forestTheme.click();
+  await page.waitForFunction(() => localStorage.getItem('@routine-flow/appearance') === 'forest');
+  await page.waitForFunction(() =>
+    localStorage.getItem('routine-flow:disclosure:v1:person-theme-settings:me')?.includes('"me":true'),
+  );
+
+  await page.reload();
+  await page.getByTestId('person-edit-me').click();
+  const restoredSection = page.getByTestId('person-theme-toggle-me');
+  await expect(page.getByTestId('person-theme-search-me')).toBeVisible();
+  await restoredSection.click();
+  await expect(page.getByTestId('person-theme-search-me')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/appearance'))).toBe('forest');
+});
+
 test.use({
   baseURL,
   timezoneId: 'UTC',
@@ -534,17 +560,28 @@ test('all-profiles import adds profiles and merges saved history without replaci
   const alexThemeId = 'nordic';
   const lowerAlexThemeId = 'slate';
   const caseyThemeId = 'linen';
+  const assertPersonTheme = async (personName: string, themeName: string) => {
+    await page.goto('/people');
+    await page.getByLabel(`Edit ${personName} profile`).click();
+    const themeDisclosure = page.locator('[data-testid^="person-theme-toggle-"]');
+    const search = page.locator('[data-testid^="person-theme-search-"]');
+    if (await search.count() === 0) await themeDisclosure.click();
+    await expect(themeDisclosure).toContainText(themeName);
+  };
   const localProfile = {
     id: 'me',
     name: 'Me',
     defaultRateSkillsAtPlaylistEnd: true,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+    defaultSpeakRoutineDescription: true,
   };
   const caseyProfile = {
     id: 'casey',
     name: 'Alex',
+    speechVoiceId: null,
     defaultRateSkillsAtPlaylistEnd: false,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+    defaultSpeakRoutineDescription: false,
   };
   const caseyRoutine = { ...second, id: 'casey-routine', title: 'Casey morning' };
   const caseySkill = {
@@ -815,6 +852,8 @@ test('all-profiles import adds profiles and merges saved history without replaci
     defaultRateSkillsAtPlaylistEnd: false,
     defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
   });
+  expect(restored.registry.people.find((person: { id: string }) => person.id === 'casey'))
+    .toMatchObject({ defaultSpeakRoutineDescription: false });
   const localAndImported = restored.meRoutines as Array<{
     id: string;
     title: string;
@@ -873,38 +912,29 @@ test('all-profiles import adds profiles and merges saved history without replaci
 
   await page.reload();
   await expect(page.getByLabel('Active person: Alex from backup. Open people')).toBeVisible();
-  await page.getByRole('tab', { name: 'Themes' }).click();
-  await expect(page.getByTestId('theme-summary')).toContainText('Active: Nordic');
+  await expect(page.getByRole('tab', { name: 'Themes' })).toHaveCount(0);
+  await assertPersonTheme('Alex from backup', 'Nordic');
   await page.reload();
-  await expect(page.getByTestId('theme-summary')).toContainText('Active: Nordic');
+  await assertPersonTheme('Alex from backup', 'Nordic');
 
-  await page.getByRole('tab', { name: 'Today' }).click();
-  await page.getByLabel('Active person: Alex from backup. Open people').click();
   await page.getByLabel('Switch to Me').click();
   await expect(page.getByLabel('Active person: Me. Open people')).toBeVisible();
-  await page.getByRole('tab', { name: 'Themes' }).click();
-  await expect(page.getByTestId('theme-summary')).toContainText('Active: Porcelain');
+  await assertPersonTheme('Me', 'Porcelain');
   await page.reload();
-  await expect(page.getByTestId('theme-summary')).toContainText('Active: Porcelain');
+  await assertPersonTheme('Me', 'Porcelain');
 
-  await page.getByRole('tab', { name: 'Today' }).click();
-  await page.getByLabel('Active person: Me. Open people').click();
   await page.getByTestId('person-switch-casey').click();
   await expect(page.getByLabel('Active person: Alex. Open people')).toBeVisible();
-  await page.getByRole('tab', { name: 'Themes' }).click();
-  await expect(page.getByTestId('theme-summary')).toContainText('Active: Linen');
+  await assertPersonTheme('Alex', 'Linen');
   await page.reload();
-  await expect(page.getByTestId('theme-summary')).toContainText('Active: Linen');
+  await assertPersonTheme('Alex', 'Linen');
 
-  await page.getByRole('tab', { name: 'Today' }).click();
-  await page.getByLabel('Active person: Alex. Open people').click();
   await page.getByTestId('person-switch-alex-lower').click();
   await expect(page.getByLabel('Active person: aLeX (imported 2). Open people')).toBeVisible();
   await expect(page.getByLabel('Open Lowercase Alex routine')).toBeVisible();
-  await page.getByRole('tab', { name: 'Themes' }).click();
-  await expect(page.getByTestId('theme-summary')).toContainText('Active: Slate');
+  await assertPersonTheme('aLeX (imported 2)', 'Slate');
   await page.reload();
-  await expect(page.getByTestId('theme-summary')).toContainText('Active: Slate');
+  await assertPersonTheme('aLeX (imported 2)', 'Slate');
 
   const profilesAfterReload = await page.evaluate(() => ({
     routines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),
@@ -1090,24 +1120,28 @@ test('cancelling an all-profiles import leaves every profile and reminder unchan
     name: string;
     defaultRateSkillsAtPlaylistEnd: boolean;
     defaultPlaylistReminderSettings: { stepCompletion: boolean; routineCompletion: boolean };
+    defaultSpeakRoutineDescription: boolean;
   };
   const me: TestProfile = {
     id: 'me',
     name: 'Me',
     defaultRateSkillsAtPlaylistEnd: true,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+    defaultSpeakRoutineDescription: false,
   };
   const alex: TestProfile = {
     id: 'alex',
     name: 'Alex',
     defaultRateSkillsAtPlaylistEnd: false,
     defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: false },
+    defaultSpeakRoutineDescription: true,
   };
   const taylor: TestProfile = {
     id: 'taylor',
     name: 'Taylor',
     defaultRateSkillsAtPlaylistEnd: true,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+    defaultSpeakRoutineDescription: true,
   };
   const makeSchedule = (id: string, targetId: string, targetTitle: string, notificationId: string) => ({
     id,

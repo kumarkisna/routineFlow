@@ -10,12 +10,14 @@ export type Person = {
   speechVoiceId: string | null;
   defaultRateSkillsAtPlaylistEnd: boolean;
   defaultPlaylistReminderSettings: RoutineNotificationSettings;
+  defaultSpeakRoutineDescription: boolean;
 };
 export type PersonProfileInput = {
   name: string;
   speechVoiceId?: string | null;
   defaultRateSkillsAtPlaylistEnd: boolean;
   defaultPlaylistReminderSettings: RoutineNotificationSettings;
+  defaultSpeakRoutineDescription: boolean;
 };
 export type PersonSnapshot = {
   routines: Routine[];

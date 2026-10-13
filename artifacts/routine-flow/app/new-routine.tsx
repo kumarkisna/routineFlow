@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useRoutines } from '@/context/RoutineContext';
+import { usePeople } from '@/context/PeopleContext';
 import { useSkills } from '@/context/SkillContext';
 import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
@@ -56,11 +57,14 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { routines, createRoutine, updateRoutine } = useRoutines();
+  const { activePerson } = usePeople();
   const { skills } = useSkills();
   const [title, setTitle] = useState(editingRoutine?.title ?? '');
   const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
   const [subtitleHtml, setSubtitleHtml] = useState(editingRoutine?.subtitleHtml ?? '');
-  const [speakSubtitle, setSpeakSubtitle] = useState(editingRoutine?.speakSubtitle ?? true);
+  const [speakSubtitle, setSpeakSubtitle] = useState(
+    editingRoutine ? editingRoutine.speakSubtitle ?? true : activePerson.defaultSpeakRoutineDescription,
+  );
   const [descriptionAttachments, setDescriptionAttachments] = useState(editingRoutine?.descriptionAttachments ?? []);
   const [category, setCategory] = useState(editingRoutine?.category ?? '');
   const [stepDraft, setStepDraft] = useState('');
