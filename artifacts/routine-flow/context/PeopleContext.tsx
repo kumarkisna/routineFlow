@@ -138,14 +138,19 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const [attachmentCleanupBusy, setAttachmentCleanupBusy] = useState(false);
   const [attachmentCleanupResult, setAttachmentCleanupResult] = useState<StepDetailAttachmentCleanupResult | null>(null);
   const runAttachmentCleanup = useMemo(() => createStepDetailAttachmentCleanupRunner(
-    () => cleanupOrphanedStepDetailAttachmentCopies(
-      FileSystem.documentDirectory, AsyncStorage, FileSystem,
+    onProgress => cleanupOrphanedStepDetailAttachmentCopies(
+      FileSystem.documentDirectory, AsyncStorage, FileSystem, onProgress,
     ),
     (status, progress) => {
       setAttachmentCleanupBusy(status === 'running');
       if (progress) setAttachmentCleanupResult(progress);
       if (status === 'complete') setAttachmentCleanupPending(false);
       if (status === 'retry') setAttachmentCleanupPending(true);
+    },
+    {
+      getItem: key => AsyncStorage.getItem(key),
+      setItem: (key, value) => AsyncStorage.setItem(key, value),
+      removeItem: key => AsyncStorage.removeItem(key),
     },
   ), []);
   const retryAttachmentCleanup = useCallback(async () => {

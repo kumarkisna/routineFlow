@@ -25,6 +25,14 @@ export class StepDetailAttachmentCleanupError extends Error {
 
 export type StepDetailAttachmentCleanupStatus = 'running' | 'retry' | 'complete';
 
+export const STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY = '@routine-flow/step-detail-attachment-cleanup-progress';
+
+export type StepDetailAttachmentCleanupProgressStorage = {
+  getItem: (key: string) => Promise<string | null>;
+  setItem: (key: string, value: string) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
+};
+
 function addCleanupResults(
   previous: StepDetailAttachmentCleanupResult,
   next: StepDetailAttachmentCleanupResult,
@@ -38,32 +46,115 @@ function addCleanupResults(
 }
 
 export function createStepDetailAttachmentCleanupRunner(
-  cleanup: () => Promise<StepDetailAttachmentCleanupResult>,
+  cleanup: (
+    onProgress?: (progress: StepDetailAttachmentCleanupResult) => Promise<void>,
+  ) => Promise<StepDetailAttachmentCleanupResult>,
   onStatus: (
     status: StepDetailAttachmentCleanupStatus,
     progress?: StepDetailAttachmentCleanupResult,
   ) => void,
+  progressStorage?: StepDetailAttachmentCleanupProgressStorage,
 ): () => Promise<StepDetailAttachmentCleanupResult | null> {
   let inFlight: Promise<StepDetailAttachmentCleanupResult | null> | null = null;
   let previousAttempts: StepDetailAttachmentCleanupResult = {
     removedCount: 0,
     estimatedBytes: 0,
   };
+  let progressLoaded = false;
+
+  const saveProgress = async (progress: StepDetailAttachmentCleanupResult) => {
+    if (!progressStorage) return;
+    const serialized = JSON.stringify({ version: 1, ...progress });
+    try {
+      await progressStorage.setItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY, serialized);
+    } catch {
+      // Some storage drivers can reject after committing. Confirm before failing.
+      if (await progressStorage.getItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY) !== serialized) {
+        throw new Error('Cleanup progress could not be saved.');
+      }
+    }
+  };
+
+  const clearProgress = async () => {
+    if (!progressStorage) return;
+    try {
+      await progressStorage.removeItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY);
+    } catch {
+      // Confirm removal when a storage driver rejects after committing.
+      if (await progressStorage.getItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY) !== null) {
+        throw new Error('Completed cleanup progress could not be cleared.');
+      }
+    }
+  };
+
+  const loadProgress = async () => {
+    if (!progressStorage || progressLoaded) return;
+    const serialized = await progressStorage.getItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY);
+    if (serialized !== null) {
+      const parsed: unknown = JSON.parse(serialized);
+      if (!isRecord(parsed) || parsed.version !== 1
+        || !Number.isSafeInteger(parsed.removedCount) || (parsed.removedCount as number) < 0
+        || !(parsed.estimatedBytes === null
+          || (typeof parsed.estimatedBytes === 'number'
+            && Number.isFinite(parsed.estimatedBytes) && parsed.estimatedBytes >= 0))) {
+        throw new Error('Saved cleanup progress could not be checked safely.');
+      }
+      previousAttempts = {
+        removedCount: parsed.removedCount as number,
+        estimatedBytes: parsed.estimatedBytes as number | null,
+      };
+    }
+    progressLoaded = true;
+  };
+
   return () => {
     if (inFlight) return inFlight;
-    onStatus('running');
     inFlight = (async () => {
-      let removed: StepDetailAttachmentCleanupResult;
       try {
-        removed = await cleanup();
+        await loadProgress();
+      } catch {
+        onStatus('retry', previousAttempts);
+        return null;
+      }
+      onStatus('running', previousAttempts);
+      let removed: StepDetailAttachmentCleanupResult;
+      const progressBeforeAttempt = previousAttempts;
+      let lastSavedProgress = progressBeforeAttempt;
+      try {
+        removed = await cleanup(async progress => {
+          const total = addCleanupResults(progressBeforeAttempt, progress);
+          await saveProgress(total);
+          lastSavedProgress = total;
+        });
       } catch (error) {
         if (error instanceof StepDetailAttachmentCleanupError) {
-          previousAttempts = addCleanupResults(previousAttempts, error.partialResult);
+          previousAttempts = addCleanupResults(progressBeforeAttempt, error.partialResult);
+        } else {
+          // Keep a confirmed per-file checkpoint if an unexpected later error occurs.
+          previousAttempts = lastSavedProgress;
+        }
+        try {
+          await saveProgress(previousAttempts);
+        } catch {
+          // Keep the in-memory count visible; the cleanup remains retryable.
         }
         onStatus('retry', previousAttempts);
         return null;
       }
       const total = addCleanupResults(previousAttempts, removed);
+      try {
+        await clearProgress();
+      } catch {
+        // The sweep finished, but retain its count and retry the storage cleanup.
+        previousAttempts = total;
+        try {
+          await saveProgress(previousAttempts);
+        } catch {
+          // Preserve the in-memory count even if storage is still unavailable.
+        }
+        onStatus('retry', previousAttempts);
+        return null;
+      }
       previousAttempts = { removedCount: 0, estimatedBytes: 0 };
       onStatus('complete', total);
       return total;
@@ -162,6 +253,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
   documentDirectory: string | null | undefined,
   storage: CleanupStorage,
   fileSystem: CleanupFileSystem,
+  onProgress?: (progress: StepDetailAttachmentCleanupResult) => Promise<void>,
 ): Promise<StepDetailAttachmentCleanupResult> {
   if (!documentDirectory) throw new Error('App file storage is unavailable.');
   const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
@@ -209,15 +301,32 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
     }
     try {
       await fileSystem.deleteAsync(uri, { idempotent: true });
-      removedCount += 1;
-      if (typeof info.size === 'number' && Number.isFinite(info.size) && info.size >= 0) {
-        estimatedBytes += info.size;
-      } else {
-        hasAllSizes = false;
-      }
     } catch {
       // Continue trying other files, then report failure so the caller can offer a retry.
       failed = true;
+      continue;
+    }
+    removedCount += 1;
+    if (typeof info.size === 'number' && Number.isFinite(info.size) && info.size >= 0) {
+      estimatedBytes += info.size;
+    } else {
+      hasAllSizes = false;
+    }
+    if (onProgress) {
+      try {
+        await onProgress({
+          removedCount,
+          estimatedBytes: hasAllSizes ? estimatedBytes : null,
+        });
+      } catch {
+        throw new StepDetailAttachmentCleanupError(
+          'Cleanup progress could not be saved.',
+          {
+            removedCount,
+            estimatedBytes: hasAllSizes ? estimatedBytes : null,
+          },
+        );
+      }
     }
   }
   const result = {

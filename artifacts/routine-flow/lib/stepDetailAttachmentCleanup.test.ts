@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import {
   cleanupOrphanedStepDetailAttachmentCopies,
   createStepDetailAttachmentCleanupRunner,
+  STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY,
   StepDetailAttachmentCleanupError,
 } from './stepDetailAttachmentCleanup';
 import { PERSON_DATA_KEYS, personStorageKey } from './personStorage';
@@ -243,6 +244,72 @@ test('keeps partial cleanup progress visible across retries without counting sav
     status: 'complete',
     progress: { removedCount: 2, estimatedBytes: 500 },
   });
+  assert.deepEqual(adapters.deleted, [removeUri, retryUri]);
+  assert.ok(!adapters.deleted.includes(sharedUri));
+});
+
+test('persists partial cleanup progress across restarts until every profile has been safely checked', async () => {
+  const sharedUri = `${attachmentDirectory}shared.pdf`;
+  const retryUri = `${attachmentDirectory}retry-later.pdf`;
+  const removeUri = `${attachmentDirectory}remove-now.pdf`;
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me', 'person-2'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([routine(sharedUri)])],
+    [personStorageKey('person-2', PERSON_DATA_KEYS.routines), JSON.stringify([routine(sharedUri)])],
+  ], ['shared.pdf', 'retry-later.pdf', 'remove-now.pdf'], {
+    'shared.pdf': 100,
+    'retry-later.pdf': 200,
+    'remove-now.pdf': 300,
+  });
+  const progressValues = new Map<string, string>();
+  const progressStorage = {
+    getItem: async (key: string) => progressValues.get(key) ?? null,
+    setItem: async (key: string, value: string) => { progressValues.set(key, value); },
+    removeItem: async (key: string) => { progressValues.delete(key); },
+  };
+  const remainingFiles = ['remove-now.pdf', 'retry-later.pdf', 'shared.pdf'];
+  let storageAvailable = false;
+  adapters.fileSystem.readDirectoryAsync = async () => [...remainingFiles];
+  adapters.fileSystem.deleteAsync = async uri => {
+    if (uri === retryUri && !storageAvailable) throw new Error('Temporary storage error');
+    if (uri === retryUri) {
+      const checkpoint = progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY);
+      assert.ok(checkpoint, 'completed deletions are checkpointed before the next file is removed');
+      assert.equal(JSON.parse(checkpoint).removedCount, 1);
+    }
+    adapters.deleted.push(uri);
+    const fileName = uri.slice(uri.lastIndexOf('/') + 1);
+    const index = remainingFiles.indexOf(fileName);
+    if (index >= 0) remainingFiles.splice(index, 1);
+  };
+  const createRunner = () => createStepDetailAttachmentCleanupRunner(
+    onProgress => cleanupOrphanedStepDetailAttachmentCopies(
+      directory, adapters.storage, adapters.fileSystem, onProgress,
+    ),
+    () => {},
+    progressStorage,
+  );
+
+  assert.equal(await createRunner()(), null);
+  const savedPartialProgress = progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY);
+  assert.ok(savedPartialProgress);
+  assert.deepEqual(JSON.parse(savedPartialProgress), {
+    version: 1,
+    removedCount: 1,
+    estimatedBytes: 300,
+  });
+  assert.deepEqual(adapters.deleted, [removeUri]);
+
+  // A new process must not clear the prior count if routines cannot be checked.
+  adapters.values.set(PERSON_DATA_KEYS.routines, '{invalid json');
+  const afterRestart = createRunner();
+  assert.equal(await afterRestart(), null);
+  assert.equal(progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), savedPartialProgress);
+
+  adapters.values.set(PERSON_DATA_KEYS.routines, JSON.stringify([routine(sharedUri)]));
+  storageAvailable = true;
+  assert.deepEqual(await afterRestart(), { removedCount: 2, estimatedBytes: 500 });
+  assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
   assert.deepEqual(adapters.deleted, [removeUri, retryUri]);
   assert.ok(!adapters.deleted.includes(sharedUri));
 });
