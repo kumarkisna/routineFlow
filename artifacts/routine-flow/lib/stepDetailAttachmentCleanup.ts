@@ -27,6 +27,14 @@ export type StepDetailAttachmentCleanupStatus = 'running' | 'retry' | 'complete'
 
 export const STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY = '@routine-flow/step-detail-attachment-cleanup-progress';
 
+export type PendingStepDetailAttachmentDeletion = {
+  fileName: string;
+  size: number | null;
+  counted: boolean;
+};
+
+export type PendingStepDetailAttachmentReconciliation = 'removed' | 'present' | 'referenced';
+
 export type StepDetailAttachmentCleanupProgressStorage = {
   getItem: (key: string) => Promise<string | null>;
   setItem: (key: string, value: string) => Promise<void>;
@@ -48,12 +56,16 @@ function addCleanupResults(
 export function createStepDetailAttachmentCleanupRunner(
   cleanup: (
     onProgress?: (progress: StepDetailAttachmentCleanupResult) => Promise<void>,
+    beforeDelete?: (pending: Omit<PendingStepDetailAttachmentDeletion, 'counted'>) => Promise<void>,
   ) => Promise<StepDetailAttachmentCleanupResult>,
   onStatus: (
     status: StepDetailAttachmentCleanupStatus,
     progress?: StepDetailAttachmentCleanupResult,
   ) => void,
   progressStorage?: StepDetailAttachmentCleanupProgressStorage,
+  reconcilePendingDeletion?: (
+    pending: PendingStepDetailAttachmentDeletion,
+  ) => Promise<PendingStepDetailAttachmentReconciliation>,
 ): () => Promise<StepDetailAttachmentCleanupResult | null> {
   let inFlight: Promise<StepDetailAttachmentCleanupResult | null> | null = null;
   let previousAttempts: StepDetailAttachmentCleanupResult = {
@@ -61,10 +73,18 @@ export function createStepDetailAttachmentCleanupRunner(
     estimatedBytes: 0,
   };
   let progressLoaded = false;
+  let pendingDeletion: PendingStepDetailAttachmentDeletion | undefined;
 
-  const saveProgress = async (progress: StepDetailAttachmentCleanupResult) => {
+  const saveProgress = async (
+    progress: StepDetailAttachmentCleanupResult,
+    pending: PendingStepDetailAttachmentDeletion | undefined,
+  ) => {
     if (!progressStorage) return;
-    const serialized = JSON.stringify({ version: 1, ...progress });
+    const serialized = JSON.stringify({
+      version: 2,
+      ...progress,
+      ...(pending ? { pendingDeletion: pending } : {}),
+    });
     try {
       await progressStorage.setItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY, serialized);
     } catch {
@@ -92,7 +112,7 @@ export function createStepDetailAttachmentCleanupRunner(
     const serialized = await progressStorage.getItem(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY);
     if (serialized !== null) {
       const parsed: unknown = JSON.parse(serialized);
-      if (!isRecord(parsed) || parsed.version !== 1
+      if (!isRecord(parsed) || (parsed.version !== 1 && parsed.version !== 2)
         || !Number.isSafeInteger(parsed.removedCount) || (parsed.removedCount as number) < 0
         || !(parsed.estimatedBytes === null
           || (typeof parsed.estimatedBytes === 'number'
@@ -103,6 +123,25 @@ export function createStepDetailAttachmentCleanupRunner(
         removedCount: parsed.removedCount as number,
         estimatedBytes: parsed.estimatedBytes as number | null,
       };
+      if (parsed.version === 2 && parsed.pendingDeletion !== undefined) {
+        const pending = parsed.pendingDeletion;
+        if (!isRecord(pending)
+          || typeof pending.fileName !== 'string'
+          || !pending.fileName
+          || pending.fileName === '.' || pending.fileName === '..'
+          || /[/\\]/.test(pending.fileName)
+          || !(pending.size === null
+            || (typeof pending.size === 'number'
+              && Number.isFinite(pending.size) && pending.size >= 0))
+          || typeof pending.counted !== 'boolean') {
+          throw new Error('Saved cleanup progress could not be checked safely.');
+        }
+        pendingDeletion = {
+          fileName: pending.fileName,
+          size: pending.size as number | null,
+          counted: pending.counted,
+        };
+      }
     }
     progressLoaded = true;
   };
@@ -116,6 +155,36 @@ export function createStepDetailAttachmentCleanupRunner(
         onStatus('retry', previousAttempts);
         return null;
       }
+      if (pendingDeletion) {
+        if (!reconcilePendingDeletion || !progressStorage) {
+          onStatus('retry', previousAttempts);
+          return null;
+        }
+        try {
+          const outcome = await reconcilePendingDeletion(pendingDeletion);
+          if (outcome === 'removed' && !pendingDeletion.counted) {
+            previousAttempts = addCleanupResults(previousAttempts, {
+              removedCount: 1,
+              estimatedBytes: pendingDeletion.size,
+            });
+            pendingDeletion = { ...pendingDeletion, counted: true };
+            await saveProgress(previousAttempts, pendingDeletion);
+          } else if (pendingDeletion.counted && outcome !== 'removed') {
+            previousAttempts = {
+              removedCount: Math.max(0, previousAttempts.removedCount - 1),
+              estimatedBytes: previousAttempts.estimatedBytes === null || pendingDeletion.size === null
+                ? null
+                : Math.max(0, previousAttempts.estimatedBytes - pendingDeletion.size),
+            };
+            await saveProgress(previousAttempts, pendingDeletion);
+          }
+          await saveProgress(previousAttempts, undefined);
+          pendingDeletion = undefined;
+        } catch {
+          onStatus('retry', previousAttempts);
+          return null;
+        }
+      }
       onStatus('running', previousAttempts);
       let removed: StepDetailAttachmentCleanupResult;
       const progressBeforeAttempt = previousAttempts;
@@ -123,8 +192,13 @@ export function createStepDetailAttachmentCleanupRunner(
       try {
         removed = await cleanup(async progress => {
           const total = addCleanupResults(progressBeforeAttempt, progress);
-          await saveProgress(total);
+          await saveProgress(total, undefined);
+          pendingDeletion = undefined;
           lastSavedProgress = total;
+        }, async pending => {
+          const nextPending = { ...pending, counted: false };
+          await saveProgress(progressBeforeAttempt, nextPending);
+          pendingDeletion = nextPending;
         });
       } catch (error) {
         if (error instanceof StepDetailAttachmentCleanupError) {
@@ -134,7 +208,7 @@ export function createStepDetailAttachmentCleanupRunner(
           previousAttempts = lastSavedProgress;
         }
         try {
-          await saveProgress(previousAttempts);
+          await saveProgress(previousAttempts, pendingDeletion);
         } catch {
           // Keep the in-memory count visible; the cleanup remains retryable.
         }
@@ -148,7 +222,7 @@ export function createStepDetailAttachmentCleanupRunner(
         // The sweep finished, but retain its count and retry the storage cleanup.
         previousAttempts = total;
         try {
-          await saveProgress(previousAttempts);
+          await saveProgress(previousAttempts, pendingDeletion);
         } catch {
           // Preserve the in-memory count even if storage is still unavailable.
         }
@@ -244,6 +318,25 @@ async function readReferencedAttachmentUris(storage: CleanupStorage): Promise<Se
   return referencedUris;
 }
 
+export async function reconcilePendingStepDetailAttachmentDeletion(
+  pending: PendingStepDetailAttachmentDeletion,
+  documentDirectory: string | null | undefined,
+  storage: CleanupStorage,
+  fileSystem: CleanupFileSystem,
+): Promise<PendingStepDetailAttachmentReconciliation> {
+  if (!documentDirectory) throw new Error('App file storage is unavailable.');
+  if (!pending.fileName || pending.fileName === '.' || pending.fileName === '..'
+    || /[/\\]/.test(pending.fileName)) {
+    throw new Error('Saved cleanup progress could not be checked safely.');
+  }
+  const referencedUris = await readReferencedAttachmentUris(storage);
+  const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
+  const uri = `${documentRoot}step-detail-attachments/${pending.fileName}`;
+  if (referencedUris.has(uri)) return 'referenced';
+  const info = await fileSystem.getInfoAsync(uri);
+  return info.exists ? 'present' : 'removed';
+}
+
 /**
  * Delete only unreferenced files in the app-managed attachment directory.
  * The routine records (including embedded backup bytes) are never modified.
@@ -254,6 +347,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
   storage: CleanupStorage,
   fileSystem: CleanupFileSystem,
   onProgress?: (progress: StepDetailAttachmentCleanupResult) => Promise<void>,
+  beforeDelete?: (pending: Omit<PendingStepDetailAttachmentDeletion, 'counted'>) => Promise<void>,
 ): Promise<StepDetailAttachmentCleanupResult> {
   if (!documentDirectory) throw new Error('App file storage is unavailable.');
   const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
@@ -298,6 +392,24 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
     if (latestReferences.has(uri)) {
       referencedUris.add(uri);
       continue;
+    }
+    if (beforeDelete) {
+      try {
+        await beforeDelete({
+          fileName,
+          size: typeof info.size === 'number' && Number.isFinite(info.size) && info.size >= 0
+            ? info.size
+            : null,
+        });
+      } catch {
+        throw new StepDetailAttachmentCleanupError(
+          'Cleanup progress could not be saved.',
+          {
+            removedCount,
+            estimatedBytes: hasAllSizes ? estimatedBytes : null,
+          },
+        );
+      }
     }
     try {
       await fileSystem.deleteAsync(uri, { idempotent: true });

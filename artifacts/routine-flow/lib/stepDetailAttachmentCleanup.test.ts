@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import {
   cleanupOrphanedStepDetailAttachmentCopies,
   createStepDetailAttachmentCleanupRunner,
+  reconcilePendingStepDetailAttachmentDeletion,
   STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY,
   StepDetailAttachmentCleanupError,
 } from './stepDetailAttachmentCleanup';
@@ -57,7 +58,7 @@ function createAdapters(
   };
   const fileSystem = {
     readDirectoryAsync: async () => [...fileNames],
-    getInfoAsync: async (uri: string) => ({
+    getInfoAsync: async (uri: string): Promise<{ exists: boolean; isDirectory: boolean; size?: number }> => ({
       exists: true,
       isDirectory: false,
       size: fileSizes[uri.slice(uri.lastIndexOf('/') + 1)],
@@ -294,7 +295,7 @@ test('persists partial cleanup progress across restarts until every profile has 
   const savedPartialProgress = progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY);
   assert.ok(savedPartialProgress);
   assert.deepEqual(JSON.parse(savedPartialProgress), {
-    version: 1,
+    version: 2,
     removedCount: 1,
     estimatedBytes: 300,
   });
@@ -312,6 +313,136 @@ test('persists partial cleanup progress across restarts until every profile has 
   assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
   assert.deepEqual(adapters.deleted, [removeUri, retryUri]);
   assert.ok(!adapters.deleted.includes(sharedUri));
+});
+
+test('retries a journaled orphan when the app closes before deleting it', async () => {
+  const fileNames = ['orphan.pdf'];
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], fileNames, { 'orphan.pdf': 256 });
+  const progressValues = new Map<string, string>();
+  const progressStorage = {
+    getItem: async (key: string) => progressValues.get(key) ?? null,
+    setItem: async (key: string, value: string) => { progressValues.set(key, value); },
+    removeItem: async (key: string) => { progressValues.delete(key); },
+  };
+  adapters.fileSystem.readDirectoryAsync = async () => [...fileNames];
+  adapters.fileSystem.getInfoAsync = async uri => ({
+    exists: fileNames.includes(uri.slice(uri.lastIndexOf('/') + 1)),
+    isDirectory: false,
+    size: 256,
+  });
+  adapters.fileSystem.deleteAsync = async () => { throw new Error('Interrupted before delete'); };
+  const createRunner = () => createStepDetailAttachmentCleanupRunner(
+    (onProgress, beforeDelete) => cleanupOrphanedStepDetailAttachmentCopies(
+      directory, adapters.storage, adapters.fileSystem, onProgress, beforeDelete,
+    ),
+    () => {},
+    progressStorage,
+    pending => reconcilePendingStepDetailAttachmentDeletion(
+      pending, directory, adapters.storage, adapters.fileSystem,
+    ),
+  );
+
+  assert.equal(await createRunner()(), null);
+  assert.deepEqual(JSON.parse(progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY)!), {
+    version: 2,
+    removedCount: 0,
+    estimatedBytes: 0,
+    pendingDeletion: { fileName: 'orphan.pdf', size: 256, counted: false },
+  });
+  adapters.fileSystem.deleteAsync = async uri => {
+    adapters.deleted.push(uri);
+    fileNames.splice(fileNames.indexOf('orphan.pdf'), 1);
+  };
+
+  assert.deepEqual(await createRunner()(), { removedCount: 1, estimatedBytes: 256 });
+  assert.deepEqual(adapters.deleted, [`${attachmentDirectory}orphan.pdf`]);
+  assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
+});
+
+test('counts an orphan exactly once when the app closes after deleting it but before saving progress', async () => {
+  const fileNames = ['orphan.pdf'];
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], fileNames);
+  const progressValues = new Map<string, string>();
+  const progressStorage = {
+    getItem: async (key: string) => progressValues.get(key) ?? null,
+    setItem: async (key: string, value: string) => { progressValues.set(key, value); },
+    removeItem: async (key: string) => { progressValues.delete(key); },
+  };
+  adapters.fileSystem.readDirectoryAsync = async () => [...fileNames];
+  adapters.fileSystem.getInfoAsync = async uri => ({
+    exists: fileNames.includes(uri.slice(uri.lastIndexOf('/') + 1)),
+    isDirectory: false,
+    size: undefined,
+  });
+  adapters.fileSystem.deleteAsync = async uri => {
+    adapters.deleted.push(uri);
+    fileNames.splice(fileNames.indexOf('orphan.pdf'), 1);
+    throw new Error('Interrupted after delete');
+  };
+  const createRunner = () => createStepDetailAttachmentCleanupRunner(
+    (onProgress, beforeDelete) => cleanupOrphanedStepDetailAttachmentCopies(
+      directory, adapters.storage, adapters.fileSystem, onProgress, beforeDelete,
+    ),
+    () => {},
+    progressStorage,
+    pending => reconcilePendingStepDetailAttachmentDeletion(
+      pending, directory, adapters.storage, adapters.fileSystem,
+    ),
+  );
+
+  assert.equal(await createRunner()(), null);
+  assert.deepEqual(JSON.parse(progressValues.get(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY)!), {
+    version: 2,
+    removedCount: 0,
+    estimatedBytes: 0,
+    pendingDeletion: { fileName: 'orphan.pdf', size: null, counted: false },
+  });
+
+  assert.deepEqual(await createRunner()(), { removedCount: 1, estimatedBytes: null });
+  assert.equal(adapters.deleted.length, 1);
+  assert.equal(progressValues.has(STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY), false);
+});
+
+test('does not count or delete a pending file that a routine now references', async () => {
+  const orphanUri = `${attachmentDirectory}orphan.pdf`;
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me', 'person-2'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+    [personStorageKey('person-2', PERSON_DATA_KEYS.routines), JSON.stringify([routine(orphanUri)])],
+  ], [], { 'orphan.pdf': 512 });
+  const progressValues = new Map<string, string>([[
+    STEP_DETAIL_ATTACHMENT_CLEANUP_PROGRESS_KEY,
+    JSON.stringify({
+      version: 2,
+      removedCount: 0,
+      estimatedBytes: 0,
+      pendingDeletion: { fileName: 'orphan.pdf', size: 512, counted: false },
+    }),
+  ]]);
+  const progressStorage = {
+    getItem: async (key: string) => progressValues.get(key) ?? null,
+    setItem: async (key: string, value: string) => { progressValues.set(key, value); },
+    removeItem: async (key: string) => { progressValues.delete(key); },
+  };
+  const runCleanup = createStepDetailAttachmentCleanupRunner(
+    (onProgress, beforeDelete) => cleanupOrphanedStepDetailAttachmentCopies(
+      directory, adapters.storage, adapters.fileSystem, onProgress, beforeDelete,
+    ),
+    () => {},
+    progressStorage,
+    pending => reconcilePendingStepDetailAttachmentDeletion(
+      pending, directory, adapters.storage, adapters.fileSystem,
+    ),
+  );
+
+  assert.deepEqual(await runCleanup(), { removedCount: 0, estimatedBytes: 0 });
+  assert.deepEqual(adapters.deleted, []);
 });
 
 test('reports when local attachment storage is unavailable', async () => {

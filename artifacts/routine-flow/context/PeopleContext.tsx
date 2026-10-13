@@ -16,6 +16,7 @@ import { createPersonStorage, DEFAULT_PERSON_ID, PEOPLE_KEY, PERSON_DATA_KEYS, p
 import { mergePersonRestore, type PersonRestoreSnapshot } from '@/lib/personRestore';
 import {
   cleanupOrphanedStepDetailAttachmentCopies, createStepDetailAttachmentCleanupRunner,
+  reconcilePendingStepDetailAttachmentDeletion,
   type StepDetailAttachmentCleanupResult,
 } from '@/lib/stepDetailAttachmentCleanup';
 import type { AllPeopleBackup } from '@/lib/routineTransfer';
@@ -138,8 +139,8 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const [attachmentCleanupBusy, setAttachmentCleanupBusy] = useState(false);
   const [attachmentCleanupResult, setAttachmentCleanupResult] = useState<StepDetailAttachmentCleanupResult | null>(null);
   const runAttachmentCleanup = useMemo(() => createStepDetailAttachmentCleanupRunner(
-    onProgress => cleanupOrphanedStepDetailAttachmentCopies(
-      FileSystem.documentDirectory, AsyncStorage, FileSystem, onProgress,
+    (onProgress, beforeDelete) => cleanupOrphanedStepDetailAttachmentCopies(
+      FileSystem.documentDirectory, AsyncStorage, FileSystem, onProgress, beforeDelete,
     ),
     (status, progress) => {
       setAttachmentCleanupBusy(status === 'running');
@@ -152,6 +153,9 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       setItem: (key, value) => AsyncStorage.setItem(key, value),
       removeItem: key => AsyncStorage.removeItem(key),
     },
+    pending => reconcilePendingStepDetailAttachmentDeletion(
+      pending, FileSystem.documentDirectory, AsyncStorage, FileSystem,
+    ),
   ), []);
   const retryAttachmentCleanup = useCallback(async () => {
     const result = await runAttachmentCleanup();
