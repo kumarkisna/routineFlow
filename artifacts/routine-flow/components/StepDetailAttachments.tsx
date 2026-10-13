@@ -4,7 +4,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import React, { useState } from 'react';
-import { Alert, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import type { StepDetailAttachment } from '@/types/routines';
 
@@ -22,7 +22,7 @@ export function StepDetailAttachments({
 
   async function saveCopy(uri: string, name: string, mimeType: string, kind: StepDetailAttachment['kind']) {
     if (!FileSystem.documentDirectory) throw new Error('App file storage is unavailable.');
-    const info = await FileSystem.getInfoAsync(uri, { size: true });
+    const info = await FileSystem.getInfoAsync(uri);
     if (info.exists && info.size && info.size > 2_000_000) throw new Error('Choose a file smaller than 2 MB.');
     const id = `detail-file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const directory = `${FileSystem.documentDirectory}step-detail-attachments/`;
@@ -44,6 +44,29 @@ export function StepDetailAttachments({
       onChange?.([...attachments, file]);
     } catch (error) {
       Alert.alert('Could not attach image', error instanceof Error ? error.message : 'Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function takePhoto() {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Camera access needed', 'Allow camera access in system settings to take a photo for this step.', [
+          { text: 'Not now', style: 'cancel' },
+          ...(!permission.canAskAgain ? [{ text: 'Open Settings', onPress: () => void Linking.openSettings() }] : []),
+        ]);
+        return;
+      }
+      setBusy(true);
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9, allowsEditing: false });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      const file = await saveCopy(asset.uri, asset.fileName || `step-photo-${Date.now()}.jpg`, asset.mimeType || 'image/jpeg', 'image');
+      onChange?.([...attachments, file]);
+    } catch (error) {
+      Alert.alert('Could not take photo', error instanceof Error ? error.message : 'Try again.');
     } finally {
       setBusy(false);
     }
@@ -102,6 +125,12 @@ export function StepDetailAttachments({
       ))}
       {onChange ? (
         <View style={styles.actions}>
+          {Platform.OS !== 'web' ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Take a photo" testID={`${testID}-take-photo`} disabled={disabled || busy}
+              onPress={() => void takePhoto()} style={[styles.addButton, { borderColor: colors.border }]}>
+              <Ionicons name="camera-outline" size={16} color={colors.primary} /><Text style={[styles.addText, { color: colors.primary }]}>Camera</Text>
+            </Pressable>
+          ) : null}
           <Pressable accessibilityRole="button" accessibilityLabel="Attach an image" testID={`${testID}-add-image`} disabled={disabled || busy}
             onPress={() => void addImage()} style={[styles.addButton, { borderColor: colors.border }]}>
             <Ionicons name="image-outline" size={16} color={colors.primary} /><Text style={[styles.addText, { color: colors.primary }]}>Image</Text>

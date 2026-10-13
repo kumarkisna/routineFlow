@@ -294,7 +294,7 @@ export function serializeAllPeopleBackup(activePersonId: string, entries: AllPeo
 
 export function parseRoutinesFile(contents: string): RoutineBackup {
   if (contents.length > MAX_ROUTINE_FILE_BYTES) {
-    throw new Error('This file is too large to import (5 MB maximum).');
+    throw new Error('This file is too large to import (50 MB maximum).');
   }
   let value: unknown;
   try {
@@ -326,7 +326,7 @@ export function parseRoutinesFile(contents: string): RoutineBackup {
 
 export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
   if (contents.length > MAX_ROUTINE_FILE_BYTES) {
-    throw new Error('This file is too large to import (5 MB maximum).');
+    throw new Error('This file is too large to import (50 MB maximum).');
   }
   let value: unknown;
   try {

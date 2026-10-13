@@ -211,7 +211,7 @@ export default function HomeScreen() {
       includeProgress ? personData.progress : undefined,
     );
     if (new Blob([contents]).size > MAX_ROUTINE_FILE_BYTES) {
-      throw new Error('This person backup exceeds 5 MB. Try omitting daily progress or reducing the saved data.');
+      throw new Error('This person backup exceeds 50 MB. Remove large attachments or omit daily progress, then try again.');
     }
     return { filename, personData, contents };
   }
@@ -236,7 +236,7 @@ export default function HomeScreen() {
     }));
     const contents = serializeAllPeopleBackup(activePerson.id, entries);
     if (new Blob([contents]).size > MAX_ROUTINE_FILE_BYTES) {
-      throw new Error('This all-profiles backup exceeds 5 MB. Try omitting daily progress or reducing the saved data.');
+      throw new Error('This all-profiles backup exceeds 50 MB. Remove large attachments or omit daily progress, then try again.');
     }
     return {
       filename,
@@ -388,7 +388,7 @@ export default function HomeScreen() {
         const file = picked.assets[0];
         if (!file) throw new Error('No file was selected.');
         if (file.size && file.size > MAX_ROUTINE_FILE_BYTES) {
-          throw new Error('This file is too large to import (5 MB maximum).');
+          throw new Error('This file is too large to import (50 MB maximum).');
         }
         contents = file.file ? await file.file.text() : await (await fetch(file.uri)).text();
       } else {
@@ -396,7 +396,7 @@ export default function HomeScreen() {
         if (picked.canceled) return;
         const file = picked.result;
         if (file.size > MAX_ROUTINE_FILE_BYTES) {
-          throw new Error('This file is too large to import (5 MB maximum).');
+          throw new Error('This file is too large to import (50 MB maximum).');
         }
         try {
           contents = await file.text();

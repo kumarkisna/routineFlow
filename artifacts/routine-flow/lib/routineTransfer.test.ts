@@ -220,6 +220,18 @@ test('routine copies preserve additional details without sharing their arrays', 
   assert.notEqual(copied.steps[0].detailSpeech, source.steps[0].detailSpeech);
 });
 
+test('routine backups retain rich step details and attachment bytes', () => {
+  const source = routine();
+  source.steps[0].detailHtml = ['<p><strong>Drink water</strong></p>'];
+  source.steps[0].detailAttachments = [[{
+    id: 'file-one', name: 'photo.png', uri: 'file:///old-device/photo.png',
+    mimeType: 'image/png', kind: 'image', contentBase64: 'iVBORw0KGgo=',
+  }]];
+  const restored = parseRoutinesFile(serializeRoutines([source])).routines[0];
+  assert.deepEqual(restored.steps[0].detailHtml, source.steps[0].detailHtml);
+  assert.deepEqual(restored.steps[0].detailAttachments, source.steps[0].detailAttachments);
+});
+
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
   const personData = {
     playlists: [{

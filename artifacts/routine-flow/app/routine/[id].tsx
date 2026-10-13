@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
 import { SkillTagList } from '@/components/SkillPicker';
+import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { usePeople } from '@/context/PeopleContext';
@@ -341,7 +342,7 @@ export default function RoutineDetailScreen() {
           {displayedSteps.map((step) => {
             const visibleIndex = visibleSteps.findIndex((item) => item.id === step.id);
             const isDone = isCompleted(todayProgress[`${currentRoutine.id}:${step.id}`]);
-            const details = getStepDetails(step);
+            const details = [step.description ?? '', ...(step.additionalDetails ?? [])];
             return (
               <View
                 key={step.id}
@@ -369,13 +370,18 @@ export default function RoutineDetailScreen() {
                     <Text style={[styles.stepTitle, { color: step.hidden ? colors.mutedForeground : isDone ? colors.success : colors.foreground }, isDone && !step.hidden && styles.completedText]}>
                       {step.title}
                     </Text>
-                    {details.length > 0 ? (
+                    {getStepDetails(step).length > 0 || step.detailHtml?.some(Boolean) ? (
                       <StepDetails
                         details={details}
+                        detailHtml={step.detailHtml}
                         style={[styles.stepDescription, { color: colors.mutedForeground }]}
                         linkColor={colors.primary}
                       />
                     ) : null}
+                    {step.detailAttachments?.map((attachments, detailIndex) => attachments.length ? (
+                      <StepDetailAttachments key={`${step.id}-attachments-${detailIndex}`} attachments={attachments}
+                        testID={`view-step-detail-files-${step.id}-${detailIndex}`} />
+                    ) : null)}
                     <SkillTagList skillIds={step.skillIds} />
                     <Text style={[styles.duration, { color: colors.mutedForeground }]}>
                       {step.hidden ? 'Hidden · skipped in timer' : formatDuration(getStepSeconds(step))}

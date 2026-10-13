@@ -29,6 +29,12 @@ History for routines absent from a backup must restore as detached history, even
 
 Skill catalogs in backups merge additively by normalized name. Assignment IDs are remapped to the destination skill, and repeated rating records (including optional reflection notes) are deduplicated by rating ID. Full-person backups also carry the shared rolling-average window.
 
+Step-detail attachments keep their bytes in the routine record so restored backups remain usable on another device; the cached file URI is only a local convenience. Rich-text HTML stays aligned with the plain-text detail fields, which remain the readable and speakable compatibility form. Preserve both payloads in routine, person, all-profile, and copy transfers.
+
+**Why:** A local file path is not portable across devices, while dropping rich HTML or plain text during transfer makes saved details either invisible or unavailable to speech.
+
+**How to apply:** When changing step-detail formats, preserve the ordered relationship among plain text, HTML, speech settings, and attachment groups, and keep import size validation compatible with embedded file bytes.
+
 **Why:** Re-importing a backup should not duplicate ratings or replace a person's newer local history, while preserving assignments and settings across devices.
 
 **How to apply:** Keep local ratings and their notes when an imported rating ID already exists, merge only missing records, and restore the shared window from full-person backups.

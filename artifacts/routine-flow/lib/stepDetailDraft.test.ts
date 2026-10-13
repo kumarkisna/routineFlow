@@ -42,6 +42,8 @@ test('detail speech settings stay with their text through add, remove, save, and
     description: 'Main detail',
     additionalDetails: ['Keep muted', 'Stay enabled', 'New last detail'],
     detailSpeech: [true, false, true, true],
+    detailAttachments: [[], [], [], []],
+    detailHtml: ['', '', '', ''],
   });
   assert.deepEqual(getSpokenStepDetails(savedStep), [
     'Main detail',

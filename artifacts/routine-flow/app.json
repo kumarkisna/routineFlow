@@ -26,6 +26,12 @@
           "resizeMode": "contain"
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow Routine Flow to take photos for routine step details."
+        }
+      ],
       "@react-native-community/datetimepicker"
     ],
     "experiments": {

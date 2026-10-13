@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
+import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
 import { useSkills } from '@/context/SkillContext';
 import { useRoutines } from '@/context/RoutineContext';
@@ -736,13 +737,18 @@ function RoutinePlayer() {
             {isFinished ? savingCompletion ? 'Saving completion…' : completionError ? 'Save needs attention'
               : inPlaylist ? 'Playlist complete' : 'Routine complete' : activeStep.title}
           </Text>
-          {!isFinished && getStepDetails(activeStep).length > 0 ? (
+          {!isFinished && (getStepDetails(activeStep).length > 0 || activeStep.detailHtml?.some(Boolean)) ? (
             <StepDetails
-              details={getStepDetails(activeStep)}
+              details={[activeStep.description ?? '', ...(activeStep.additionalDetails ?? [])]}
+              detailHtml={activeStep.detailHtml}
               style={[styles.activeDescription, { color: colors.heroForeground }]}
               linkColor={colors.heroForeground}
             />
           ) : null}
+          {!isFinished ? activeStep.detailAttachments?.map((attachments, detailIndex) => attachments.length ? (
+            <StepDetailAttachments key={`${activeStep.id}-attachments-${detailIndex}`} attachments={attachments}
+              testID={`run-step-detail-files-${activeStep.id}-${detailIndex}`} />
+          ) : null) : null}
           <Text style={[styles.activeMeta, { color: colors.heroForeground }]}>
             {isFinished ? `You finished all ${currentRoutine.steps.length} steps` : `Step ${activeIndex + 1} of ${currentRoutine.steps.length} · ${formatDuration(getStepSeconds(activeStep))}`}
           </Text>
@@ -882,9 +888,10 @@ function RoutinePlayer() {
                 </View>
                 <View style={styles.stepCopy}>
                   <Text style={[styles.stepTitle, { color: colors.foreground }]} numberOfLines={2}>{step.title}</Text>
-                  {getStepDetails(step).length > 0 ? (
+                  {getStepDetails(step).length > 0 || step.detailHtml?.some(Boolean) ? (
                     <StepDetails
-                      details={getStepDetails(step)}
+                      details={[step.description ?? '', ...(step.additionalDetails ?? [])]}
+                      detailHtml={step.detailHtml}
                       style={[styles.stepDescription, { color: colors.mutedForeground }]}
                       linkColor={colors.primary}
                       numberOfLines={2}

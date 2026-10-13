@@ -11,6 +11,13 @@ export function detailHtmlToText(html: string) {
     .replace(/&#39;/gi, "'").replace(/\n{3,}/g, '\n\n').trim();
 }
 
+export function sanitizeStepDetailHtml(html: string) {
+  return html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<(iframe|object|embed|form)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/javascript\s*:/gi, '');
+}
+
 const escapeHtml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 
 export function ExpandableRichDetailEditor({ label, value, html, disabled, onSave }: {
@@ -23,7 +30,7 @@ export function ExpandableRichDetailEditor({ label, value, html, disabled, onSav
   const [draftHtml, setDraftHtml] = useState('');
   const [webText, setWebText] = useState('');
   function open() {
-    setDraftHtml(html || `<p>${escapeHtml(value)}</p>`);
+    setDraftHtml(html ? sanitizeStepDetailHtml(html) : `<p>${escapeHtml(value)}</p>`);
     setWebText(value);
     setVisible(true);
   }
@@ -52,8 +59,9 @@ export function ExpandableRichDetailEditor({ label, value, html, disabled, onSav
             <>
               <RichToolbar editor={editor} actions={[
                 actions.setBold, actions.setItalic, actions.setUnderline, actions.setStrikethrough,
-                actions.heading1, actions.heading2, actions.insertBulletsList, actions.insertOrderedList,
-                actions.blockquote, actions.undo, actions.redo,
+                actions.heading1, actions.heading2, actions.heading3, actions.insertBulletsList, actions.insertOrderedList,
+                actions.alignLeft, actions.alignCenter, actions.alignRight, actions.foreColor, actions.hiliteColor,
+                actions.fontSize, actions.insertLink, actions.removeFormat, actions.blockquote, actions.undo, actions.redo,
               ]} />
               <RichEditor ref={editor} initialContentHTML={draftHtml} onChange={setDraftHtml}
                 placeholder="Write step instructions…" style={styles.editor}
