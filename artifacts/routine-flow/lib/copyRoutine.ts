@@ -18,6 +18,7 @@ export function makeRoutineCopy(source: Routine, existing: Routine[], createId: 
       ...(step.additionalDetails ? { additionalDetails: [...step.additionalDetails] } : {}),
       ...(step.detailSpeech ? { detailSpeech: [...step.detailSpeech] } : {}),
       ...(step.detailAttachments ? { detailAttachments: step.detailAttachments.map(group => group.map(file => ({ ...file }))) } : {}),
+      ...(step.detailHtml ? { detailHtml: [...step.detailHtml] } : {}),
       id: nextId(),
     })),
     createdAt: new Date().toISOString(),

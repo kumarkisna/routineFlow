@@ -16,6 +16,8 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 import { useRoutines } from '@/context/RoutineContext';
 import { useSkills } from '@/context/SkillContext';
 import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
+import { StepDetailAttachments } from '@/components/StepDetailAttachments';
+import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
 import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
 import { moveRoutineStep } from '@/lib/routineStepOrdering';
@@ -26,6 +28,8 @@ import {
   createStepDetailDraft,
   removeAdditionalStepDetail,
   setStepDetailSpeech as setDraftDetailSpeech,
+  setStepDetailAttachments as setDraftDetailAttachments,
+  setStepDetailHtml as setDraftDetailHtml,
   updateAdditionalStepDetail,
   type StepDetailDraft,
 } from '@/lib/stepDetailDraft';
@@ -60,6 +64,8 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const stepDescriptionDraft = stepDetailDraft.description;
   const additionalDetailsDraft = stepDetailDraft.additionalDetails;
   const detailSpeechDraft = stepDetailDraft.detailSpeech;
+  const detailAttachmentsDraft = stepDetailDraft.detailAttachments;
+  const detailHtmlDraft = stepDetailDraft.detailHtml;
   const [hoursDraft, setHoursDraft] = useState('0');
   const [minutesDraft, setMinutesDraft] = useState('5');
   const [secondsDraft, setSecondsDraft] = useState('0');
@@ -105,6 +111,8 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     const nextDescription = detailFields.description;
     const nextAdditionalDetails = detailFields.additionalDetails;
     const nextDetailSpeech = detailFields.detailSpeech;
+    const nextDetailAttachments = detailFields.detailAttachments;
+    const nextDetailHtml = detailFields.detailHtml;
     if (!nextTitle) {
       setError('Give this step a name.');
       return;
@@ -120,7 +128,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     if (editingStepId) {
       setSteps((current) => current.map((step) =>
         step.id === editingStepId
-          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, detailSpeech: nextDetailSpeech, speakDetails: undefined, skillIds: [...stepSkillIds], durationSeconds }
+          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, detailSpeech: nextDetailSpeech, detailAttachments: nextDetailAttachments, detailHtml: nextDetailHtml, speakDetails: undefined, skillIds: [...stepSkillIds], durationSeconds }
           : step,
       ));
     } else {
@@ -132,6 +140,8 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           description: nextDescription,
           additionalDetails: nextAdditionalDetails,
           detailSpeech: nextDetailSpeech,
+          detailAttachments: nextDetailAttachments,
+          detailHtml: nextDetailHtml,
           ...(stepSkillIds.length ? { skillIds: [...stepSkillIds] } : {}),
           durationSeconds,
         },
@@ -337,9 +347,13 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             placeholder="Add instructions or a helpful note"
             placeholderTextColor={colors.mutedForeground}
             value={stepDescriptionDraft}
-            onChangeText={(description) => setStepDetailDraft((current) => ({ ...current, description }))}
+            onChangeText={(description) => setStepDetailDraft((current) => ({ ...current, description, detailHtml: current.detailHtml.map((html, index) => index === 0 ? '' : html) }))}
             style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground }]}
           />
+          <ExpandableRichDetailEditor label="Main step detail" value={stepDescriptionDraft} html={detailHtmlDraft[0] ?? ''} disabled={saving}
+            onSave={(description, html) => setStepDetailDraft(current => setDraftDetailHtml({ ...current, description }, 0, html))} />
+          <StepDetailAttachments testID="main-detail-files" attachments={detailAttachmentsDraft[0] ?? []} disabled={saving}
+            onChange={files => setStepDetailDraft(current => setDraftDetailAttachments(current, 0, files))} />
           <View style={styles.detailSpeechRow}>
             <Text style={[styles.detailSpeechLabel, { color: colors.inkSoft }]}>Speak main detail aloud</Text>
             <Switch
@@ -364,7 +378,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                   placeholderTextColor={colors.mutedForeground}
                   value={detail}
                   onChangeText={(value) => setStepDetailDraft((current) =>
-                    updateAdditionalStepDetail(current, index, value),
+                    setDraftDetailHtml(updateAdditionalStepDetail(current, index, value), index + 1, ''),
                   )}
                   style={[
                     styles.stepDescriptionInput,
@@ -372,6 +386,10 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                     { borderColor: colors.border, color: colors.foreground },
                   ]}
                 />
+                <ExpandableRichDetailEditor label={`Additional detail ${index + 1}`} value={detail} html={detailHtmlDraft[index + 1] ?? ''} disabled={saving}
+                  onSave={(text, html) => setStepDetailDraft(current => setDraftDetailHtml(updateAdditionalStepDetail(current, index, text), index + 1, html))} />
+                <StepDetailAttachments testID={`additional-detail-files-${index}`} attachments={detailAttachmentsDraft[index + 1] ?? []} disabled={saving}
+                  onChange={files => setStepDetailDraft(current => setDraftDetailAttachments(current, index + 1, files))} />
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Remove additional detail ${index + 1}`}

@@ -6,7 +6,7 @@ import { parseSchedules, type RoutineSchedule } from './schedules';
 import { parseSkillRatingWindow, parseSkills, type RoutineSkill } from './skills';
 import type { Person } from '@/types/people';
 
-export const MAX_ROUTINE_FILE_BYTES = 5_000_000;
+export const MAX_ROUTINE_FILE_BYTES = 50_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
 export const ALL_PEOPLE_FILE_FORMAT = 'routine-flow-all-people';
 export const ROUTINE_BACKUP_VERSION = 7;
@@ -78,14 +78,24 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     throw new Error(`${label} has invalid per-detail speech settings.`);
   }
   const detailCount = 1 + (Array.isArray(value.additionalDetails) ? value.additionalDetails.length : 0);
-  if (value.detailAttachments !== undefined &&
-      (!Array.isArray(value.detailAttachments) || value.detailAttachments.length !== detailCount
-        || value.detailAttachments.some(group => !Array.isArray(group) || group.length > 20
-          || group.some(attachment => !isRecord(attachment) || !isId(attachment.id)
-            || !isText(attachment.name) || attachment.name.length > 240
-            || !isText(attachment.uri) || attachment.uri.length > 4096
-            || !isText(attachment.mimeType) || attachment.mimeType.length > 160
-            || !['image', 'document'].includes(String(attachment.kind))))) {
+  if (value.detailHtml !== undefined &&
+      (!Array.isArray(value.detailHtml) || value.detailHtml.length !== detailCount
+        || value.detailHtml.some(html => typeof html !== 'string' || html.length > 100_000))) {
+    throw new Error(`${label} has invalid formatted details.`);
+  }
+  const invalidAttachments = value.detailAttachments !== undefined && (
+    !Array.isArray(value.detailAttachments)
+    || value.detailAttachments.length !== detailCount
+    || value.detailAttachments.some(group => {
+      if (!Array.isArray(group) || group.length > 20) return true;
+      return group.some(attachment => !isRecord(attachment) || !isId(attachment.id)
+        || !isText(attachment.name) || attachment.name.length > 240
+        || !isText(attachment.mimeType) || attachment.mimeType.length > 160
+        || typeof attachment.contentBase64 !== 'string' || attachment.contentBase64.length > 2_800_000
+        || !['image', 'document'].includes(String(attachment.kind)));
+    })
+  );
+  if (invalidAttachments) {
     throw new Error(`${label} has invalid detail attachments.`);
   }
   if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
@@ -114,6 +124,7 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     ...(value.detailSpeech !== undefined ? { detailSpeech: [...(value.detailSpeech as boolean[])] } : {}),
     ...(value.detailAttachments !== undefined
       ? { detailAttachments: (value.detailAttachments as RoutineStep['detailAttachments'])!.map(group => [...group]) } : {}),
+    ...(value.detailHtml !== undefined ? { detailHtml: [...(value.detailHtml as string[])] } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden as boolean } : {}),
     ...(value.speakDetails !== undefined ? { speakDetails: value.speakDetails as boolean } : {}),
     ...(skillIds !== undefined ? { skillIds } : {}),

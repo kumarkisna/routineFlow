@@ -22,13 +22,16 @@ export function StepDetailAttachments({
 
   async function saveCopy(uri: string, name: string, mimeType: string, kind: StepDetailAttachment['kind']) {
     if (!FileSystem.documentDirectory) throw new Error('App file storage is unavailable.');
+    const info = await FileSystem.getInfoAsync(uri, { size: true });
+    if (info.exists && info.size && info.size > 2_000_000) throw new Error('Choose a file smaller than 2 MB.');
     const id = `detail-file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const directory = `${FileSystem.documentDirectory}step-detail-attachments/`;
     await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
     const extension = name.includes('.') ? name.split('.').pop()!.replace(/[^a-z0-9]/gi, '').slice(0, 8) : '';
     const destination = `${directory}${id}${extension ? `.${extension}` : ''}`;
     await FileSystem.copyAsync({ from: uri, to: destination });
-    return { id, name: name.slice(0, 240), uri: destination, mimeType: mimeType || 'application/octet-stream', kind };
+    const contentBase64 = await FileSystem.readAsStringAsync(destination, { encoding: FileSystem.EncodingType.Base64 });
+    return { id, name: name.slice(0, 240), uri: destination, mimeType: mimeType || 'application/octet-stream', kind, contentBase64 };
   }
 
   async function addImage() {
@@ -64,14 +67,20 @@ export function StepDetailAttachments({
   async function openDocument(file: StepDetailAttachment) {
     try {
       if (!await Sharing.isAvailableAsync()) throw new Error('No app-sharing option is available on this device.');
-      await Sharing.shareAsync(file.uri, { mimeType: file.mimeType, dialogTitle: `Open ${file.name}` });
+      let uri = file.uri;
+      if (!uri || !(await FileSystem.getInfoAsync(uri)).exists) {
+        if (!FileSystem.cacheDirectory) throw new Error('Temporary file storage is unavailable.');
+        uri = `${FileSystem.cacheDirectory}${file.id}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        await FileSystem.writeAsStringAsync(uri, file.contentBase64, { encoding: FileSystem.EncodingType.Base64 });
+      }
+      await Sharing.shareAsync(uri, { mimeType: file.mimeType, dialogTitle: `Open ${file.name}` });
     } catch (error) {
       Alert.alert('Could not open document', error instanceof Error ? error.message : 'Try again.');
     }
   }
 
   async function remove(file: StepDetailAttachment) {
-    try { await FileSystem.deleteAsync(file.uri, { idempotent: true }); } catch { /* Removing a stale file is safe. */ }
+    try { if (file.uri) await FileSystem.deleteAsync(file.uri, { idempotent: true }); } catch { /* Removing a stale file is safe. */ }
     onChange?.(attachments.filter(item => item.id !== file.id));
   }
 
@@ -81,7 +90,7 @@ export function StepDetailAttachments({
         <View key={file.id} style={[styles.fileRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
           <Pressable accessibilityRole="button" accessibilityLabel={file.kind === 'image' ? `View image ${file.name}` : `Open ${file.name} in another app`}
             onPress={() => file.kind === 'image' ? setViewing(file) : void openDocument(file)} style={styles.fileButton}>
-            {file.kind === 'image' ? <Image source={{ uri: file.uri }} style={styles.thumbnail} /> :
+            {file.kind === 'image' ? <Image source={{ uri: `data:${file.mimeType};base64,${file.contentBase64}` }} style={styles.thumbnail} /> :
               <Ionicons name="document-text-outline" size={22} color={colors.primary} />}
             <Text numberOfLines={1} style={[styles.fileName, { color: colors.foreground }]}>{file.name}</Text>
           </Pressable>
@@ -108,7 +117,7 @@ export function StepDetailAttachments({
           <Pressable accessibilityRole="button" accessibilityLabel="Close image" onPress={() => setViewing(null)} style={styles.close}>
             <Ionicons name="close" size={26} color="#fff" />
           </Pressable>
-          {viewing ? <Image accessibilityLabel={viewing.name} source={{ uri: viewing.uri }} resizeMode="contain" style={styles.fullImage} /> : null}
+          {viewing ? <Image accessibilityLabel={viewing.name} source={{ uri: `data:${viewing.mimeType};base64,${viewing.contentBase64}` }} resizeMode="contain" style={styles.fullImage} /> : null}
         </View>
       </Modal>
     </View>

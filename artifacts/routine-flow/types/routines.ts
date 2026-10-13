@@ -1,5 +1,5 @@
 export type RoutineTone = 'coral' | 'sage' | 'lavender' | 'sun';
-export type StepDetailAttachment = { id: string; name: string; uri: string; mimeType: string; kind: 'image' | 'document' };
+export type StepDetailAttachment = { id: string; name: string; uri?: string; mimeType: string; kind: 'image' | 'document'; contentBase64: string };
 
 export type RoutineStep = {
   id: string;
@@ -12,6 +12,8 @@ export type RoutineStep = {
   detailSpeech?: boolean[];
   /** Attachments align with [description, ...additionalDetails]. */
   detailAttachments?: StepDetailAttachment[][];
+  /** Sanitized rich-text HTML aligned with [description, ...additionalDetails]. */
+  detailHtml?: string[];
   /** Legacy per-step setting, read for routines saved before per-detail speech choices existed. */
   speakDetails?: boolean;
   /** Optional links to reusable, person-specific skills. */
