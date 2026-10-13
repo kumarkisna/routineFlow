@@ -379,12 +379,38 @@ test('failed background saves and clears keep the selected photo and can be retr
   await expect.poll(() => page.evaluate(() =>
     localStorage.getItem('@routine-flow/person/alex/@routine-flow/background-image'))).toBe(alexPhoto);
 
-  await page.evaluate(() => localStorage.setItem('__fail_next_background_remove', '1'));
-  await page.getByTestId('person-background-clear-me').click();
-  await expect(page.getByText(/background photo could not be cleared.*previous photo is still selected/i)).toBeVisible();
+  await page.evaluate(() => localStorage.setItem('__fail_next_background_jpeg_encode', '1'));
+  chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('person-background-choose-me').click();
+  await (await chooserPromise).setFiles({
+    name: 'library-me-background.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(alexPhoto.slice('data:image/jpeg;base64,'.length), 'base64'),
+  });
+  await expect(page.getByText(/new picture could not be prepared.*current background photo is still selected/i)).toBeVisible();
   await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/background-image'))).toBe(savedCameraPhoto);
   await expectRenderedPhoto(savedCameraPhoto!);
   await expectSelectedProfilePhoto(savedCameraPhoto!);
+
+  chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('person-background-choose-me').click();
+  await (await chooserPromise).setFiles({
+    name: 'library-me-background-retry.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(newMePhotoBase64, 'base64'),
+  });
+  await expect(page.getByText('Background photo saved for this person.', { exact: true })).toBeVisible();
+  const savedLibraryPhoto = await page.evaluate(() => localStorage.getItem('@routine-flow/background-image'));
+  expect(savedLibraryPhoto).not.toBe(savedCameraPhoto);
+  await expectRenderedPhoto(savedLibraryPhoto!);
+  await expectSelectedProfilePhoto(savedLibraryPhoto!);
+
+  await page.evaluate(() => localStorage.setItem('__fail_next_background_remove', '1'));
+  await page.getByTestId('person-background-clear-me').click();
+  await expect(page.getByText(/background photo could not be cleared.*previous photo is still selected/i)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/background-image'))).toBe(savedLibraryPhoto);
+  await expectRenderedPhoto(savedLibraryPhoto!);
+  await expectSelectedProfilePhoto(savedLibraryPhoto!);
 
   await page.getByTestId('person-background-clear-me').click();
   await expect(page.getByText('No background picture is set for this person.', { exact: true })).toBeVisible();
