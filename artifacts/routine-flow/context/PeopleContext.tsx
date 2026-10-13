@@ -55,6 +55,10 @@ type PeopleContextValue = {
     restoreHistory: boolean,
     profileNames?: Record<string, string>,
   ) => Promise<AllProfilesRestoreSummary>;
+  attachmentCleanupPending: boolean;
+  attachmentCleanupBusy: boolean;
+  retryAttachmentCleanup: () => Promise<boolean>;
+  runAttachmentCleanup: () => Promise<boolean>;
 };
 const PeopleContext = createContext<PeopleContextValue | null>(null);
 const colors = APP_THEMES[0].colors;
@@ -97,9 +101,6 @@ async function saveRegistry(registry: PeopleRegistry) {
       throw new Error('The person change could not be saved. Please try again.');
     }
   }
-  await cleanupOrphanedStepDetailAttachmentCopies(
-    FileSystem.documentDirectory, AsyncStorage, FileSystem,
-  ).catch(() => {});
 }
 
 async function validatePersonSettings(personId: string) {
@@ -127,6 +128,29 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const operationBusy = useRef(false);
   const [revision, setRevision] = useState(0);
   const [notice, setNotice] = useState('');
+  const [attachmentCleanupPending, setAttachmentCleanupPending] = useState(false);
+  const [attachmentCleanupBusy, setAttachmentCleanupBusy] = useState(false);
+  const cleanupInFlight = useRef<Promise<boolean> | null>(null);
+
+  const runAttachmentCleanup = useCallback((): Promise<boolean> => {
+    if (cleanupInFlight.current) return cleanupInFlight.current;
+    setAttachmentCleanupBusy(true);
+    const attempt = cleanupOrphanedStepDetailAttachmentCopies(
+      FileSystem.documentDirectory, AsyncStorage, FileSystem,
+    ).then(() => {
+      setAttachmentCleanupPending(false);
+      return true;
+    }, () => {
+      setAttachmentCleanupPending(true);
+      return false;
+    }).finally(() => {
+      cleanupInFlight.current = null;
+      setAttachmentCleanupBusy(false);
+    });
+    cleanupInFlight.current = attempt;
+    return attempt;
+  }, []);
+  const retryAttachmentCleanup = runAttachmentCleanup;
 
   const hydrate = useCallback(async (): Promise<boolean> => {
     setLoading(true);
@@ -140,9 +164,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       if (!raw || JSON.stringify(next) !== raw) await saveRegistry(next);
       await readPersonSnapshot(next.activePersonId);
       await validatePersonSettings(next.activePersonId);
-      await cleanupOrphanedStepDetailAttachmentCopies(
-        FileSystem.documentDirectory, AsyncStorage, FileSystem,
-      ).catch(() => {});
+      void runAttachmentCleanup();
       current.current = next;
       setRegistry(next);
       return true;
@@ -156,7 +178,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [runAttachmentCleanup]);
   useEffect(() => { void hydrate(); }, [hydrate]);
 
   const repairDurations = useCallback(async () => {
@@ -204,11 +226,12 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     await validatePersonSettings(id);
     const next: PeopleRegistry = { ...previous, activePersonId: id };
     await saveRegistry(next);
+    void runAttachmentCleanup();
     router.replace('/');
     current.current = next;
     setNotice('');
     setRegistry(next);
-  }), [runOperation]);
+  }), [runOperation, runAttachmentCleanup]);
 
   const addPerson = useCallback((profile: PersonProfileInput) => runOperation(async () => {
     const trimmed = profile.name.trim();
@@ -239,11 +262,12 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     ]);
     const next: PeopleRegistry = { version: 1, people: [...previous.people, person], activePersonId: person.id };
     await saveRegistry(next);
+    void runAttachmentCleanup();
     router.replace('/');
     current.current = next;
     setNotice(`${trimmed} is now active. New people start with their own empty routines, playlists, and schedules.`);
     setRegistry(next);
-  }), [runOperation]);
+  }), [runOperation, runAttachmentCleanup]);
 
   const updatePerson = useCallback((id: string, profile: PersonProfileInput) => runOperation(async () => {
     const previous = current.current;
@@ -276,10 +300,11 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       people: previous.people.map(person => person.id === id ? updated : person),
     };
     await saveRegistry(next);
+    void runAttachmentCleanup();
     current.current = next;
     setRegistry(next);
     setNotice(`${updated.name}’s profile was updated.`);
-  }), [runOperation]);
+  }), [runOperation, runAttachmentCleanup]);
 
   const loadPerson = useCallback(async (id: string) => {
     if (!current.current.people.some(person => person.id === id)) throw new Error('Person not found.');
@@ -401,6 +426,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       activePersonId: backup.activePersonId,
     };
     await saveRegistry(next);
+    void runAttachmentCleanup();
 
     const remindersLeftOff = await restoreScheduleReminders({
       profiles: mergedProfiles,
@@ -451,14 +477,16 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     setNotice(noticeDetails);
     router.replace('/');
     return summary;
-  }), [runOperation]);
+  }), [runOperation, runAttachmentCleanup]);
 
   const activePerson = registry.people.find(person => person.id === registry.activePersonId)!;
   const canRepairDurations = repairPersonId !== null && /needs a valid duration|invalid legacy duration/.test(error);
   const value = useMemo(() => ({
     people: registry.people, activePerson, revision, busy, notice,
+    attachmentCleanupPending, attachmentCleanupBusy, retryAttachmentCleanup, runAttachmentCleanup,
     addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles,
-  }), [registry.people, activePerson, revision, busy, notice, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
+  }), [registry.people, activePerson, revision, busy, notice, attachmentCleanupPending, attachmentCleanupBusy,
+    retryAttachmentCleanup, runAttachmentCleanup, addPerson, updatePerson, switchPerson, loadPerson, copyFromPerson, restoreAllProfiles]);
 
   if (loading || error) {
     return <View style={styles.loading} testID="people-startup">

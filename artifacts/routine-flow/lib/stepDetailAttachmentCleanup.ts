@@ -74,7 +74,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
   storage: CleanupStorage,
   fileSystem: CleanupFileSystem,
 ): Promise<number> {
-  if (!documentDirectory) return 0;
+  if (!documentDirectory) throw new Error('App file storage is unavailable.');
   const documentRoot = documentDirectory.endsWith('/') ? documentDirectory : `${documentDirectory}/`;
   const attachmentDirectory = `${documentRoot}step-detail-attachments/`;
 
@@ -102,6 +102,7 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
 
   const fileNames = await fileSystem.readDirectoryAsync(attachmentDirectory);
   let removed = 0;
+  let failed = false;
   for (const fileName of fileNames) {
     if (!fileName || fileName === '.' || fileName === '..' || /[/\\]/.test(fileName)) continue;
     const uri = `${attachmentDirectory}${fileName}`;
@@ -112,8 +113,10 @@ export async function cleanupOrphanedStepDetailAttachmentCopies(
       await fileSystem.deleteAsync(uri, { idempotent: true });
       removed += 1;
     } catch {
-      // A failed removal can be retried at the next routine change or startup.
+      // Continue trying other files, then report failure so the caller can offer a retry.
+      failed = true;
     }
   }
+  if (failed) throw new Error('Some unused attachment files could not be removed.');
   return removed;
 }

@@ -86,6 +86,35 @@ test('does not delete files when any saved routine data cannot be inspected safe
   assert.deepEqual(adapters.deleted, []);
 });
 
+test('reports failed file removals after still cleaning other orphaned files', async () => {
+  const adapters = createAdapters([
+    [PEOPLE_KEY, peopleRegistry(['me'])],
+    [PERSON_DATA_KEYS.routines, JSON.stringify([])],
+  ], ['retry-later.pdf', 'remove-now.pdf']);
+  let storageAvailable = false;
+  adapters.fileSystem.deleteAsync = async uri => {
+    if (uri.endsWith('retry-later.pdf') && !storageAvailable) throw new Error('Temporary storage error');
+    adapters.deleted.push(uri);
+  };
+
+  await assert.rejects(
+    cleanupOrphanedStepDetailAttachmentCopies(directory, adapters.storage, adapters.fileSystem),
+    /Some unused attachment files could not be removed/,
+  );
+  assert.deepEqual(adapters.deleted, [`${attachmentDirectory}remove-now.pdf`]);
+  storageAvailable = true;
+  await cleanupOrphanedStepDetailAttachmentCopies(directory, adapters.storage, adapters.fileSystem);
+  assert.ok(adapters.deleted.includes(`${attachmentDirectory}retry-later.pdf`));
+});
+
+test('reports when local attachment storage is unavailable', async () => {
+  const adapters = createAdapters([], []);
+  await assert.rejects(
+    cleanupOrphanedStepDetailAttachmentCopies(null, adapters.storage, adapters.fileSystem),
+    /App file storage is unavailable/,
+  );
+});
+
 test('only examines the dedicated attachment directory and routine storage keys', async () => {
   const adapters = createAdapters([
     [PEOPLE_KEY, peopleRegistry(['me'])],

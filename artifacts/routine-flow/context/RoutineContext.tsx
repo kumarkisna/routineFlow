@@ -8,8 +8,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import NativeAsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system/legacy';
 import {
   isCompleted, type CompletionMap, type PlaylistCompletionSource, type Routine, type RoutineStep,
 } from '@/types/routines';
@@ -18,7 +16,6 @@ import { recordCompletion } from '@/lib/progressHistory';
 import { removeRoutineCategory, renameRoutineCategory } from '@/lib/routineCategories';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { mergeImportedProgress, mergeImportedRoutines, persistImportedBackup, type RoutineBackup } from '@/lib/routineTransfer';
-import { cleanupOrphanedStepDetailAttachmentCopies } from '@/lib/stepDetailAttachmentCleanup';
 
 const ROUTINES_KEY = '@routine-flow/routines';
 const PROGRESS_KEY = '@routine-flow/progress';
@@ -111,7 +108,7 @@ function makeId() {
 
 export function RoutineProvider({ children }: { children: React.ReactNode }) {
   const AsyncStorage = usePersonStorage();
-  const { activePerson } = usePeople();
+  const { activePerson, runAttachmentCleanup } = usePeople();
   const [routines, setRoutines] = useState<Routine[]>(activePerson.id === 'me' ? seedRoutines : []);
   const [progress, setProgress] = useState<CompletionMap>({});
   const progressRef = useRef<CompletionMap>({});
@@ -196,9 +193,10 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       const nextRoutines = [...routines, routine];
       setRoutines(nextRoutines);
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
+      void runAttachmentCleanup();
       return routine;
     }),
-    [routines, runRoutineWrite],
+    [routines, runRoutineWrite, runAttachmentCleanup],
   );
 
   const copyRoutine = useCallback(
@@ -227,11 +225,9 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       );
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
-      await cleanupOrphanedStepDetailAttachmentCopies(
-        FileSystem.documentDirectory, NativeAsyncStorage, FileSystem,
-      ).catch(() => {});
+      void runAttachmentCleanup();
     }),
-    [routines, runRoutineWrite],
+    [routines, runRoutineWrite, runAttachmentCleanup],
   );
 
   const removeSkillAssignments = useCallback((skillId: string) => runRoutineWrite(async () => {
@@ -366,11 +362,9 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       const nextRoutines = routines.filter((routine) => routine.id !== routineId);
       await AsyncStorage.setItem(ROUTINES_KEY, JSON.stringify(nextRoutines));
       setRoutines(nextRoutines);
-      await cleanupOrphanedStepDetailAttachmentCopies(
-        FileSystem.documentDirectory, NativeAsyncStorage, FileSystem,
-      ).catch(() => {});
+      void runAttachmentCleanup();
     }),
-    [routines, runRoutineWrite],
+    [routines, runRoutineWrite, runAttachmentCleanup],
   );
 
   const resetToday = useCallback(async () => {

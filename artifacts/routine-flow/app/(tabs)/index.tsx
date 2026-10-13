@@ -40,7 +40,10 @@ function formatDate() {
 
 export default function HomeScreen() {
   const colors = useColors();
-  const { people, activePerson, busy: peopleBusy, restoreAllProfiles } = usePeople();
+  const {
+    people, activePerson, busy: peopleBusy, restoreAllProfiles,
+    attachmentCleanupPending, attachmentCleanupBusy, retryAttachmentCleanup,
+  } = usePeople();
   const disclosure = usePersistentDisclosure('routines', activePerson.id);
   const backupDisclosure = usePersistentDisclosure('home-backup-sections', activePerson.id);
   const personBackupExpanded = backupDisclosure.isExpanded('person');
@@ -878,6 +881,26 @@ export default function HomeScreen() {
               <Text style={[styles.transferDescription, { color: colors.mutedForeground }]}>
                 Export this person’s routines, playlists, schedules, skills and rating history, and selected theme as one JSON file. Daily progress is optional. {Platform.OS === 'android' ? 'On Android, save to a folder on your device or share the backup with another app. ' : ''}Import JSON merges a single-profile backup into the active profile; schedules and theme are not restored.
               </Text>
+              {attachmentCleanupPending ? (
+                <View style={[styles.cleanupNotice, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+                  <Text accessibilityRole="alert" style={[styles.transferDescription, { color: colors.foreground }]}>
+                    Some unused attachment files could not be cleaned up. Your saved attachments are safe; retry when storage is available.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Retry attachment cleanup"
+                    testID="retry-attachment-cleanup"
+                    disabled={attachmentCleanupBusy}
+                    onPress={() => void retryAttachmentCleanup()}
+                    style={({ pressed }) => [styles.transferButton, { borderColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="refresh-outline" size={17} color={colors.primary} />
+                    <Text style={[styles.transferButtonText, { color: colors.primary }]}>
+                      {attachmentCleanupBusy ? 'Retrying…' : 'Retry cleanup'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
               <Pressable
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: includeHistory }}
@@ -1259,6 +1282,7 @@ const styles = StyleSheet.create({
   backupSectionHeading: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 8 },
   transferTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   transferDescription: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, marginTop: 5 },
+  cleanupNotice: { borderWidth: 1, borderRadius: 13, padding: 11, marginTop: 10, gap: 7 },
   profileNameChanges: { gap: 8, marginTop: 12 },
   profileNameTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   profileNameRow: { gap: 2 },
