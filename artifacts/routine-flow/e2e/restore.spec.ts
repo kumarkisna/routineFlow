@@ -166,6 +166,8 @@ test('closing a parallel run removes its queued announcement', async ({ page }) 
 
 test('a shared run retries a failed participant rating save without losing inputs or changing other profiles', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await page.setViewportSize({ width: 320, height: 568 });
+  const longPreviousRoutineTitle = 'Getting ready for school and practicing communication with a steady morning routine';
   const routine = {
     id: 'group-rated',
     title: 'Shared group routine',
@@ -180,7 +182,7 @@ test('a shared run retries a failed participant rating save without losing input
     name: 'Focus',
     ratings: [{ id: 'casey-old-rating', rating: 5, ratedAt: '2026-10-10T10:00:00.000Z', note: 'Existing note' }],
   }];
-  await page.addInitScript(({ routine: seededRoutine, caseyOriginalSkills: caseySkills }) => {
+  await page.addInitScript(({ routine: seededRoutine, caseyOriginalSkills: caseySkills, longPreviousRoutineTitle }) => {
     const profile = (id: string, name: string) => ({
       id, name, speechVoiceId: null, defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
@@ -201,7 +203,7 @@ test('a shared run retries a failed participant rating save without losing input
         name: 'Communication',
         ratings: [
           { id: 'alex-communication-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Older practice', note: 'Earlier note.' },
-          { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: 'Recent practice', note: 'Latest saved note.' },
+          { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: longPreviousRoutineTitle, note: 'Latest saved note.' },
         ],
       }],
       '@routine-flow/person/casey/@routine-flow/routines': '[{"id":"casey-saved-routine"}]',
@@ -211,7 +213,7 @@ test('a shared run retries a failed participant rating save without losing input
     for (const [key, value] of Object.entries(seed)) {
       localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
     }
-  }, { routine, caseyOriginalSkills });
+  }, { routine, caseyOriginalSkills, longPreviousRoutineTitle });
   await page.goto('/routine/group-rated');
   await expect(page.getByTestId('routine-run-people-picker')).toContainText('Selected: Me');
   await page.getByTestId('routine-run-people-picker').click();
@@ -228,7 +230,14 @@ test('a shared run retries a failed participant rating save without losing input
   await expect(page.getByTestId('previous-rating-alex-me-focus')).toContainText('No previous rating for this person.');
   await expect(page.getByTestId('previous-rating-alex-me-communication')).toContainText('Previous: 8/10');
   await expect(page.getByTestId('previous-rating-alex-me-communication')).toContainText('Latest saved note.');
-  await expect(page.getByTestId('previous-rating-routine-alex-me-communication')).toHaveText('Routine: Recent practice');
+  const longPreviousRoutine = page.getByTestId('previous-rating-routine-alex-me-communication');
+  await longPreviousRoutine.scrollIntoViewIfNeeded();
+  await expect(longPreviousRoutine).toHaveText(`Routine: ${longPreviousRoutineTitle}`);
+  await expect(longPreviousRoutine).toBeInViewport();
+  await expect(page.getByText('Latest saved note.')).toBeInViewport();
+  const communicationScore = page.getByTestId('group-rate-alex-me-communication-7');
+  await communicationScore.scrollIntoViewIfNeeded();
+  await expect(communicationScore).toBeInViewport();
   await page.getByTestId('group-rate-alex-me-focus-8').click();
   await page.getByTestId('group-rate-alex-me-communication-7').click();
   await page.getByTestId('group-note-alex-me-focus').fill('Stayed focused with support.');
@@ -308,7 +317,7 @@ test('a shared run retries a failed participant rating save without losing input
   expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings).toHaveLength(3);
   expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings.slice(0, 2)).toEqual([
     { id: 'alex-communication-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Older practice', note: 'Earlier note.' },
-    { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: 'Recent practice', note: 'Latest saved note.' },
+    { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: longPreviousRoutineTitle, note: 'Latest saved note.' },
   ]);
   expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings[2]).toMatchObject({
     rating: 7,
