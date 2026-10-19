@@ -23,6 +23,7 @@ export function GroupSkillRatingPrompt({
   const [notes, setNotes] = React.useState<Record<string, string>>({});
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [pendingDiscardAction, setPendingDiscardAction] = React.useState<'close' | 'skipPerson' | 'skipRemaining' | null>(null);
   const person = people[personIndex];
   React.useEffect(() => {
     if (visible) {
@@ -30,6 +31,7 @@ export function GroupSkillRatingPrompt({
       setRatings({});
       setNotes({});
       setError('');
+      setPendingDiscardAction(null);
     }
   }, [visible, people.map(item => item.id).join('|')]);
 
@@ -71,8 +73,27 @@ export function GroupSkillRatingPrompt({
     }
   }
 
+  function performDiscard(action: 'close' | 'skipPerson' | 'skipRemaining') {
+    setPendingDiscardAction(null);
+    setRatings({});
+    setNotes({});
+    setError('');
+    if (action === 'skipPerson') nextPerson();
+    else onDone();
+  }
+
+  function requestDiscard(action: 'close' | 'skipPerson' | 'skipRemaining') {
+    if (saving) return;
+    const hasUnsavedInput = Object.keys(ratings).length > 0 || Object.values(notes).some(note => note.length > 0);
+    if (hasUnsavedInput) {
+      setPendingDiscardAction(action);
+      return;
+    }
+    performDiscard(action);
+  }
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onDone}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => requestDiscard('close')}>
       <View style={styles.backdrop}>
         <View style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
           <View style={styles.header}>
@@ -85,6 +106,16 @@ export function GroupSkillRatingPrompt({
                 {contextLabel ?? routineTitle} · Person {Math.min(personIndex + 1, people.length)} of {people.length}
               </Text>
             </View>
+            <Pressable
+              testID="close-group-rating-prompt"
+              accessibilityRole="button"
+              accessibilityLabel="Close group ratings"
+              disabled={saving}
+              onPress={() => requestDiscard('close')}
+              style={styles.closeButton}
+            >
+              <Ionicons name="close" size={20} color={colors.inkSoft} />
+            </Pressable>
           </View>
           {person ? (
             <>
@@ -134,10 +165,10 @@ export function GroupSkillRatingPrompt({
           ) : null}
           {error ? <Text testID="group-rating-error" accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
           <View style={styles.actions}>
-            <Pressable testID="skip-group-ratings" onPress={onDone} style={styles.action}>
+            <Pressable testID="skip-group-ratings" disabled={saving} onPress={() => requestDiscard('skipRemaining')} style={styles.action}>
               <Text style={[styles.skip, { color: colors.inkSoft }]}>Skip remaining</Text>
             </Pressable>
-            <Pressable testID="skip-group-person" onPress={nextPerson} style={styles.action}>
+            <Pressable testID="skip-group-person" disabled={saving} onPress={() => requestDiscard('skipPerson')} style={styles.action}>
               <Text style={[styles.skip, { color: colors.inkSoft }]}>Skip person</Text>
             </Pressable>
             <Pressable
@@ -152,6 +183,42 @@ export function GroupSkillRatingPrompt({
               </Text>
             </Pressable>
           </View>
+          {pendingDiscardAction ? (
+            <View testID="unsaved-rating-confirmation" style={styles.confirmationOverlay}>
+              <View style={[styles.confirmationCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                <Text style={[styles.confirmationTitle, { color: colors.foreground }]}>
+                  {pendingDiscardAction === 'skipPerson' ? `Skip ${person?.name ?? 'person'}?` : 'Discard unsaved ratings?'}
+                </Text>
+                <Text style={[styles.confirmationMessage, { color: colors.mutedForeground }]}>
+                  Scores and notes for {person?.name ?? 'this person'} haven’t been saved. You can keep editing or discard this person’s entries.
+                </Text>
+                <View style={styles.confirmationActions}>
+                  <Pressable
+                    testID="cancel-discard-unsaved-ratings"
+                    accessibilityRole="button"
+                    onPress={() => setPendingDiscardAction(null)}
+                    style={styles.confirmationCancel}
+                  >
+                    <Text style={[styles.confirmationCancelText, { color: colors.foreground }]}>Keep editing</Text>
+                  </Pressable>
+                  <Pressable
+                    testID="confirm-discard-unsaved-ratings"
+                    accessibilityRole="button"
+                    onPress={() => performDiscard(pendingDiscardAction)}
+                    style={[styles.confirmationConfirm, { backgroundColor: colors.destructive }]}
+                  >
+                    <Text style={styles.confirmationConfirmText}>
+                      {pendingDiscardAction === 'skipPerson'
+                        ? 'Discard and skip'
+                        : pendingDiscardAction === 'skipRemaining'
+                          ? 'Discard and skip remaining'
+                          : 'Discard and close'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
         </View>
       </View>
     </Modal>
@@ -176,6 +243,16 @@ const styles = StyleSheet.create({
   error: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8 },
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 5, paddingTop: 12 },
   action: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 4 },
+  closeButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   skip: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
   save: { minHeight: 42, borderRadius: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  confirmationOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: '#14191dcc', justifyContent: 'center', padding: 20 },
+  confirmationCard: { borderWidth: 1, borderRadius: 18, padding: 18 },
+  confirmationTitle: { fontFamily: 'Inter_700Bold', fontSize: 18 },
+  confirmationMessage: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, marginTop: 8 },
+  confirmationActions: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 18 },
+  confirmationCancel: { minHeight: 42, borderRadius: 12, justifyContent: 'center', paddingHorizontal: 12 },
+  confirmationCancelText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  confirmationConfirm: { minHeight: 42, borderRadius: 12, justifyContent: 'center', paddingHorizontal: 12 },
+  confirmationConfirmText: { color: '#FFFFFF', fontFamily: 'Inter_600SemiBold', fontSize: 13 },
 });

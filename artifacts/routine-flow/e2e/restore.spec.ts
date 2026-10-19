@@ -148,6 +148,12 @@ test('a shared run retries a failed participant rating save without losing input
   await page.getByTestId('group-rate-alex-me-communication-7').click();
   await page.getByTestId('group-note-alex-me-focus').fill('Stayed focused with support.');
   await page.getByTestId('group-note-alex-me-communication').fill('Asked for help clearly.');
+  await page.getByTestId('close-group-rating-prompt').click();
+  await expect(page.getByTestId('unsaved-rating-confirmation')).toBeVisible();
+  await page.getByTestId('cancel-discard-unsaved-ratings').click();
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex');
+  await expect(page.getByTestId('group-note-alex-me-focus')).toHaveValue('Stayed focused with support.');
+  await expect(page.getByTestId('group-note-alex-me-communication')).toHaveValue('Asked for help clearly.');
   const alexSkillsBeforeBackground = await page.evaluate(() => localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills'));
   const selectedScoreColor = await page.getByTestId('group-rate-alex-me-focus-8').evaluate(element => getComputedStyle(element).backgroundColor);
   const unselectedScoreColor = await page.getByTestId('group-rate-alex-me-focus-7').evaluate(element => getComputedStyle(element).backgroundColor);
@@ -185,7 +191,12 @@ test('a shared run retries a failed participant rating save without losing input
   await page.getByTestId('save-group-ratings').click();
   await expect(page.getByTestId('group-rating-error')).toHaveCount(0);
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Casey');
-  await page.getByTestId('skip-group-person').click();
+  await page.getByTestId('group-rate-casey-me-focus-4').click();
+  await page.getByTestId('group-note-casey-me-focus').fill('Not saved after choosing to skip.');
+  await page.getByTestId('skip-group-ratings').click();
+  await expect(page.getByTestId('unsaved-rating-confirmation')).toBeVisible();
+  await page.getByTestId('confirm-discard-unsaved-ratings').click();
+  await expect(page.getByTestId('group-rating-person-name')).toHaveCount(0);
 
   const saved = await page.evaluate(() => ({
     alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
