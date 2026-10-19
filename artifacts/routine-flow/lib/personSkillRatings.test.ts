@@ -296,7 +296,12 @@ test('group rating appends to a skill with an exact matching name instead of dup
 test('group rating context finds the latest name-matched rating without changing saved history', async () => {
   const previous = [
     { ...rating('alex-communication-old', 4, '01', 'Earlier note.'), routineTitle: 'Older routine' },
-    { ...rating('alex-communication-new', 8, '03', 'Latest note.'), routineTitle: 'Recent routine' },
+    {
+      ...rating('alex-communication-new', 8, '03', 'Latest note.'),
+      routineTitle: 'Recent routine',
+      sourceRoutineId: 'alex-communication-routine',
+      sourcePlaylistId: 'alex-playlist',
+    },
   ];
   const originalSkills = [
     { id: 'alex-communication', name: 'Communication', ratings: previous },
@@ -304,6 +309,9 @@ test('group rating context finds the latest name-matched rating without changing
   ];
   const values = new Map<string, string>([
     ['@routine-flow/person/alex/@routine-flow/skills', JSON.stringify(originalSkills)],
+    ['@routine-flow/person/alex/@routine-flow/playlists', JSON.stringify([
+      { id: 'alex-playlist', title: 'Weekday start', routineIds: [] },
+    ])],
   ]);
   const backend = {
     getItem: async (key: string) => values.get(key) ?? null,
@@ -318,7 +326,7 @@ test('group rating context finds the latest name-matched rating without changing
   ], createPersonStorage('alex', backend));
 
   assert.deepEqual(context, {
-    'source-communication': previous[1],
+    'source-communication': { ...previous[1], playlistTitle: 'Weekday start' },
     'source-focus': null,
     'source-independence': null,
   });

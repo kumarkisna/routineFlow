@@ -177,11 +177,18 @@ test('a shared run retries a failed participant rating save without losing input
     createdAt: '2026-10-14T00:00:00.000Z',
     steps: [{ id: 'group-step', title: 'Practice focus', durationSeconds: 1, description: 'Stay on task.', skillIds: ['me-focus', 'me-communication'] }],
   };
-  const caseyOriginalSkills = [{
-    id: 'casey-focus',
-    name: 'Focus',
-    ratings: [{ id: 'casey-old-rating', rating: 5, ratedAt: '2026-10-10T10:00:00.000Z', note: 'Existing note' }],
-  }];
+  const caseyOriginalSkills = [
+    {
+      id: 'casey-focus',
+      name: 'Focus',
+      ratings: [{ id: 'casey-old-rating', rating: 5, ratedAt: '2026-10-10T10:00:00.000Z', routineTitle: 'Past routine', note: 'Existing note' }],
+    },
+    {
+      id: 'casey-communication',
+      name: 'Communication',
+      ratings: [{ id: 'casey-legacy-rating', rating: 3, ratedAt: '2026-10-09T10:00:00.000Z', note: 'Legacy note without a routine title' }],
+    },
+  ];
   await page.addInitScript(({ routine: seededRoutine, caseyOriginalSkills: caseySkills, longPreviousRoutineTitle }) => {
     const profile = (id: string, name: string) => ({
       id, name, speechVoiceId: null, defaultRateSkillsAtPlaylistEnd: true,
@@ -198,12 +205,13 @@ test('a shared run retries a failed participant rating save without losing input
       ],
       '@routine-flow/person/alex/@routine-flow/routines': '[]',
       '@routine-flow/person/alex/@routine-flow/progress': '{"keep":{"old-entry":true}}',
+      '@routine-flow/person/alex/@routine-flow/playlists': [{ id: 'alex-playlist', title: 'Weekday start', routineIds: [] }],
       '@routine-flow/person/alex/@routine-flow/skills': [{
         id: 'alex-communication',
         name: 'Communication',
         ratings: [
           { id: 'alex-communication-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Older practice', note: 'Earlier note.' },
-          { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: longPreviousRoutineTitle, note: 'Latest saved note.' },
+          { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: longPreviousRoutineTitle, sourceRoutineId: 'alex-communication-routine', sourcePlaylistId: 'alex-playlist', note: 'Latest saved note.' },
         ],
       }],
       '@routine-flow/person/casey/@routine-flow/routines': '[{"id":"casey-saved-routine"}]',
@@ -230,6 +238,7 @@ test('a shared run retries a failed participant rating save without losing input
   await expect(page.getByTestId('previous-rating-alex-me-focus')).toContainText('No previous rating for this person.');
   await expect(page.getByTestId('previous-rating-alex-me-communication')).toContainText('Previous: 8/10');
   await expect(page.getByTestId('previous-rating-alex-me-communication')).toContainText('Latest saved note.');
+  await expect(page.getByTestId('previous-rating-playlist-alex-me-communication')).toHaveText('Playlist: Weekday start');
   const longPreviousRoutine = page.getByTestId('previous-rating-routine-alex-me-communication');
   await longPreviousRoutine.scrollIntoViewIfNeeded();
   await expect(longPreviousRoutine).toHaveText(`Routine: ${longPreviousRoutineTitle}`);
@@ -290,7 +299,11 @@ test('a shared run retries a failed participant rating save without losing input
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Casey');
   await expect(page.getByTestId('previous-rating-casey-me-focus')).toContainText('Previous: 5/10');
   await expect(page.getByTestId('previous-rating-casey-me-focus')).toContainText('Existing note');
-  await expect(page.getByTestId('previous-rating-routine-casey-me-focus')).toHaveCount(0);
+  await expect(page.getByTestId('previous-rating-routine-casey-me-focus')).toHaveText('Routine: Past routine');
+  await expect(page.getByTestId('previous-rating-playlist-casey-me-focus')).toHaveCount(0);
+  await expect(page.getByTestId('previous-rating-routine-casey-me-communication')).toHaveCount(0);
+  await expect(page.getByTestId('previous-rating-casey-me-communication')).toContainText('Previous: 3/10');
+  await expect(page.getByTestId('previous-rating-casey-me-communication')).toContainText('Legacy note without a routine title');
   await page.getByTestId('group-rate-casey-me-focus-4').click();
   await page.getByTestId('group-note-casey-me-focus').fill('Not saved after choosing to skip.');
   await page.getByTestId('skip-group-ratings').click();
@@ -317,7 +330,7 @@ test('a shared run retries a failed participant rating save without losing input
   expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings).toHaveLength(3);
   expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings.slice(0, 2)).toEqual([
     { id: 'alex-communication-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Older practice', note: 'Earlier note.' },
-    { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: longPreviousRoutineTitle, note: 'Latest saved note.' },
+    { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: longPreviousRoutineTitle, sourceRoutineId: 'alex-communication-routine', sourcePlaylistId: 'alex-playlist', note: 'Latest saved note.' },
   ]);
   expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings[2]).toMatchObject({
     rating: 7,

@@ -2,15 +2,15 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
-import { MAX_SKILL_NOTE_LENGTH, type RoutineSkill, type SkillRating, type SkillRatingRun } from '@/lib/skills';
-import { getPreviousPersonSkillRatings, recordPersonSkillRatings } from '@/lib/personSkillRatings';
+import { MAX_SKILL_NOTE_LENGTH, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
+import { getPreviousPersonSkillRatings, recordPersonSkillRatings, type PreviousPersonSkillRating } from '@/lib/personSkillRatings';
 import type { Person } from '@/types/people';
 
 type PreviousRatingContext = {
   personId: string;
   sourceSkillSignature: string;
   loading: boolean;
-  ratings: Record<string, SkillRating | null>;
+  ratings: Record<string, PreviousPersonSkillRating | null>;
   error: string;
 };
 
@@ -181,6 +181,14 @@ export function GroupSkillRatingPrompt({
                         <Text style={[styles.previousRatingText, { color: colors.destructive }]}>{previousRatingsError}</Text>
                       ) : previousRatings[skill.id] ? (
                         <>
+                          {previousRatings[skill.id]?.playlistTitle?.trim() ? (
+                            <Text
+                              testID={`previous-rating-playlist-${person.id}-${skill.id}`}
+                              style={[styles.previousRatingText, { color: colors.mutedForeground }]}
+                            >
+                              Playlist: {previousRatings[skill.id]?.playlistTitle?.trim()}
+                            </Text>
+                          ) : null}
                           {previousRatings[skill.id]!.routineTitle?.trim() ? (
                             <Text
                               testID={`previous-rating-routine-${person.id}-${skill.id}`}

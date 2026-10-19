@@ -1,30 +1,38 @@
 import { createPersonStorage, PERSON_DATA_KEYS, waitForPersonWrites, type PersonStorage } from './personStorage';
+import { parsePlaylists } from './playlists';
 import {
   MAX_SKILLS, MAX_SKILL_NOTE_LENGTH, normalizeSkillName, parseSkills, skillNameKey,
   type RoutineSkill, type SkillRating, type SkillRatingRun,
 } from './skills';
 
 export type PersonRatingEntry = { sourceSkillId: string; rating: number; note?: string; sequence: number };
+export type PreviousPersonSkillRating = SkillRating & { playlistTitle?: string };
 
 export async function getPreviousPersonSkillRatings(
   personId: string,
   sourceSkills: RoutineSkill[],
   storageOverride?: PersonStorage,
-): Promise<Record<string, SkillRating | null>> {
+): Promise<Record<string, PreviousPersonSkillRating | null>> {
   if (!personId.trim()) throw new Error('Previous skill ratings could not be loaded.');
   await waitForPersonWrites(personId);
   const storage = storageOverride ?? createPersonStorage(personId);
   const stored = await storage.getItem(PERSON_DATA_KEYS.skills);
   const skills = stored === null ? [] : parseSkills(stored);
+  const storedPlaylists = await storage.getItem(PERSON_DATA_KEYS.playlists);
+  const playlists = storedPlaylists === null ? [] : parsePlaylists(storedPlaylists);
+  const playlistTitles = new Map(playlists.map(playlist => [playlist.id, playlist.title.trim()]));
   const nameToSkill = new Map(skills.map(skill => [skillNameKey(skill.name), skill]));
-  const result: Record<string, SkillRating | null> = {};
+  const result: Record<string, PreviousPersonSkillRating | null> = {};
 
   for (const source of sourceSkills) {
     const history = nameToSkill.get(skillNameKey(source.name))?.ratings ?? [];
     const latest = history.reduce<(typeof history)[number] | null>((current, rating) => (
       !current || Date.parse(rating.ratedAt) >= Date.parse(current.ratedAt) ? rating : current
     ), null);
-    result[source.id] = latest;
+    const playlistTitle = latest?.sourcePlaylistId ? playlistTitles.get(latest.sourcePlaylistId) : undefined;
+    result[source.id] = latest
+      ? { ...latest, ...(playlistTitle ? { playlistTitle } : {}) }
+      : null;
   }
   return result;
 }
