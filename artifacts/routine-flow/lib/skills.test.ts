@@ -166,6 +166,23 @@ test('skill parser validates saved rating entries and the shared window', () => 
   }])), /could not be read/);
 });
 
+test('skill parser keeps older ratings without a routine title and preserves their notes', () => {
+  const savedRating = {
+    id: 'legacy-rating-without-title',
+    rating: 7,
+    ratedAt: '2030-01-05T00:00:00.000Z',
+    note: 'I kept going even when it was difficult.',
+  };
+
+  const [skill] = parseSkills(JSON.stringify([{
+    id: 'legacy-skill',
+    name: 'Persistence',
+    ratings: [savedRating],
+  }]));
+
+  assert.deepEqual(skill.ratings, [savedRating]);
+});
+
 test('run time and skill sequence metadata survive skill backup parsing', () => {
   const skill = {
     id: 'skill-balance',

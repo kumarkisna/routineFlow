@@ -339,7 +339,9 @@ export default function SkillsScreen() {
                                   {formatRatingTimestamp(rating.ratedAt)}
                                 </Text>
                               </View>
-                              <Text style={[styles.ratingHistoryRoutine, { color: colors.foreground }]}>{rating.routineTitle}</Text>
+                              {rating.routineTitle ? (
+                                <Text style={[styles.ratingHistoryRoutine, { color: colors.foreground }]}>{rating.routineTitle}</Text>
+                              ) : null}
                               <Text style={[styles.ratingHistoryNote, { color: colors.inkSoft }]}>
                                 {rating.note || 'No note added.'}
                               </Text>
@@ -357,7 +359,9 @@ export default function SkillsScreen() {
                                     ratedAt: rating.ratedAt,
                                     ...(rating.completedDay ? { completedDay: rating.completedDay } : {}),
                                     ...(rating.completedAt ? { completedAt: rating.completedAt } : {}),
-                                    contextLabel: `${item.name} · ${rating.routineTitle}`,
+                                    contextLabel: rating.routineTitle
+                                      ? `${item.name} · ${rating.routineTitle}`
+                                      : item.name,
                                   })}
                                   style={({ pressed }) => [styles.editReflection, pressed && styles.pressed]}
                                 >

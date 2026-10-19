@@ -446,13 +446,17 @@ test('individual rating prompt stays scrollable with prior notes on a compact ph
     { id: 'focus-rating-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Earlier routine', note: 'Earlier reflection.' },
     { id: 'focus-rating-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: 'Recent routine', note: 'Latest reflection.' },
   ];
-  const skills: { id: string; name: string; ratings?: typeof previousRatings }[] = [
+  const skills: {
+    id: string;
+    name: string;
+    ratings?: { id: string; rating: number; ratedAt: string; routineTitle?: string; note?: string }[];
+  }[] = [
     { id: 'focus', name: 'Focus', ratings: previousRatings },
     { id: 'breathing', name: 'Breathing', ratings: [
       { id: 'breathing-rating', rating: 5, ratedAt: '2026-10-18T09:00:00.000Z', routineTitle: 'Breathing practice', note: 'Slow breaths helped.' },
     ] },
     { id: 'communication', name: 'Communication', ratings: [
-      { id: 'communication-rating', rating: 7, ratedAt: '2026-10-18T08:00:00.000Z', routineTitle: 'Conversation practice', note: 'Paused before replying.' },
+      { id: 'communication-legacy-rating', rating: 7, ratedAt: '2026-10-18T08:00:00.000Z', note: 'Paused before replying.' },
     ] },
     { id: 'patience', name: 'Patience', ratings: [
       { id: 'patience-rating', rating: 6, ratedAt: '2026-10-18T07:00:00.000Z', routineTitle: 'Waiting practice', note: 'A short break was useful.' },
@@ -483,9 +487,13 @@ test('individual rating prompt stays scrollable with prior notes on a compact ph
   await expect(page.getByText('Rate the skills you used')).toBeVisible({ timeout: 10000 });
   await expect(page.getByTestId('save-skill-ratings')).toBeDisabled();
   await expect(page.getByTestId('previous-rating-focus')).toContainText('Previous rating (reference only) · 8/10');
+  await expect(page.getByTestId('previous-rating-routine-focus')).toHaveText('Routine: Recent routine');
   await expect(page.getByTestId('previous-rating-focus')).toContainText('Latest reflection.');
+  await expect(page.getByTestId('previous-rating-routine-breathing')).toHaveText('Routine: Breathing practice');
   await expect(page.getByTestId('previous-rating-breathing')).toContainText('Slow breaths helped.');
+  await expect(page.getByTestId('previous-rating-communication')).toContainText('Previous rating (reference only) · 7/10');
   await expect(page.getByTestId('previous-rating-communication')).toContainText('Paused before replying.');
+  await expect(page.getByTestId('previous-rating-routine-communication')).toHaveCount(0);
   await expect(page.getByTestId('previous-rating-patience')).toContainText('A short break was useful.');
   await expect(page.getByTestId('previous-rating-flexibility')).toHaveText('No previous rating yet.');
 
@@ -511,7 +519,7 @@ test('individual rating prompt stays scrollable with prior notes on a compact ph
   const savedSkills = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
       id: string;
-      ratings?: { id: string; rating: number; note?: string; routineTitle: string }[];
+      ratings?: { id: string; rating: number; note?: string; routineTitle?: string }[];
     }[],
   );
   const focus = savedSkills.find(skill => skill.id === 'focus');
@@ -526,6 +534,11 @@ test('individual rating prompt stays scrollable with prior notes on a compact ph
   expect(breathing?.ratings?.[0]).toMatchObject({ rating: 5, note: 'Slow breaths helped.' });
   expect(breathing?.ratings?.[1]).toMatchObject({ rating: 6, note: 'New breathing reflection.' });
   expect(communication?.ratings).toHaveLength(2);
+  expect(communication?.ratings?.[0]).toMatchObject({
+    id: 'communication-legacy-rating',
+    rating: 7,
+    note: 'Paused before replying.',
+  });
   expect(communication?.ratings?.[1]).toMatchObject({ rating: 7 });
   expect(patience?.ratings).toHaveLength(2);
   expect(patience?.ratings?.[1]).toMatchObject({ rating: 5 });

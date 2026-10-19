@@ -15,7 +15,7 @@ export type SkillRating = {
   id: string;
   rating: number;
   ratedAt: string;
-  routineTitle: string;
+  routineTitle?: string;
   sourceRoutineId?: string;
   sourcePlaylistId?: string;
   runId?: string;
@@ -135,10 +135,11 @@ function parseRatings(value: unknown): SkillRating[] {
     const hasCompletionDay = rating.completedDay !== undefined;
     const hasSourceRoutineId = rating.sourceRoutineId !== undefined;
     const hasSourcePlaylistId = rating.sourcePlaylistId !== undefined;
+    const hasRoutineTitle = rating.routineTitle !== undefined;
     if (typeof rating.id !== 'string' || !rating.id.trim() || rating.id.length > 160 || rating.id.includes(':')
       || typeof rating.rating !== 'number' || !Number.isInteger(rating.rating) || rating.rating < 1 || rating.rating > 10
       || typeof rating.ratedAt !== 'string' || !Number.isFinite(Date.parse(rating.ratedAt))
-      || typeof rating.routineTitle !== 'string' || !rating.routineTitle.trim() || rating.routineTitle.length > 200
+      || (hasRoutineTitle && (typeof rating.routineTitle !== 'string' || rating.routineTitle.length > 200))
       || (hasRunId !== (hasCompletionTime || hasCompletionDay))
       || (hasCompletionTime && hasCompletionDay)
       || (rating.runId !== undefined
@@ -165,7 +166,9 @@ function parseRatings(value: unknown): SkillRating[] {
       id: rating.id,
       rating: rating.rating,
       ratedAt: rating.ratedAt,
-      routineTitle: rating.routineTitle.trim(),
+      ...(typeof rating.routineTitle === 'string' && rating.routineTitle.trim()
+        ? { routineTitle: rating.routineTitle.trim() }
+        : {}),
       ...(typeof rating.sourceRoutineId === 'string' ? { sourceRoutineId: rating.sourceRoutineId } : {}),
       ...(typeof rating.sourcePlaylistId === 'string' ? { sourcePlaylistId: rating.sourcePlaylistId } : {}),
       ...(typeof rating.runId === 'string' ? { runId: rating.runId } : {}),
@@ -360,7 +363,7 @@ export function getSkillRunAveragePoints(
       if (sourceFilter.kind === 'playlist') return rating.sourcePlaylistId === sourceFilter.id;
       return sourceFilter.routineIds.includes(rating.sourceRoutineId ?? '');
     }
-    return legacyTitles?.has(routineTitleKey(rating.routineTitle)) ?? false;
+    return legacyTitles?.has(routineTitleKey(rating.routineTitle ?? '')) ?? false;
   };
   const byRun = new Map<string, { runId: string; completedAt: string; skillRatings: Record<string, number> }>();
   for (const skill of skills) {

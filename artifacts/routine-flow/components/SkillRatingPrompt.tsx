@@ -189,6 +189,11 @@ export function SkillRatingPrompt({
                           <Text style={[styles.savedScore, { color: colors.primary }]}>
                             Previous rating (reference only) · {previousRating.rating}/10 · {new Date(previousRating.ratedAt).toLocaleDateString()}
                           </Text>
+                          {previousRating.routineTitle?.trim() ? (
+                            <Text testID={`previous-rating-routine-${skill.id}`} style={[styles.previousNote, { color: colors.mutedForeground }]}>
+                              Routine: {previousRating.routineTitle}
+                            </Text>
+                          ) : null}
                           <Text style={[styles.previousNote, { color: colors.mutedForeground }]}>
                             {previousRating.note ? `Previous note: ${previousRating.note}` : 'No note saved with the previous rating.'}
                           </Text>
