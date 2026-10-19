@@ -174,7 +174,19 @@ export function GroupSkillRatingPrompt({
                 {sourceSkills.map(skill => (
                   <View key={skill.id} style={[styles.skill, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Text style={[styles.skillName, { color: colors.foreground }]}>{skill.name}</Text>
-                    <View testID={`previous-rating-${person.id}-${skill.id}`} style={styles.previousRating}>
+                    <View
+                      testID={`previous-rating-${person.id}-${skill.id}`}
+                      accessible={Boolean(previousRatings[skill.id])}
+                      accessibilityRole={previousRatings[skill.id] ? 'text' : undefined}
+                      accessibilityLabel={previousRatings[skill.id] ? [
+                        `Previous rating from ${previousRatings[skill.id]!.routineTitle?.trim() || 'an earlier routine'}.`,
+                        `Score ${previousRatings[skill.id]!.rating} out of 10.`,
+                        previousRatings[skill.id]!.note
+                          ? `Previous note: ${previousRatings[skill.id]!.note}`
+                          : 'No previous note saved.',
+                      ].join(' ') : undefined}
+                      style={styles.previousRating}
+                    >
                       {loadingPreviousRatings ? (
                         <Text style={[styles.previousRatingText, { color: colors.mutedForeground }]}>Loading previous rating…</Text>
                       ) : previousRatingsError ? (

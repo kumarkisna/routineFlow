@@ -417,6 +417,11 @@ test('group rating history stays with its participant when a delayed read finish
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex', { timeout: 10000 });
   await expect(page.getByTestId('previous-rating-alex-me-focus')).toContainText('Previous: 8/10');
   await expect(page.getByTestId('previous-rating-alex-me-focus')).toContainText('Alex private note');
+  await expect(page.getByTestId('previous-rating-alex-me-focus')).toHaveAttribute(
+    'aria-label',
+    'Previous rating from Earlier practice. Score 8 out of 10. Previous note: Alex private note',
+  );
+  await expect(page.getByRole('button', { name: 'Rate Alex Focus 8 out of 10' })).toBeVisible();
   await page.getByTestId('skip-group-person').click();
 
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Casey');
