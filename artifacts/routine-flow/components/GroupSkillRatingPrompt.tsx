@@ -181,6 +181,14 @@ export function GroupSkillRatingPrompt({
                         <Text style={[styles.previousRatingText, { color: colors.destructive }]}>{previousRatingsError}</Text>
                       ) : previousRatings[skill.id] ? (
                         <>
+                          {previousRatings[skill.id]!.routineTitle?.trim() ? (
+                            <Text
+                              testID={`previous-rating-routine-${person.id}-${skill.id}`}
+                              style={[styles.previousRatingText, { color: colors.mutedForeground }]}
+                            >
+                              Routine: {previousRatings[skill.id]?.routineTitle?.trim()}
+                            </Text>
+                          ) : null}
                           <Text style={[styles.previousRatingText, { color: colors.mutedForeground }]}>
                             Previous: {previousRatings[skill.id]!.rating}/10 · {new Date(previousRatings[skill.id]!.ratedAt).toLocaleDateString()}
                           </Text>

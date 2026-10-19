@@ -178,7 +178,7 @@ test('a shared run retries a failed participant rating save without losing input
   const caseyOriginalSkills = [{
     id: 'casey-focus',
     name: 'Focus',
-    ratings: [{ id: 'casey-old-rating', rating: 5, ratedAt: '2026-10-10T10:00:00.000Z', routineTitle: 'Past routine', note: 'Existing note' }],
+    ratings: [{ id: 'casey-old-rating', rating: 5, ratedAt: '2026-10-10T10:00:00.000Z', note: 'Existing note' }],
   }];
   await page.addInitScript(({ routine: seededRoutine, caseyOriginalSkills: caseySkills }) => {
     const profile = (id: string, name: string) => ({
@@ -228,6 +228,7 @@ test('a shared run retries a failed participant rating save without losing input
   await expect(page.getByTestId('previous-rating-alex-me-focus')).toContainText('No previous rating for this person.');
   await expect(page.getByTestId('previous-rating-alex-me-communication')).toContainText('Previous: 8/10');
   await expect(page.getByTestId('previous-rating-alex-me-communication')).toContainText('Latest saved note.');
+  await expect(page.getByTestId('previous-rating-routine-alex-me-communication')).toHaveText('Routine: Recent practice');
   await page.getByTestId('group-rate-alex-me-focus-8').click();
   await page.getByTestId('group-rate-alex-me-communication-7').click();
   await page.getByTestId('group-note-alex-me-focus').fill('Stayed focused with support.');
@@ -280,6 +281,7 @@ test('a shared run retries a failed participant rating save without losing input
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Casey');
   await expect(page.getByTestId('previous-rating-casey-me-focus')).toContainText('Previous: 5/10');
   await expect(page.getByTestId('previous-rating-casey-me-focus')).toContainText('Existing note');
+  await expect(page.getByTestId('previous-rating-routine-casey-me-focus')).toHaveCount(0);
   await page.getByTestId('group-rate-casey-me-focus-4').click();
   await page.getByTestId('group-note-casey-me-focus').fill('Not saved after choosing to skip.');
   await page.getByTestId('skip-group-ratings').click();
