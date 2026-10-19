@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Routine } from '../types/routines';
-import { buildStepAnnouncement, getSpeechResumeMode } from './routineSpeech';
+import {
+  buildStepAnnouncement,
+  getSpeechResumeMode,
+  RoutineSpeechQueue,
+  type RoutineSpeechOptions,
+} from './routineSpeech';
 import { renameSkillInCatalog, type RoutineSkill } from './skills';
 
 const routine: Routine = {
@@ -21,11 +26,78 @@ const routine: Routine = {
 const playlist = { title: 'Start the day', skillIds: ['skill-focus'] };
 const initialSkills: RoutineSkill[] = [{ id: 'skill-focus', name: 'Focus' }];
 const renamedSkills = renameSkillInCatalog(initialSkills, 'skill-focus', 'Sustained focus');
+const speechOptions: RoutineSpeechOptions = { rate: 0.92, pitch: 1 };
 
 test('speech resume restarts the current step on Android and resumes the utterance on iOS and web', () => {
   assert.equal(getSpeechResumeMode('android'), 'replay-current-step');
   assert.equal(getSpeechResumeMode('ios'), 'resume-utterance');
   assert.equal(getSpeechResumeMode('web'), 'resume-utterance');
+});
+
+test('overlapping routine announcements play in FIFO order and resolve independently', async () => {
+  const spoken: string[] = [];
+  const finishByText = new Map<string, (result: 'finished' | 'error') => void>();
+  const queue = new RoutineSpeechQueue((text, _options, finish) => {
+    spoken.push(text);
+    finishByText.set(text, finish);
+  }, () => undefined);
+
+  const first = queue.announce('run-one', 'First routine, step one.', speechOptions);
+  const second = queue.announce('run-two', 'Second routine, step one.', speechOptions);
+  assert.deepEqual(spoken, ['First routine, step one.']);
+
+  finishByText.get('First routine, step one.')?.('finished');
+  assert.equal(await first, 'finished');
+  assert.deepEqual(spoken, ['First routine, step one.', 'Second routine, step one.']);
+
+  finishByText.get('Second routine, step one.')?.('finished');
+  assert.equal(await second, 'finished');
+});
+
+test('pausing or closing a queued run removes its speech without blocking the active run', async () => {
+  const spoken: string[] = [];
+  let finishActive: ((result: 'finished' | 'error') => void) | undefined;
+  const queue = new RoutineSpeechQueue((text, _options, finish) => {
+    spoken.push(text);
+    finishActive = finish;
+  }, () => undefined);
+
+  const first = queue.announce('run-one', 'Active announcement.', speechOptions);
+  const cancelled = queue.announce('run-two', 'Announcement to cancel.', speechOptions);
+  await queue.cancel('run-two');
+
+  assert.equal(await cancelled, 'cancelled');
+  assert.deepEqual(spoken, ['Active announcement.']);
+  finishActive?.('finished');
+  assert.equal(await first, 'finished');
+  assert.deepEqual(spoken, ['Active announcement.']);
+});
+
+test('cancelling an active run stops it before the next routine starts speaking', async () => {
+  const spoken: string[] = [];
+  const completions = new Map<string, (result: 'finished' | 'error') => void>();
+  let releaseStop: (() => void) | undefined;
+  let stopCount = 0;
+  const queue = new RoutineSpeechQueue((text, _options, finish) => {
+    spoken.push(text);
+    completions.set(text, finish);
+  }, () => {
+    stopCount += 1;
+    return new Promise<void>((resolve) => { releaseStop = resolve; });
+  });
+
+  const first = queue.announce('run-one', 'Announcement being paused.', speechOptions);
+  const second = queue.announce('run-two', 'Next routine announcement.', speechOptions);
+  const cancellation = queue.cancel('run-one');
+  assert.equal(await first, 'cancelled');
+  assert.equal(stopCount, 1);
+  assert.deepEqual(spoken, ['Announcement being paused.']);
+
+  releaseStop?.();
+  await cancellation;
+  assert.deepEqual(spoken, ['Announcement being paused.', 'Next routine announcement.']);
+  completions.get('Next routine announcement.')?.('finished');
+  assert.equal(await second, 'finished');
 });
 
 test('routine and step announcements use the current renamed skill while keeping assignment IDs', () => {

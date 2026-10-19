@@ -25,3 +25,4 @@
 - [Post-merge setup duration](post-merge-setup.md) — workspace dependency linking can exceed two minutes; retain a generous post-merge timeout and verify the full setup.
 - [Attachment cleanup test isolation](attachment-cleanup-tests.md) — keep cleanup logic injectable so Node tests do not load Expo native modules.
 - [Parallel run data safety](parallel-run-data-safety.md) — keep concurrent timer state separate from saved routine, playlist, and completion data.
+- [Restore test rebases](restore-test-rebases.md) — use the latest restore suite as the base, reapply only focused changes, and rerun the full browser suite after rebasing.

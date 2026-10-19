@@ -41,7 +41,10 @@ import {
   getPlayableRoutine,
   getRoutinePlaybackStepSeconds,
 } from '@/lib/routinePlayback';
-import { buildStepAnnouncement } from '@/lib/routineSpeech';
+import {
+  buildStepAnnouncement,
+  RoutineSpeechQueue,
+} from '@/lib/routineSpeech';
 import { createSkillRatingRun, getPlaylistSkillIds, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
 import {
   registerActiveRunSession,
@@ -61,6 +64,15 @@ const DEFAULT_NOTIFICATION_SETTINGS: RoutineNotificationSettings = {
   routineCompletion: false,
 };
 
+const runSpeechQueue = new RoutineSpeechQueue(
+  (text, options, onFinish) => Speech.speak(text, {
+    ...options,
+    onDone: () => onFinish('finished'),
+    onStopped: () => onFinish('finished'),
+    onError: () => onFinish('error'),
+  }),
+  () => Speech.stop(),
+);
 function formatClock(totalSeconds: number) {
   const safeSeconds = Math.max(0, totalSeconds);
   const hours = Math.floor(safeSeconds / 3600);
@@ -171,7 +183,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const isRunningRef = useRef(false);
   const isAnnouncingRef = useRef(false);
   const announcementTokenRef = useRef(0);
-  const speechStopRef = useRef<Promise<void>>(Promise.resolve());
+  const backgroundedAnnouncementRef = useRef(false);
   const isFinishedRef = useRef(false);
   const notificationSettingsRef = useRef(notificationSettings);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -209,14 +221,6 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
       setRemainingSeconds(initialRemainingSeconds);
     }
   }, [loading, initialRemainingSeconds]);
-
-  useEffect(
-    () => () => {
-      announcementTokenRef.current += 1;
-      void Speech.stop();
-    },
-    [],
-  );
 
   const showNotificationPermissionHelp = useCallback((canAskAgain: boolean) => {
     if (!mountedRef.current) return;
@@ -370,14 +374,10 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
 
   const stopAnnouncement = useCallback(() => {
     announcementTokenRef.current += 1;
-    const wasAnnouncing = isAnnouncingRef.current;
     isAnnouncingRef.current = false;
     setIsAnnouncing(false);
-    speechStopRef.current = speechStopRef.current
-      .then(() => wasAnnouncing ? Speech.stop() : undefined)
-      .catch(() => undefined);
-    return speechStopRef.current;
-  }, []);
+    return runSpeechQueue.cancel(sessionId);
+  }, [sessionId]);
 
   const advancePlaylist = useCallback((nextCursor: number) => {
     if (!playlistQueue || nextCursor < 0 || nextCursor >= playlistQueue.length) return;
@@ -484,7 +484,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
         if (token !== announcementTokenRef.current || !isAnnouncingRef.current) return;
         try {
           const playlistIsStarting = inPlaylist && playlistQueue && queueCursor === nextPlaylistCursor(playlistQueue, -1, routines);
-          Speech.speak(buildStepAnnouncement(
+          void runSpeechQueue.announce(sessionId, buildStepAnnouncement(
             routine,
             index,
             skills,
@@ -493,16 +493,15 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
             rate: 0.92,
             pitch: 1,
             voice: speechVoiceId,
-            onDone: () => finish(),
-            onStopped: () => finish(),
-            onError: () => finish(true),
-          });
+          }).then((result) => {
+            if (result !== 'cancelled') finish(result === 'error');
+          }).catch(() => finish(true));
         } catch {
           finish(true);
         }
       }).catch(() => finish(true));
     },
-    [cancelNotifications, routine, startCountdown, stopAnnouncement, voiceEnabled, skills, inPlaylist,
+    [cancelNotifications, routine, startCountdown, stopAnnouncement, voiceEnabled, skills, inPlaylist, sessionId,
       playlistQueue, queueCursor, routines, playlistTitle, playlistSkillIds, updateKeepaliveForStep, speechVoiceId],
   );
 
@@ -592,20 +591,29 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     const subscription = AppState.addEventListener('change', (nextState) => {
       const previousState = appStateRef.current;
       appStateRef.current = nextState;
+      if (nextState !== 'active' && isAnnouncingRef.current) {
+        backgroundedAnnouncementRef.current = true;
+        stopAnnouncement();
+      }
       if (nextState === 'active' && previousState !== 'active') {
         notificationPermissionDeniedRef.current = false;
         notificationPermissionAlertShownRef.current = false;
         reconcileTimer(Date.now());
         if (isRunningRef.current) void scheduleNotifications();
+        if (backgroundedAnnouncementRef.current && !isFinishedRef.current) {
+          backgroundedAnnouncementRef.current = false;
+          prepareStep(activeIndexRef.current, true, remainingMillisecondsRef.current);
+        }
       }
     });
     return () => subscription.remove();
-  }, [reconcileTimer, scheduleNotifications]);
+  }, [prepareStep, reconcileTimer, scheduleNotifications, stopAnnouncement]);
 
   useEffect(
     () => () => {
       isRunningRef.current = false;
       announcementTokenRef.current += 1;
+      void runSpeechQueue.cancel(sessionId);
       void cancelNotifications();
       if (!playlistTransitionRef.current) stopRunKeepalive(sessionId);
     },
@@ -741,7 +749,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close timer"
-            onPress={() => { stopRunKeepalive(sessionId); router.back(); }}
+            onPress={() => { stopAnnouncement(); stopRunKeepalive(sessionId); router.back(); }}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
           >
             <Ionicons name="close" size={24} color={colors.foreground} />

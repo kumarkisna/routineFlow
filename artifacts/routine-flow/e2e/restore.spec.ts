@@ -95,6 +95,75 @@ test('two routine timers can run independently and switch without changing saved
   expect(await page.evaluate(() => localStorage.getItem('@routine-flow/progress'))).toBe('{}');
 });
 
+test('closing a parallel run removes its queued announcement', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await page.addInitScript(() => {
+    const testWindow = window as unknown as { __routineSpeechTexts: string[] };
+    let currentUtterance: SpeechSynthesisUtterance | null = null;
+    testWindow.__routineSpeechTexts = [];
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        getVoices: () => [],
+        speak: (utterance: SpeechSynthesisUtterance) => {
+          testWindow.__routineSpeechTexts.push(utterance.text);
+          currentUtterance = utterance;
+        },
+        cancel: () => { currentUtterance = null; },
+        pause: () => undefined,
+        resume: () => undefined,
+        get speaking() { return currentUtterance !== null; },
+        get pending() { return false; },
+        get paused() { return false; },
+        onvoiceschanged: null,
+      },
+    });
+  });
+  await page.addInitScript(routines => {
+    localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+    localStorage.setItem('@routine-flow/progress', '{}');
+  }, [
+    {
+      id: 'queued-speech-one',
+      title: 'First speech routine',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'coral',
+      createdAt: '2026-10-14T00:00:00.000Z',
+      steps: [{ id: 'first-step', title: 'First announcement', durationSeconds: 180 }],
+    },
+    {
+      id: 'queued-speech-two',
+      title: 'Second speech routine',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'coral',
+      createdAt: '2026-10-14T00:00:00.000Z',
+      steps: [{ id: 'second-step', title: 'Queued announcement', durationSeconds: 180 }],
+    },
+  ]);
+  await page.goto('/routine/queued-speech-one/run?autoStart=1&voice=1');
+  await expect.poll(() => page.evaluate(() => (
+    (window as unknown as { __routineSpeechTexts: string[] }).__routineSpeechTexts.length
+  ))).toBe(1);
+
+  await page.getByTestId('run-another-routine').click();
+  await page.getByLabel('Open Second speech routine').click();
+  await page.getByLabel('Run routine timer').click();
+  await page.getByTestId('start-pause-timer').last().click();
+  await expect(page.getByText('announcing step').last()).toBeVisible();
+  expect(await page.evaluate(() => (
+    (window as unknown as { __routineSpeechTexts: string[] }).__routineSpeechTexts.length
+  ))).toBe(1);
+
+  await page.getByLabel('Close timer').last().click();
+  await expect(page.getByTestId('active-runs-switcher')).toContainText('Running routines · 1');
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => (
+    (window as unknown as { __routineSpeechTexts: string[] }).__routineSpeechTexts.length
+  ))).toBe(1);
+});
+
 test('a shared run retries a failed participant rating save without losing inputs or changing other profiles', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   const routine = {
@@ -1723,7 +1792,6 @@ test('all-profiles import adds profiles and merges saved history without replaci
   await page.getByTestId('person-switch-alex').click();
   await expect(page.getByLabel('Active person: Alex from backup. Open people')).toBeVisible();
   await page.getByRole('tab', { name: 'Skills' }).click();
-  await page.getByTestId('skill-rating-history-toggle-alex-focus').click();
   await expect(page.getByText('Alex’s Focus reflection belongs only to Alex.', { exact: true })).toBeVisible();
   await expect(page.getByText('Local reflection stays intact.', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Backup reflection stays with this profile.', { exact: true })).toHaveCount(0);
@@ -1733,7 +1801,6 @@ test('all-profiles import adds profiles and merges saved history without replaci
   await page.getByTestId('person-switch-me').click();
   await expect(page.getByLabel('Active person: Me. Open people')).toBeVisible();
   await page.getByRole('tab', { name: 'Skills' }).click();
-  await page.getByTestId('skill-rating-history-toggle-local-focus').click();
   await expect(page.getByText('Local reflection stays intact.', { exact: true })).toBeVisible();
   await expect(page.getByText('Backup reflection stays with this profile.', { exact: true })).toBeVisible();
   await expect(page.getByText('Alex’s Focus reflection belongs only to Alex.', { exact: true })).toHaveCount(0);
