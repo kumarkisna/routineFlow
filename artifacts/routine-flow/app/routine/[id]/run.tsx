@@ -115,26 +115,6 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     const savedRoutine = routines.find((item) => item.id === id);
     return savedRoutine ? getPlayableRoutine(savedRoutine) : undefined;
   }, [routines, id]);
-  useEffect(() => {
-    if (loading || !routine) return;
-    registerActiveRunSession({
-      sessionId, routineId: routine.id, title: routine.title,
-      activeStep: 0, totalSteps: routine.steps.length, remainingSeconds: getRoutinePlaybackStepSeconds(routine, 0),
-      status: 'ready',
-    });
-    return () => removeActiveRunSession(sessionId);
-  }, [loading, routine?.id, sessionId]);
-  useEffect(() => {
-    if (!routine) return;
-    updateActiveRunSession(sessionId, {
-      routineId: routine.id,
-      title: routine.title,
-      activeStep: activeIndex + 1,
-      totalSteps: routine.steps.length,
-      remainingSeconds,
-      status: isFinished ? 'finished' : isAnnouncing ? 'announcing' : isRunning ? 'running' : activeIndex ? 'paused' : 'ready',
-    });
-  }, [sessionId, routine, activeIndex, remainingSeconds, isRunning, isAnnouncing, isFinished]);
   const initialRemainingSeconds = routine?.steps.length ? getRoutinePlaybackStepSeconds(routine, 0) : 0;
   const [activeIndex, setActiveIndex] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(initialRemainingSeconds);
@@ -176,6 +156,27 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const notificationPermissionAlertShownRef = useRef(false);
   const notificationPermissionDeniedRef = useRef(false);
   const playlistTransitionRef = useRef(false);
+
+  useEffect(() => {
+    if (loading || !routine) return;
+    registerActiveRunSession({
+      sessionId, routineId: routine.id, title: routine.title,
+      activeStep: 0, totalSteps: routine.steps.length, remainingSeconds: getRoutinePlaybackStepSeconds(routine, 0),
+      status: 'ready',
+    });
+    return () => removeActiveRunSession(sessionId);
+  }, [loading, routine?.id, sessionId]);
+  useEffect(() => {
+    if (!routine) return;
+    updateActiveRunSession(sessionId, {
+      routineId: routine.id,
+      title: routine.title,
+      activeStep: activeIndex + 1,
+      totalSteps: routine.steps.length,
+      remainingSeconds,
+      status: isFinished ? 'finished' : isAnnouncing ? 'announcing' : isRunning ? 'running' : activeIndex ? 'paused' : 'ready',
+    });
+  }, [sessionId, routine, activeIndex, remainingSeconds, isRunning, isAnnouncing, isFinished]);
 
   useEffect(() => {
     if (!loading && !isRunningRef.current && !isAnnouncingRef.current && !isFinishedRef.current && activeIndexRef.current === 0) {

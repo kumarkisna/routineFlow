@@ -702,7 +702,8 @@ export default function HomeScreen() {
                     <View style={{ flex: 1 }}>
                       <Text numberOfLines={1} style={[styles.activeRunName, { color: colors.foreground }]}>{session.title}</Text>
                       <Text style={[styles.activeRunMeta, { color: colors.mutedForeground }]}>
-                        {session.status === 'running' ? 'Running' : session.status === 'announcing' ? 'Announcing' : 'Paused'}
+                        {session.status === 'running' ? 'Running' : session.status === 'announcing' ? 'Announcing'
+                          : session.status === 'ready' ? 'Ready' : 'Paused'}
                         {' · '}Step {session.activeStep} of {session.totalSteps}
                         {' · '}{formatDuration(session.remainingSeconds)}
                       </Text>

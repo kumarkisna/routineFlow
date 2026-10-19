@@ -63,30 +63,36 @@ test('two routine timers can run independently and switch without changing saved
   });
   await page.addInitScript(routines => {
     localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+    localStorage.setItem('@routine-flow/progress', '{}');
   }, [
     makeRoutine('parallel-one', 'First parallel routine'),
     makeRoutine('parallel-two', 'Second parallel routine'),
   ]);
   await page.goto('/routine/parallel-one/run?autoStart=1&voice=0');
   await expect(page.getByTestId('routine-play-context')).toContainText('First parallel routine');
-  await expect(page.getByLabel('Pause timer')).toBeVisible();
+  await expect(page.locator('[data-testid="start-pause-timer"]:visible')).toBeVisible();
 
   await page.getByTestId('run-another-routine').click();
   await expect(page.getByTestId('active-runs-switcher')).toContainText('Running routines · 1');
   await page.getByLabel('Open Second parallel routine').click();
   await page.getByLabel('Run routine timer').click();
-  await page.getByTestId('toggle-step-voice').click();
-  await page.getByTestId('start-pause-timer').click();
-  await expect(page.getByLabel('Pause timer')).toBeVisible();
+  await page.getByTestId('toggle-step-voice').last().click();
+  await page.getByTestId('start-pause-timer').last().click();
+  await expect(page.locator('[data-testid="start-pause-timer"]:visible')).toBeVisible();
 
-  await page.getByTestId('run-another-routine').click();
-  await expect(page.getByTestId('active-runs-switcher')).toContainText('Running routines · 2');
+  await page.getByTestId('run-another-routine').last().click();
+  await expect(page.getByTestId('active-runs-switcher').last()).toContainText('Running routines · 2');
   await page.getByRole('button', { name: /Switch to First parallel routine/ }).click();
-  await expect(page.getByTestId('routine-play-context')).toContainText('First parallel routine');
-  await expect(page.getByLabel('Pause timer')).toBeVisible();
+  await expect(page.getByTestId('routine-play-context').last()).toContainText('First parallel routine');
+  await expect(page.locator('[data-testid="start-pause-timer"]:visible')).toBeVisible();
+  await page.getByTestId('run-another-routine').last().click();
+  await expect(page.getByTestId('active-runs-switcher').last()).toContainText('Running routines · 2');
+  await page.getByRole('button', { name: /Switch to Second parallel routine/ }).click();
+  await expect(page.getByTestId('routine-play-context').last()).toContainText('Second parallel routine');
 
   const routinesAfterRuns = await page.evaluate(() => JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]'));
   expect(routinesAfterRuns.map((routine: { id: string }) => routine.id)).toEqual(['parallel-one', 'parallel-two']);
+  expect(await page.evaluate(() => localStorage.getItem('@routine-flow/progress'))).toBe('{}');
 });
 
 test('person theme settings can be changed and their collapsed choice is remembered', async ({ page }) => {
