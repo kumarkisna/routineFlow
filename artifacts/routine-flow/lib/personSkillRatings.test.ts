@@ -332,3 +332,61 @@ test('group rating context finds the latest name-matched rating without changing
   });
   assert.equal(values.get('@routine-flow/person/alex/@routine-flow/skills'), JSON.stringify(originalSkills));
 });
+
+test('group rating context keeps previous rating details when playlist storage is unreadable', async () => {
+  const previous = {
+    ...rating('alex-communication-new', 8, '03', 'Latest note.'),
+    routineTitle: 'Recent routine',
+    sourceRoutineId: 'alex-communication-routine',
+    sourcePlaylistId: 'alex-playlist',
+  };
+  const values = new Map<string, string>([
+    ['@routine-flow/person/alex/@routine-flow/skills', JSON.stringify([
+      { id: 'alex-communication', name: 'Communication', ratings: [previous] },
+    ])],
+    ['@routine-flow/person/alex/@routine-flow/playlists', '{malformed'],
+  ]);
+  const backend = {
+    getItem: async (key: string) => values.get(key) ?? null,
+    setItem: async (key: string, value: string) => { values.set(key, value); },
+    removeItem: async (key: string) => { values.delete(key); },
+  };
+
+  const context = await getPreviousPersonSkillRatings('alex', [
+    { id: 'source-communication', name: 'Communication' },
+  ], createPersonStorage('alex', backend));
+
+  assert.equal(context['source-communication']?.routineTitle, 'Recent routine');
+  assert.equal(context['source-communication']?.rating, 8);
+  assert.equal(context['source-communication']?.note, 'Latest note.');
+  assert.equal(context['source-communication']?.playlistTitle, undefined);
+  assert.deepEqual(context, { 'source-communication': previous });
+});
+
+test('group rating context keeps previous rating details when playlist storage cannot be read', async () => {
+  const previous = {
+    ...rating('alex-communication-new', 8, '03', 'Latest note.'),
+    routineTitle: 'Recent routine',
+    sourceRoutineId: 'alex-communication-routine',
+    sourcePlaylistId: 'alex-playlist',
+  };
+  const backend = {
+    getItem: async (key: string) => {
+      if (key === '@routine-flow/person/alex/@routine-flow/skills') {
+        return JSON.stringify([{ id: 'alex-communication', name: 'Communication', ratings: [previous] }]);
+      }
+      if (key === '@routine-flow/person/alex/@routine-flow/playlists') {
+        throw new Error('Playlist storage unavailable');
+      }
+      return null;
+    },
+    setItem: async () => {},
+    removeItem: async () => {},
+  };
+
+  const context = await getPreviousPersonSkillRatings('alex', [
+    { id: 'source-communication', name: 'Communication' },
+  ], createPersonStorage('alex', backend));
+
+  assert.deepEqual(context, { 'source-communication': previous });
+});

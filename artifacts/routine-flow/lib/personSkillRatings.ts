@@ -18,8 +18,13 @@ export async function getPreviousPersonSkillRatings(
   const storage = storageOverride ?? createPersonStorage(personId);
   const stored = await storage.getItem(PERSON_DATA_KEYS.skills);
   const skills = stored === null ? [] : parseSkills(stored);
-  const storedPlaylists = await storage.getItem(PERSON_DATA_KEYS.playlists);
-  const playlists = storedPlaylists === null ? [] : parsePlaylists(storedPlaylists);
+  let playlists: ReturnType<typeof parsePlaylists> = [];
+  try {
+    const storedPlaylists = await storage.getItem(PERSON_DATA_KEYS.playlists);
+    playlists = storedPlaylists === null ? [] : parsePlaylists(storedPlaylists);
+  } catch {
+    // Playlist titles are optional context; keep readable skill history available.
+  }
   const playlistTitles = new Map(playlists.map(playlist => [playlist.id, playlist.title.trim()]));
   const nameToSkill = new Map(skills.map(skill => [skillNameKey(skill.name), skill]));
   const result: Record<string, PreviousPersonSkillRating | null> = {};
