@@ -424,9 +424,9 @@ test('skill history can edit a reflection and the corrected note appears in rout
   await expect(page.getByText('Updated from skill history')).toBeVisible();
 });
 
-test('individual rating prompt stays scrollable with prior notes on a compact phone', async ({ page }) => {
+test('individual rating prompt stays usable with wrapped text on a narrow phone', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
-  await page.setViewportSize({ width: 360, height: 640 });
+  await page.setViewportSize({ width: 320, height: 568 });
   const skillIds = ['focus', 'breathing', 'communication', 'patience', 'flexibility'];
   const routine = {
     id: 'individual-rating-context',
@@ -453,13 +453,13 @@ test('individual rating prompt stays scrollable with prior notes on a compact ph
   }[] = [
     { id: 'focus', name: 'Focus', ratings: previousRatings },
     { id: 'breathing', name: 'Breathing', ratings: [
-      { id: 'breathing-rating', rating: 5, ratedAt: '2026-10-18T09:00:00.000Z', routineTitle: 'Breathing practice', note: 'Slow breaths helped.' },
+      { id: 'breathing-rating', rating: 5, ratedAt: '2026-10-18T09:00:00.000Z', routineTitle: 'Breathing practice', note: 'Slow breaths helped when I paused before beginning the next step and kept a steady pace throughout.' },
     ] },
     { id: 'communication', name: 'Communication', ratings: [
-      { id: 'communication-legacy-rating', rating: 7, ratedAt: '2026-10-18T08:00:00.000Z', note: 'Paused before replying.' },
+      { id: 'communication-legacy-rating', rating: 7, ratedAt: '2026-10-18T08:00:00.000Z', note: 'I paused before replying, listened to the full question, and then explained my idea clearly.' },
     ] },
     { id: 'patience', name: 'Patience', ratings: [
-      { id: 'patience-rating', rating: 6, ratedAt: '2026-10-18T07:00:00.000Z', routineTitle: 'Waiting practice', note: 'A short break was useful.' },
+      { id: 'patience-rating', rating: 6, ratedAt: '2026-10-18T07:00:00.000Z', routineTitle: 'Waiting practice', note: 'A short break was useful while I waited, and it helped me return to the activity without rushing.' },
     ] },
     { id: 'flexibility', name: 'Flexibility' },
   ];
@@ -485,16 +485,17 @@ test('individual rating prompt stays scrollable with prior notes on a compact ph
   await page.goto('/routine/individual-rating-context/run?voice=0');
   await page.getByTestId('start-pause-timer').click();
   await expect(page.getByText('Rate the skills you used')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Focus', { exact: true })).toBeInViewport();
   await expect(page.getByTestId('save-skill-ratings')).toBeDisabled();
   await expect(page.getByTestId('previous-rating-focus')).toContainText('Previous rating (reference only) · 8/10');
   await expect(page.getByTestId('previous-rating-routine-focus')).toHaveText('Routine: Recent routine');
   await expect(page.getByTestId('previous-rating-focus')).toContainText('Latest reflection.');
   await expect(page.getByTestId('previous-rating-routine-breathing')).toHaveText('Routine: Breathing practice');
-  await expect(page.getByTestId('previous-rating-breathing')).toContainText('Slow breaths helped.');
+  await expect(page.getByTestId('previous-rating-breathing')).toContainText('Slow breaths helped when I paused');
   await expect(page.getByTestId('previous-rating-communication')).toContainText('Previous rating (reference only) · 7/10');
-  await expect(page.getByTestId('previous-rating-communication')).toContainText('Paused before replying.');
+  await expect(page.getByTestId('previous-rating-communication')).toContainText('I paused before replying');
   await expect(page.getByTestId('previous-rating-routine-communication')).toHaveCount(0);
-  await expect(page.getByTestId('previous-rating-patience')).toContainText('A short break was useful.');
+  await expect(page.getByTestId('previous-rating-patience')).toContainText('A short break was useful while I waited');
   await expect(page.getByTestId('previous-rating-flexibility')).toHaveText('No previous rating yet.');
 
   const newScores: Record<string, number> = {
@@ -531,16 +532,23 @@ test('individual rating prompt stays scrollable with prior notes on a compact ph
   expect(focus?.ratings?.slice(0, 2)).toEqual(previousRatings);
   expect(focus?.ratings?.[2]).toMatchObject({ rating: 9, note: 'New focus reflection.' });
   expect(breathing?.ratings).toHaveLength(2);
-  expect(breathing?.ratings?.[0]).toMatchObject({ rating: 5, note: 'Slow breaths helped.' });
+  expect(breathing?.ratings?.[0]).toMatchObject({
+    rating: 5,
+    note: 'Slow breaths helped when I paused before beginning the next step and kept a steady pace throughout.',
+  });
   expect(breathing?.ratings?.[1]).toMatchObject({ rating: 6, note: 'New breathing reflection.' });
   expect(communication?.ratings).toHaveLength(2);
   expect(communication?.ratings?.[0]).toMatchObject({
     id: 'communication-legacy-rating',
     rating: 7,
-    note: 'Paused before replying.',
+    note: 'I paused before replying, listened to the full question, and then explained my idea clearly.',
   });
   expect(communication?.ratings?.[1]).toMatchObject({ rating: 7 });
   expect(patience?.ratings).toHaveLength(2);
+  expect(patience?.ratings?.[0]).toMatchObject({
+    rating: 6,
+    note: 'A short break was useful while I waited, and it helped me return to the activity without rushing.',
+  });
   expect(patience?.ratings?.[1]).toMatchObject({ rating: 5 });
   expect(flexibility?.ratings).toHaveLength(1);
   expect(flexibility?.ratings?.[0]).toMatchObject({ rating: 4 });
