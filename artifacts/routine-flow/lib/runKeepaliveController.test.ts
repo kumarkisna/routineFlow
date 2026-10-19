@@ -42,3 +42,22 @@ test('a native bridge failure is reported without throwing into the timer UI', (
   assert.equal(controller.update('Routine', 'Step 1'), false);
   assert.equal(controller.stop(), false);
 });
+
+test('stopping one run leaves the Android keepalive active for the other run', () => {
+  const calls: Array<string[]> = [];
+  const controller = createRunKeepaliveController('android', {
+    start: (title, body) => { calls.push(['start', title, body]); return true; },
+    update: (title, body) => { calls.push(['update', title, body]); return true; },
+    stop: () => { calls.push(['stop']); return true; },
+  });
+  controller.start('Routine · Morning', 'Step 1 of 3', 'morning-session');
+  controller.start('Routine · Evening', 'Step 1 of 2', 'evening-session');
+  controller.stop('morning-session');
+  controller.stop('evening-session');
+  assert.deepEqual(calls, [
+    ['start', 'Routine · Morning', 'Step 1 of 3'],
+    ['start', '2 routines running', 'Morning · Evening'],
+    ['update', 'Routine · Evening', 'Step 1 of 2'],
+    ['stop'],
+  ]);
+});

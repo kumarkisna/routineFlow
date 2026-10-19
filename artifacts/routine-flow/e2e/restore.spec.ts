@@ -54,6 +54,41 @@ test('step detail image slideshow starts at the tapped image and stays within th
   await expect(page.getByText('this detail’s 2 images')).toBeVisible();
 });
 
+test('two routine timers can run independently and switch without changing saved routines', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const makeRoutine = (id: string, title: string) => ({
+    id, title, subtitle: 'Parallel run test', icon: 'sunny-outline', tone: 'coral',
+    createdAt: '2026-10-14T00:00:00.000Z',
+    steps: [{ id: `${id}-step`, title: 'Wait', durationSeconds: 180, description: 'Independent timer.' }],
+  });
+  await page.addInitScript(routines => {
+    localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+  }, [
+    makeRoutine('parallel-one', 'First parallel routine'),
+    makeRoutine('parallel-two', 'Second parallel routine'),
+  ]);
+  await page.goto('/routine/parallel-one/run?autoStart=1&voice=0');
+  await expect(page.getByTestId('routine-play-context')).toContainText('First parallel routine');
+  await expect(page.getByLabel('Pause timer')).toBeVisible();
+
+  await page.getByTestId('run-another-routine').click();
+  await expect(page.getByTestId('active-runs-switcher')).toContainText('Running routines · 1');
+  await page.getByLabel('Open Second parallel routine').click();
+  await page.getByLabel('Run routine timer').click();
+  await page.getByTestId('toggle-step-voice').click();
+  await page.getByTestId('start-pause-timer').click();
+  await expect(page.getByLabel('Pause timer')).toBeVisible();
+
+  await page.getByTestId('run-another-routine').click();
+  await expect(page.getByTestId('active-runs-switcher')).toContainText('Running routines · 2');
+  await page.getByRole('button', { name: /Switch to First parallel routine/ }).click();
+  await expect(page.getByTestId('routine-play-context')).toContainText('First parallel routine');
+  await expect(page.getByLabel('Pause timer')).toBeVisible();
+
+  const routinesAfterRuns = await page.evaluate(() => JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]'));
+  expect(routinesAfterRuns.map((routine: { id: string }) => routine.id)).toEqual(['parallel-one', 'parallel-two']);
+});
+
 test('person theme settings can be changed and their collapsed choice is remembered', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   await page.goto('/people');

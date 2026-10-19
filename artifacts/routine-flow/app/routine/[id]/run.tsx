@@ -42,6 +42,11 @@ import {
 import { buildStepAnnouncement } from '@/lib/routineSpeech';
 import { createSkillRatingRun, getPlaylistSkillIds, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
 import {
+  registerActiveRunSession,
+  removeActiveRunSession,
+  updateActiveRunSession,
+} from '@/lib/activeRunSessions';
+import {
   formatDuration,
   getStepDetails,
   getStepSeconds,
@@ -76,14 +81,19 @@ function parseSkillIdsParam(value: string | string[] | undefined): string[] {
 }
 
 export default function RoutineRunScreen() {
-  const { id, cursor = '0', queue, playlistId, playlistRateSkillsAtEnd, stepReminder, routineReminder } =
+  const { id, cursor = '0', queue, playlistId, playlistRateSkillsAtEnd, stepReminder, routineReminder, sessionId: routeSessionId } =
     useLocalSearchParams<{ id: string; cursor?: string; queue?: string; playlistId?: string;
-      playlistRateSkillsAtEnd?: string; stepReminder?: string; routineReminder?: string }>();
+      playlistRateSkillsAtEnd?: string; stepReminder?: string; routineReminder?: string; sessionId?: string }>();
+  const [generatedSessionId] = useState(() => `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const sessionId = routeSessionId || generatedSessionId;
+  useEffect(() => {
+    if (!routeSessionId) router.setParams({ sessionId });
+  }, [routeSessionId, sessionId]);
   // A new routine (including a repeated routine) needs fresh timer/speech state.
-  return <RoutinePlayer key={`${id}:${cursor}:${queue ?? ''}:${playlistId ?? ''}:${playlistRateSkillsAtEnd ?? '1'}:${stepReminder ?? '0'}:${routineReminder ?? '0'}`} />;
+  return <RoutinePlayer sessionId={sessionId} key={`${sessionId}:${id}:${cursor}:${queue ?? ''}:${playlistId ?? ''}:${playlistRateSkillsAtEnd ?? '1'}:${stepReminder ?? '0'}:${routineReminder ?? '0'}`} />;
 }
 
-function RoutinePlayer() {
+function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { activePerson } = usePeople();
@@ -105,6 +115,26 @@ function RoutinePlayer() {
     const savedRoutine = routines.find((item) => item.id === id);
     return savedRoutine ? getPlayableRoutine(savedRoutine) : undefined;
   }, [routines, id]);
+  useEffect(() => {
+    if (loading || !routine) return;
+    registerActiveRunSession({
+      sessionId, routineId: routine.id, title: routine.title,
+      activeStep: 0, totalSteps: routine.steps.length, remainingSeconds: getRoutinePlaybackStepSeconds(routine, 0),
+      status: 'ready',
+    });
+    return () => removeActiveRunSession(sessionId);
+  }, [loading, routine?.id, sessionId]);
+  useEffect(() => {
+    if (!routine) return;
+    updateActiveRunSession(sessionId, {
+      routineId: routine.id,
+      title: routine.title,
+      activeStep: activeIndex + 1,
+      totalSteps: routine.steps.length,
+      remainingSeconds,
+      status: isFinished ? 'finished' : isAnnouncing ? 'announcing' : isRunning ? 'running' : activeIndex ? 'paused' : 'ready',
+    });
+  }, [sessionId, routine, activeIndex, remainingSeconds, isRunning, isAnnouncing, isFinished]);
   const initialRemainingSeconds = routine?.steps.length ? getRoutinePlaybackStepSeconds(routine, 0) : 0;
   const [activeIndex, setActiveIndex] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(initialRemainingSeconds);
@@ -332,6 +362,7 @@ function RoutinePlayer() {
         id: playlistQueue[nextCursor],
         queue: JSON.stringify(playlistQueue),
         cursor: String(nextCursor),
+        sessionId,
         ...(playlistId ? { playlistId } : {}),
         playlistTitle: playlistTitle ?? 'Playlist',
         playlistSkills: JSON.stringify(playlistSkillIds),
@@ -342,7 +373,7 @@ function RoutinePlayer() {
         routineReminder: notificationSettingsRef.current.routineCompletion ? '1' : '0',
       },
     });
-  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled]);
+  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled, sessionId]);
 
   const closeRatingPrompt = useCallback(() => {
     const nextCursor = pendingPlaylistCursor;
@@ -366,11 +397,13 @@ function RoutinePlayer() {
       ? `Playlist · ${playlistTitle ?? 'Playlist'}`
       : `Routine · ${routine.title}`;
     const body = `${routine.title} · Step ${index + 1} of ${routine.steps.length}`;
-    const succeeded = start ? startRunKeepalive(title, body) : updateRunKeepalive(title, body);
+    const succeeded = start
+      ? startRunKeepalive(title, body, sessionId)
+      : updateRunKeepalive(title, body, sessionId);
     setBackgroundError(succeeded
       ? ''
       : 'The Android timer service could not start. Keep the app open or try starting the run again.');
-  }, [inPlaylist, playlistTitle, routine]);
+  }, [inPlaylist, playlistTitle, routine, sessionId]);
 
   const startCountdown = useCallback(() => {
     if (isFinishedRef.current) return;
@@ -476,24 +509,24 @@ function RoutinePlayer() {
         ])];
       if (next !== -1) setPendingPlaylistCursor(next);
       if (involvedSkillIds.length) {
-        stopRunKeepalive();
+        stopRunKeepalive(sessionId);
         setRatingRun(ratingRun);
         setRatingSkillIds(involvedSkillIds);
         setShowRatingPrompt(true);
       } else if (next !== -1) {
         advancePlaylist(next);
       } else {
-        stopRunKeepalive();
+        stopRunKeepalive(sessionId);
       }
     }).catch(() => {
       if (!mountedRef.current) return;
-      stopRunKeepalive();
+      stopRunKeepalive(sessionId);
       setSavingCompletion(false);
       setCompletionError('Your completion could not be saved. Retry to continue.');
     });
   }, [cancelNotifications, completeRoutine, routine, stopAnnouncement, inPlaylist,
     playlistQueue, queueCursor, routines, playlistSkillIds, playlistId, playlistTitle,
-    rateSkillsAtPlaylistEnd, advancePlaylist]);
+    rateSkillsAtPlaylistEnd, advancePlaylist, sessionId]);
 
   const reconcileTimer = useCallback(
     (now: number) => {
@@ -544,9 +577,9 @@ function RoutinePlayer() {
       isRunningRef.current = false;
       announcementTokenRef.current += 1;
       void cancelNotifications();
-      if (!playlistTransitionRef.current) stopRunKeepalive();
+      if (!playlistTransitionRef.current) stopRunKeepalive(sessionId);
     },
-    [cancelNotifications],
+    [cancelNotifications, sessionId],
   );
 
   useEffect(() => {
@@ -565,7 +598,7 @@ function RoutinePlayer() {
         <Text style={[styles.missingTitle, { color: colors.foreground }]}>
           {loading ? 'Loading routine' : routine ? 'No visible steps to run' : 'Routine not found'}
         </Text>
-        <Pressable onPress={() => { stopRunKeepalive(); router.back(); }}>
+        <Pressable onPress={() => { stopRunKeepalive(sessionId); router.back(); }}>
           <Text style={[styles.backText, { color: colors.primary }]}>Go back</Text>
         </Pressable>
       </View>
@@ -587,7 +620,7 @@ function RoutinePlayer() {
       if (isAnnouncingRef.current) {
         stopAnnouncement();
         void cancelNotifications();
-        stopRunKeepalive();
+        stopRunKeepalive(sessionId);
         return;
       }
       const stepEndAt = stepEndsAtRef.current;
@@ -598,10 +631,10 @@ function RoutinePlayer() {
       isRunningRef.current = false;
       setIsRunning(false);
       void cancelNotifications();
-      stopRunKeepalive();
+      stopRunKeepalive(sessionId);
     } else if (isAnnouncingRef.current) {
       stopAnnouncement();
-      stopRunKeepalive();
+      stopRunKeepalive(sessionId);
     } else {
       await ensureRunReminderPermission(Platform.OS === 'android');
       if (!mountedRef.current || isFinishedRef.current) return;
@@ -678,7 +711,7 @@ function RoutinePlayer() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close timer"
-            onPress={() => { stopRunKeepalive(); router.back(); }}
+            onPress={() => { stopRunKeepalive(sessionId); router.back(); }}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
           >
             <Ionicons name="close" size={24} color={colors.foreground} />
@@ -704,6 +737,16 @@ function RoutinePlayer() {
             <Ionicons name={voiceEnabled ? 'volume-high' : 'volume-mute'} size={22} color={colors.foreground} />
           </Pressable>
         </View>
+        <Pressable
+          testID="run-another-routine"
+          accessibilityRole="button"
+          accessibilityLabel="Run another routine in parallel"
+          onPress={() => router.push('/')}
+          style={({ pressed }) => [styles.addParallelRun, { backgroundColor: colors.card, borderColor: colors.border }, pressed && styles.pressed]}
+        >
+          <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+          <Text style={[styles.addParallelRunText, { color: colors.primary }]}>Run another routine</Text>
+        </Pressable>
 
         <View style={[styles.timerCard, { backgroundColor: colors.hero }]}>
           {inPlaylist ? (
@@ -933,6 +976,8 @@ const styles = StyleSheet.create({
   header: { minHeight: 72, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center' },
   iconButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1, alignItems: 'center' },
+  addParallelRun: { minHeight: 40, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 12 },
+  addParallelRunText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
   headerSpacer: { width: 42 },
   headerLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.1 },
   headerTitle: { fontFamily: 'Inter_700Bold', fontSize: 17, marginTop: 5, maxWidth: 250 },

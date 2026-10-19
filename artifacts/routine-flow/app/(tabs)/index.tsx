@@ -38,6 +38,8 @@ import {
   serializeAllPeopleBackup, serializePersonBackup, type AllPeopleBackup, type RoutineBackup,
 } from '@/lib/routineTransfer';
 import type { Routine } from '@/types/routines';
+import { formatDuration } from '@/types/routines';
+import { getActiveRunSessions, subscribeActiveRunSessions } from '@/lib/activeRunSessions';
 
 function formatDate() {
   return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
@@ -56,6 +58,11 @@ function formatApproximateAttachmentSize(bytes: number) {
 }
 
 export default function HomeScreen() {
+  const activeRunSessions = React.useSyncExternalStore(
+    subscribeActiveRunSessions,
+    getActiveRunSessions,
+    getActiveRunSessions,
+  );
   const colors = useColors();
   const {
     people, activePerson, busy: peopleBusy, restoreAllProfiles,
@@ -674,6 +681,37 @@ export default function HomeScreen() {
                 <Ionicons name="chevron-forward" size={14} color={colors.primary} />
               </Pressable>
             </View>
+
+            {activeRunSessions.length ? (
+              <View testID="active-runs-switcher" style={[styles.activeRunsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.activeRunsTitle, { color: colors.foreground }]}>
+                  Running routines · {activeRunSessions.length}
+                </Text>
+                {activeRunSessions.map(session => (
+                  <Pressable
+                    key={session.sessionId}
+                    testID={`switch-to-run-${session.sessionId}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Switch to ${session.title}, step ${session.activeStep} of ${session.totalSteps}`}
+                    onPress={() => router.navigate({
+                      pathname: '/routine/[id]/run',
+                      params: { id: session.routineId, sessionId: session.sessionId },
+                    })}
+                    style={({ pressed }) => [styles.activeRunRow, { borderColor: colors.border }, pressed && styles.pressed]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[styles.activeRunName, { color: colors.foreground }]}>{session.title}</Text>
+                      <Text style={[styles.activeRunMeta, { color: colors.mutedForeground }]}>
+                        {session.status === 'running' ? 'Running' : session.status === 'announcing' ? 'Announcing' : 'Paused'}
+                        {' · '}Step {session.activeStep} of {session.totalSteps}
+                        {' · '}{formatDuration(session.remainingSeconds)}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
 
             <View style={[styles.todayCard, !todayFlowExpanded && styles.todayCardCollapsed, { backgroundColor: colors.hero }]}>
               <Pressable
@@ -1435,6 +1473,11 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 },
   date: { fontFamily: 'Inter_500Medium', fontSize: 12, letterSpacing: 0.3, marginBottom: 7 },
   greeting: { fontFamily: 'Inter_700Bold', fontSize: 27, letterSpacing: -0.7 },
+  activeRunsCard: { borderWidth: 1, borderRadius: 18, padding: 13, marginBottom: 18, gap: 8 },
+  activeRunsTitle: { fontFamily: 'Inter_700Bold', fontSize: 14, marginBottom: 2 },
+  activeRunRow: { minHeight: 50, borderTopWidth: 1, paddingTop: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  activeRunName: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  activeRunMeta: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 3 },
   avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontFamily: 'Inter_700Bold', fontSize: 12, letterSpacing: 0.5 },
   todayCard: { minHeight: 204, borderRadius: 25, padding: 21, overflow: 'hidden', marginBottom: 31 },
