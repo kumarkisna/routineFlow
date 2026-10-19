@@ -321,6 +321,114 @@ test('a shared run retries a failed participant rating save without losing input
   expect(saved.meRoutines).toHaveLength(1);
 });
 
+test('group rating history stays with its participant when a delayed read finishes after advancing', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const routine = {
+    id: 'group-history-race',
+    title: 'Group history race routine',
+    subtitle: 'Delayed history test',
+    icon: 'sunny-outline',
+    tone: 'coral',
+    createdAt: '2026-10-14T00:00:00.000Z',
+    steps: [{ id: 'group-history-step', title: 'Practice focus', durationSeconds: 1, description: 'Stay on task.', skillIds: ['me-focus'] }],
+  };
+  const profile = (id: string, name: string) => ({
+    id, name, speechVoiceId: null, defaultRateSkillsAtPlaylistEnd: true,
+    defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+    defaultSpeakRoutineDescription: true,
+  });
+  await page.addInitScript(({ seededRoutine, seededProfiles }) => {
+    const priorRating = (id: string, rating: number, note: string) => ({
+      id, rating, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: 'Earlier practice', note,
+    });
+    const seed = {
+      '@routine-flow/people': { version: 1, activePersonId: 'me', people: seededProfiles },
+      '@routine-flow/routines': [seededRoutine],
+      '@routine-flow/progress': '{}',
+      '@routine-flow/skills': [{ id: 'me-focus', name: 'Focus' }],
+      '@routine-flow/person/alex/@routine-flow/skills': [{ id: 'alex-focus', name: 'Focus', ratings: [priorRating('alex-rating', 8, 'Alex private note')] }],
+      '@routine-flow/person/casey/@routine-flow/skills': [{ id: 'casey-focus', name: 'Focus', ratings: [priorRating('casey-rating', 4, 'Casey private note')] }],
+      '@routine-flow/person/jordan/@routine-flow/skills': [{ id: 'jordan-focus', name: 'Focus', ratings: [priorRating('jordan-rating', 6, 'Jordan private note')] }],
+      '@routine-flow/person/taylor/@routine-flow/skills': [],
+    };
+    for (const [key, value] of Object.entries(seed)) {
+      localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+    }
+
+    const originalGetItem = Storage.prototype.getItem;
+    const delayedPersonIds = new Set<string>();
+    const resolvers: Record<string, () => void> = {};
+    Storage.prototype.getItem = function (key: string) {
+      const personId = key.includes('/casey/') ? 'casey' : key.includes('/jordan/') ? 'jordan' : '';
+      if (personId && key.endsWith('/@routine-flow/skills') && !delayedPersonIds.has(personId)) {
+        delayedPersonIds.add(personId);
+        return new Promise<string | null>(resolve => {
+          resolvers[personId] = () => resolve(originalGetItem.call(this, key));
+        }) as unknown as string | null;
+      }
+      return originalGetItem.call(this, key);
+    };
+    Object.assign(window, {
+      __groupHistoryReadIsDelayed: (personId: string) => delayedPersonIds.has(personId),
+      __resolveGroupHistory: (personId: string) => resolvers[personId]?.(),
+    });
+  }, {
+    seededRoutine: routine,
+    seededProfiles: ['me', 'alex', 'casey', 'jordan', 'taylor'].map(id => profile(id, id[0].toUpperCase() + id.slice(1))),
+  });
+
+  await page.goto('/routine/group-history-race');
+  await expect(page.getByTestId('routine-run-people-picker')).toContainText('Selected: Me');
+  await page.getByTestId('routine-run-people-picker').click();
+  await page.getByTestId('routine-run-person-alex').click();
+  await page.getByTestId('routine-run-person-casey').click();
+  await page.getByTestId('routine-run-person-jordan').click();
+  await page.getByTestId('routine-run-person-taylor').click();
+  await page.getByTestId('routine-run-person-me').click();
+  await page.getByTestId('done-routine-run-people').click();
+  await page.getByLabel('Run routine timer').click();
+  await page.getByTestId('toggle-step-voice').click();
+  await page.getByTestId('start-pause-timer').click();
+
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex', { timeout: 10000 });
+  await expect(page.getByTestId('previous-rating-alex-me-focus')).toContainText('Previous: 8/10');
+  await expect(page.getByTestId('previous-rating-alex-me-focus')).toContainText('Alex private note');
+  await page.getByTestId('skip-group-person').click();
+
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Casey');
+  await page.waitForFunction(personId => (
+    window as typeof window & { __groupHistoryReadIsDelayed?: (id: string) => boolean }
+  ).__groupHistoryReadIsDelayed?.(personId) === true, 'casey');
+  await expect(page.getByTestId('previous-rating-casey-me-focus')).toContainText('Loading previous rating…');
+  await expect(page.getByTestId('previous-rating-casey-me-focus')).not.toContainText('Alex private note');
+  await page.evaluate(personId => (
+    window as typeof window & { __resolveGroupHistory?: (id: string) => void }
+  ).__resolveGroupHistory?.(personId), 'casey');
+  await expect(page.getByTestId('previous-rating-casey-me-focus')).toContainText('Previous: 4/10');
+  await expect(page.getByTestId('previous-rating-casey-me-focus')).toContainText('Casey private note');
+  await expect(page.getByTestId('previous-rating-casey-me-focus')).not.toContainText('Alex private note');
+
+  await page.getByTestId('skip-group-person').click();
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Jordan');
+  await page.waitForFunction(personId => (
+    window as typeof window & { __groupHistoryReadIsDelayed?: (id: string) => boolean }
+  ).__groupHistoryReadIsDelayed?.(personId) === true, 'jordan');
+  await expect(page.getByTestId('previous-rating-jordan-me-focus')).toContainText('Loading previous rating…');
+  await expect(page.getByTestId('previous-rating-jordan-me-focus')).not.toContainText('Casey private note');
+  await page.getByTestId('skip-group-person').click();
+
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Taylor');
+  await expect(page.getByTestId('previous-rating-taylor-me-focus')).toContainText('No previous rating for this person.');
+  await page.evaluate(personId => (
+    window as typeof window & { __resolveGroupHistory?: (id: string) => void }
+  ).__resolveGroupHistory?.(personId), 'jordan');
+  await page.evaluate(() => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Taylor');
+  await expect(page.getByTestId('previous-rating-taylor-me-focus')).toHaveText('No previous rating for this person.');
+});
+
 test('playlist-end group ratings retain participants across routines and isolate saved and skipped profiles', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   const routines = [

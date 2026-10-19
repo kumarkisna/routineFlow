@@ -6,6 +6,14 @@ import { MAX_SKILL_NOTE_LENGTH, type RoutineSkill, type SkillRating, type SkillR
 import { getPreviousPersonSkillRatings, recordPersonSkillRatings } from '@/lib/personSkillRatings';
 import type { Person } from '@/types/people';
 
+type PreviousRatingContext = {
+  personId: string;
+  sourceSkillSignature: string;
+  loading: boolean;
+  ratings: Record<string, SkillRating | null>;
+  error: string;
+};
+
 export function GroupSkillRatingPrompt({
   visible, people, sourceSkills, routineTitle, contextLabel, run, onDone,
 }: {
@@ -24,12 +32,18 @@ export function GroupSkillRatingPrompt({
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
   const [pendingDiscardAction, setPendingDiscardAction] = React.useState<'close' | 'skipPerson' | 'skipRemaining' | null>(null);
-  const [previousRatings, setPreviousRatings] = React.useState<Record<string, SkillRating | null>>({});
-  const [loadingPreviousRatings, setLoadingPreviousRatings] = React.useState(false);
-  const [previousRatingsError, setPreviousRatingsError] = React.useState('');
+  const [previousRatingContext, setPreviousRatingContext] = React.useState<PreviousRatingContext | null>(null);
   const person = people[personIndex];
   const peopleSignature = people.map(item => item.id).join('|');
   const sourceSkillSignature = sourceSkills.map(skill => `${skill.id}\u0000${skill.name}`).join('\u0001');
+  const currentPreviousRatingContext = previousRatingContext?.personId === person?.id
+    && previousRatingContext.sourceSkillSignature === sourceSkillSignature
+    ? previousRatingContext
+    : null;
+  const loadingPreviousRatings = !currentPreviousRatingContext || currentPreviousRatingContext.loading;
+  const previousRatings = currentPreviousRatingContext?.ratings ?? {};
+  const previousRatingsError = currentPreviousRatingContext?.error ?? '';
+
   React.useEffect(() => {
     if (!visible) return;
     setPersonIndex(0);
@@ -41,28 +55,27 @@ export function GroupSkillRatingPrompt({
   React.useEffect(() => {
     let cancelled = false;
     if (!visible || !person) {
-      setPreviousRatings({});
-      setPreviousRatingsError('');
-      setLoadingPreviousRatings(false);
+      setPreviousRatingContext(null);
       return () => { cancelled = true; };
     }
 
-    setPreviousRatings({});
-    setPreviousRatingsError('');
-    setLoadingPreviousRatings(true);
+    const contextIdentity = { personId: person.id, sourceSkillSignature };
+    setPreviousRatingContext({ ...contextIdentity, loading: true, ratings: {}, error: '' });
     void getPreviousPersonSkillRatings(person.id, sourceSkills)
       .then(result => {
-        if (!cancelled) setPreviousRatings(result);
+        if (!cancelled) setPreviousRatingContext({ ...contextIdentity, loading: false, ratings: result, error: '' });
       })
       .catch(cause => {
         if (!cancelled) {
-          setPreviousRatingsError(cause instanceof Error
-            ? `Previous ratings for ${person.name} could not be loaded. ${cause.message}`
-            : `Previous ratings for ${person.name} could not be loaded.`);
+          setPreviousRatingContext({
+            ...contextIdentity,
+            loading: false,
+            ratings: {},
+            error: cause instanceof Error
+              ? `Previous ratings for ${person.name} could not be loaded. ${cause.message}`
+              : `Previous ratings for ${person.name} could not be loaded.`,
+          });
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingPreviousRatings(false);
       });
     return () => { cancelled = true; };
   }, [visible, person?.id, sourceSkillSignature]);
