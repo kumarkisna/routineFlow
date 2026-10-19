@@ -114,10 +114,10 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const { activePerson, people } = usePeople();
   const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const { id, queue, cursor = '0', playlistId, playlistTitle, playlistSkills: playlistSkillsParam,
-    playlistRateSkillsAtEnd, autoStart, voice, stepReminder, routineReminder, ratingPeople: ratingPeopleParam } =
+    playlistRateSkillsAtEnd, autoStart, voice, stepReminder, routineReminder, ratingPeople: ratingPeopleParam, adminMode: adminModeParam } =
     useLocalSearchParams<{ id: string; queue?: string; cursor?: string; playlistId?: string; playlistTitle?: string;
       playlistSkills?: string; playlistRateSkillsAtEnd?: string; autoStart?: string; voice?: string;
-      stepReminder?: string; routineReminder?: string; ratingPeople?: string }>();
+      stepReminder?: string; routineReminder?: string; ratingPeople?: string; adminMode?: string }>();
   const playlistQueue = useMemo(() => parsePlaylistQueue(queue), [queue]);
   const playlistSkillIds = useMemo(() => parseSkillIdsParam(playlistSkillsParam), [playlistSkillsParam]);
   const rateSkillsAtPlaylistEnd = playlistRateSkillsAtEnd !== '0';
@@ -146,9 +146,11 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const [ratingRun, setRatingRun] = useState<SkillRatingRun | null>(null);
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const [showRatingPeoplePicker, setShowRatingPeoplePicker] = useState(false);
+  const [peoplePickerError, setPeoplePickerError] = useState('');
   const [ratingPersonIds, setRatingPersonIds] = useState<string[]>(
     () => parseRatingPeopleParam(ratingPeopleParam) ?? [activePerson.id],
   );
+  const [adminMode, setAdminMode] = useState(adminModeParam === '1');
   const [pendingPlaylistCursor, setPendingPlaylistCursor] = useState<number | null>(null);
   const autoStartedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -159,8 +161,9 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const [notificationSettings, setNotificationSettings] = useState<RoutineNotificationSettings>(
     { ...DEFAULT_NOTIFICATION_SETTINGS, stepCompletion: stepReminder === '1', routineCompletion: routineReminder === '1' },
   );
-  const ratingPeople = people.filter(person => ratingPersonIds.includes(person.id));
-  const groupRating = ratingPeople.length > 1 || ratingPeople.some(person => person.id !== activePerson.id);
+  const selectedPeople = people.filter(person => ratingPersonIds.includes(person.id));
+  const ratingPeople = selectedPeople.filter(person => !adminMode || person.id !== activePerson.id);
+  const groupRating = adminMode || ratingPeople.length > 1 || ratingPeople.some(person => person.id !== activePerson.id);
   const sourceRatingSkills = skills.filter(skill => ratingSkillIds.includes(skill.id));
   const activeIndexRef = useRef(0);
   const remainingMillisecondsRef = useRef(initialRemainingSeconds * 1000);
@@ -395,9 +398,11 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
         stepReminder: notificationSettingsRef.current.stepCompletion ? '1' : '0',
         routineReminder: notificationSettingsRef.current.routineCompletion ? '1' : '0',
         ratingPeople: JSON.stringify(ratingPersonIds),
+        adminMode: adminMode ? '1' : '0',
       },
     });
-  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled, sessionId, ratingPersonIds]);
+  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled,
+    sessionId, ratingPersonIds, adminMode]);
 
   const closeRatingPrompt = useCallback(() => {
     const nextCursor = pendingPlaylistCursor;
@@ -533,7 +538,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
           ...(inPlaylist ? playlistSkillIds : []),
         ])];
       if (next !== -1) setPendingPlaylistCursor(next);
-      if (involvedSkillIds.length) {
+      if (involvedSkillIds.length && (!adminMode || ratingPeople.length > 0)) {
         stopRunKeepalive(sessionId);
         setRatingRun(ratingRun);
         setRatingSkillIds(involvedSkillIds);
@@ -551,7 +556,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     });
   }, [cancelNotifications, completeRoutine, routine, stopAnnouncement, inPlaylist,
     playlistQueue, queueCursor, routines, playlistSkillIds, playlistId, playlistTitle,
-    rateSkillsAtPlaylistEnd, advancePlaylist, sessionId]);
+    rateSkillsAtPlaylistEnd, advancePlaylist, sessionId, adminMode, ratingPeople.length]);
 
   const reconcileTimer = useCallback(
     (now: number) => {
@@ -776,12 +781,12 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
           testID="rating-people-picker"
           accessibilityRole="button"
           accessibilityLabel={`Choose people for ratings, ${ratingPeople.length} selected`}
-          onPress={() => setShowRatingPeoplePicker(true)}
+          onPress={() => { setPeoplePickerError(''); setShowRatingPeoplePicker(true); }}
           style={({ pressed }) => [styles.addParallelRun, { backgroundColor: colors.card, borderColor: colors.border }, pressed && styles.pressed]}
         >
           <Ionicons name="people-outline" size={18} color={colors.primary} />
           <Text style={[styles.addParallelRunText, { color: colors.primary }]} numberOfLines={1}>
-            Ratings for: {ratingPeople.map(person => person.name).join(', ') || 'Choose people'}
+            Ratings for: {ratingPeople.map(person => person.name).join(', ') || 'Choose people'}{adminMode ? ' · Admin mode' : ''}
           </Text>
         </Pressable>
 
@@ -1028,6 +1033,33 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
             <Text style={[styles.peoplePickerHint, { color: colors.mutedForeground }]}>
               One shared run. Each selected person gets separate skill ratings and notes.
             </Text>
+            <View style={[styles.adminModeRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.peoplePickerName, { color: colors.foreground }]}>Admin mode</Text>
+                <Text style={[styles.peoplePickerHint, { marginBottom: 0, marginTop: 3, color: colors.mutedForeground }]}>
+                  Don’t rate or add notes for {activePerson.name}.
+                </Text>
+              </View>
+              <Switch
+                testID="toggle-admin-rating-mode"
+                accessibilityLabel="Run in admin mode without rating me"
+                value={adminMode}
+                onValueChange={enabled => {
+                  if (enabled && !ratingPersonIds.some(personId => personId !== activePerson.id)) {
+                    setPeoplePickerError('Select at least one other person before enabling admin mode.');
+                    return;
+                  }
+                  setAdminMode(enabled);
+                  setPeoplePickerError('');
+                }}
+                trackColor={{ false: colors.border, true: colors.primary }}
+              />
+            </View>
+            {peoplePickerError ? (
+              <Text accessibilityRole="alert" style={[styles.peoplePickerHint, { color: colors.destructive }]}>
+                {peoplePickerError}
+              </Text>
+            ) : null}
             <ScrollView style={{ maxHeight: 340 }}>
               {people.map(person => {
                 const selected = ratingPersonIds.includes(person.id);
@@ -1037,15 +1069,29 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
                     testID={`rating-person-${person.id}`}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: selected }}
-                    accessibilityLabel={`Rate ${person.name}`}
-                    onPress={() => setRatingPersonIds(current => {
-                      if (current.includes(person.id)) return current.length > 1 ? current.filter(id => id !== person.id) : current;
-                      return [...current, person.id];
-                    })}
+                    accessibilityLabel={adminMode && person.id === activePerson.id
+                      ? `${person.name}, admin, not rated`
+                      : `Rate ${person.name}`}
+                    onPress={() => {
+                      setRatingPersonIds(current => {
+                        if (current.includes(person.id)) {
+                          const next = current.filter(id => id !== person.id);
+                          if (!next.length || (adminMode && !next.some(id => id !== activePerson.id))) return current;
+                          return next;
+                        }
+                        return [...current, person.id];
+                      });
+                      setPeoplePickerError('');
+                    }}
                     style={[styles.peoplePickerRow, { borderColor: colors.border }]}
                   >
                     <Ionicons name={selected ? 'checkbox' : 'square-outline'} size={21} color={selected ? colors.primary : colors.mutedForeground} />
-                    <Text style={[styles.peoplePickerName, { color: colors.foreground }]}>{person.name}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.peoplePickerName, { color: colors.foreground }]}>{person.name}</Text>
+                      {adminMode && person.id === activePerson.id ? (
+                        <Text style={[styles.adminNotRated, { color: colors.mutedForeground }]}>Administrator · not rated</Text>
+                      ) : null}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -1054,6 +1100,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
               testID="done-rating-people"
               accessibilityRole="button"
               onPress={() => setShowRatingPeoplePicker(false)}
+              disabled={adminMode && ratingPeople.length === 0}
               style={[styles.peoplePickerDone, { backgroundColor: colors.primary }]}
             >
               <Text style={{ color: colors.primaryForeground, fontFamily: 'Inter_600SemiBold', fontSize: 14 }}>Done</Text>
@@ -1076,8 +1123,10 @@ const styles = StyleSheet.create({
   peoplePickerCard: { borderWidth: 1, borderRadius: 20, padding: 18 },
   peoplePickerTitle: { fontFamily: 'Inter_700Bold', fontSize: 19 },
   peoplePickerHint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginTop: 6, marginBottom: 10 },
+  adminModeRow: { minHeight: 62, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, marginTop: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
   peoplePickerRow: { minHeight: 50, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   peoplePickerName: { fontFamily: 'Inter_500Medium', fontSize: 14 },
+  adminNotRated: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   peoplePickerDone: { minHeight: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   headerSpacer: { width: 42 },
   headerLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.1 },

@@ -153,6 +153,115 @@ test('a shared run saves separate ratings for each selected person without chang
   expect(saved.meRoutines).toHaveLength(1);
 });
 
+test('playlist-end group ratings retain participants across routines and isolate saved and skipped profiles', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const routines = [
+    {
+      id: 'group-playlist-one', title: 'Playlist routine one', subtitle: 'First', icon: 'sunny-outline', tone: 'coral',
+      createdAt: '2026-10-14T00:00:00.000Z',
+      steps: [{ id: 'group-playlist-step-one', title: 'First short step', durationSeconds: 2, description: 'First.', skillIds: ['me-focus'] }],
+    },
+    {
+      id: 'group-playlist-two', title: 'Playlist routine two', subtitle: 'Second', icon: 'sunny-outline', tone: 'sage',
+      createdAt: '2026-10-14T00:00:00.000Z',
+      steps: [{ id: 'group-playlist-step-two', title: 'Second short step', durationSeconds: 2, description: 'Second.', skillIds: ['me-communication'] }],
+    },
+  ];
+  const caseyOriginalSkills = [{
+    id: 'casey-focus',
+    name: 'Focus',
+    ratings: [{ id: 'casey-old-rating', rating: 5, ratedAt: '2026-10-10T10:00:00.000Z', routineTitle: 'Past routine', note: 'Existing note' }],
+  }];
+  await page.addInitScript(({ seededRoutines, caseySkills }) => {
+    const profile = (id: string, name: string) => ({
+      id, name, speechVoiceId: null, defaultRateSkillsAtPlaylistEnd: true,
+      defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+      defaultSpeakRoutineDescription: true,
+    });
+    const seed = {
+      '@routine-flow/people': { version: 1, activePersonId: 'me', people: [profile('me', 'Me'), profile('alex', 'Alex'), profile('casey', 'Casey')] },
+      '@routine-flow/routines': seededRoutines,
+      '@routine-flow/progress': '{}',
+      '@routine-flow/playlists': [{
+        id: 'group-playlist',
+        title: 'Group playlist',
+        routineIds: ['group-playlist-one', 'group-playlist-two'],
+        skillIds: ['me-independence'],
+        rateSkillsAtPlaylistEnd: true,
+      }],
+      '@routine-flow/skills': [
+        { id: 'me-focus', name: 'Focus' },
+        { id: 'me-communication', name: 'Communication' },
+        { id: 'me-independence', name: 'Independence' },
+      ],
+      '@routine-flow/person/alex/@routine-flow/routines': '[]',
+      '@routine-flow/person/alex/@routine-flow/progress': '{"keep":{"alex-old":true}}',
+      '@routine-flow/person/alex/@routine-flow/skills': [],
+      '@routine-flow/person/casey/@routine-flow/routines': '[{"id":"casey-saved-routine"}]',
+      '@routine-flow/person/casey/@routine-flow/progress': '{"keep":{"casey-old":true}}',
+      '@routine-flow/person/casey/@routine-flow/skills': caseySkills,
+    };
+    for (const [key, value] of Object.entries(seed)) {
+      localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+    }
+  }, { seededRoutines: routines, caseySkills: caseyOriginalSkills });
+
+  const params = new URLSearchParams({
+    queue: JSON.stringify(routines.map(routine => routine.id)),
+    cursor: '0',
+    playlistId: 'group-playlist',
+    playlistTitle: 'Group playlist',
+    playlistSkills: JSON.stringify(['me-independence']),
+    playlistRateSkillsAtEnd: '1',
+    voice: '0',
+  });
+  await page.goto(`/routine/group-playlist-one/run?${params.toString()}`);
+  await page.getByTestId('rating-people-picker').click();
+  await page.getByTestId('rating-person-alex').click();
+  await page.getByTestId('rating-person-casey').click();
+  await page.getByTestId('toggle-admin-rating-mode').click();
+  await page.getByTestId('done-rating-people').click();
+  await page.getByTestId('start-pause-timer').click();
+
+  await expect(page.getByText('Second short step').last()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByTestId('group-rating-person-name')).toHaveCount(0);
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex', { timeout: 10000 });
+  for (const [skillId, score] of [['me-focus', '8'], ['me-communication', '7'], ['me-independence', '9']]) {
+    await page.getByTestId(`group-rate-alex-${skillId}-${score}`).click();
+  }
+  await page.getByTestId('group-note-alex-me-focus').fill('Playlist reflection for Alex.');
+  await page.getByTestId('save-group-ratings').click();
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Casey');
+  await page.getByTestId('skip-group-person').click();
+
+  const saved = await page.evaluate(() => ({
+    alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
+    alexRoutines: localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines'),
+    alexProgress: localStorage.getItem('@routine-flow/person/alex/@routine-flow/progress'),
+    caseySkills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
+    caseyRoutines: localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines'),
+    caseyProgress: localStorage.getItem('@routine-flow/person/casey/@routine-flow/progress'),
+    meSkills: JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]'),
+  }));
+  expect(saved.alexSkills).toHaveLength(3);
+  for (const skillName of ['Focus', 'Communication', 'Independence']) {
+    const savedSkill = saved.alexSkills.find((skill: { name: string }) => skill.name === skillName);
+    expect(savedSkill?.ratings).toHaveLength(1);
+  }
+  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Focus').ratings[0].note)
+    .toBe('Playlist reflection for Alex.');
+  expect(saved.alexRoutines).toBe('[]');
+  expect(saved.alexProgress).toBe('{"keep":{"alex-old":true}}');
+  expect(saved.caseySkills).toEqual(caseyOriginalSkills);
+  expect(saved.caseyRoutines).toBe('[{"id":"casey-saved-routine"}]');
+  expect(saved.caseyProgress).toBe('{"keep":{"casey-old":true}}');
+  expect(saved.meSkills).toEqual([
+    { id: 'me-focus', name: 'Focus' },
+    { id: 'me-communication', name: 'Communication' },
+    { id: 'me-independence', name: 'Independence' },
+  ]);
+});
+
 test('person theme settings can be changed and their collapsed choice is remembered', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   await page.goto('/people');
