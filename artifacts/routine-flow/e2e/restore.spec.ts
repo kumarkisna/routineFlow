@@ -95,7 +95,7 @@ test('two routine timers can run independently and switch without changing saved
   expect(await page.evaluate(() => localStorage.getItem('@routine-flow/progress'))).toBe('{}');
 });
 
-test('a shared run saves separate ratings for each selected person without changing their routines or progress', async ({ page }) => {
+test('a shared run retries a failed participant rating save without losing inputs or changing other profiles', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   const routine = {
     id: 'group-rated',
@@ -104,42 +104,78 @@ test('a shared run saves separate ratings for each selected person without chang
     icon: 'sunny-outline',
     tone: 'coral',
     createdAt: '2026-10-14T00:00:00.000Z',
-    steps: [{ id: 'group-step', title: 'Practice focus', durationSeconds: 1, description: 'Stay on task.', skillIds: ['me-focus'] }],
+    steps: [{ id: 'group-step', title: 'Practice focus', durationSeconds: 1, description: 'Stay on task.', skillIds: ['me-focus', 'me-communication'] }],
   };
-  await page.addInitScript(({ routine: seededRoutine }) => {
+  const caseyOriginalSkills = [{
+    id: 'casey-focus',
+    name: 'Focus',
+    ratings: [{ id: 'casey-old-rating', rating: 5, ratedAt: '2026-10-10T10:00:00.000Z', routineTitle: 'Past routine', note: 'Existing note' }],
+  }];
+  await page.addInitScript(({ routine: seededRoutine, caseyOriginalSkills: caseySkills }) => {
     const profile = (id: string, name: string) => ({
       id, name, speechVoiceId: null, defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
       defaultSpeakRoutineDescription: true,
     });
     const seed = {
-      '@routine-flow/people': { version: 1, activePersonId: 'me', people: [profile('me', 'Me'), profile('alex', 'Alex')] },
+      '@routine-flow/people': { version: 1, activePersonId: 'me', people: [profile('me', 'Me'), profile('alex', 'Alex'), profile('casey', 'Casey')] },
       '@routine-flow/routines': [seededRoutine],
       '@routine-flow/progress': '{}',
-      '@routine-flow/skills': [{ id: 'me-focus', name: 'Focus' }],
+      '@routine-flow/skills': [
+        { id: 'me-focus', name: 'Focus' },
+        { id: 'me-communication', name: 'Communication' },
+      ],
       '@routine-flow/person/alex/@routine-flow/routines': '[]',
       '@routine-flow/person/alex/@routine-flow/progress': '{"keep":{"old-entry":true}}',
       '@routine-flow/person/alex/@routine-flow/skills': [{ id: 'alex-communication', name: 'Communication' }],
+      '@routine-flow/person/casey/@routine-flow/routines': '[{"id":"casey-saved-routine"}]',
+      '@routine-flow/person/casey/@routine-flow/progress': '{"keep":{"casey-old":true}}',
+      '@routine-flow/person/casey/@routine-flow/skills': caseySkills,
     };
     for (const [key, value] of Object.entries(seed)) {
       localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
     }
-  }, { routine });
+  }, { routine, caseyOriginalSkills });
   await page.goto('/routine/group-rated/run?voice=0');
   await page.getByTestId('rating-people-picker').click();
   await page.getByTestId('rating-person-alex').click();
+  await page.getByTestId('rating-person-casey').click();
   await page.getByTestId('rating-person-me').click();
   await page.getByTestId('done-rating-people').click();
   await page.getByTestId('start-pause-timer').click();
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex', { timeout: 10000 });
   await page.getByTestId('group-rate-alex-me-focus-8').click();
+  await page.getByTestId('group-rate-alex-me-communication-7').click();
   await page.getByTestId('group-note-alex-me-focus').fill('Stayed focused with support.');
+  await page.getByTestId('group-note-alex-me-communication').fill('Asked for help clearly.');
+  await page.evaluate(() => {
+    const originalSetItem = Storage.prototype.setItem;
+    let failNext = true;
+    Storage.prototype.setItem = function (key, value) {
+      if (failNext && key === '@routine-flow/person/alex/@routine-flow/skills') {
+        failNext = false;
+        throw new Error('Simulated storage write failure');
+      }
+      return originalSetItem.call(this, key, value);
+    };
+  });
   await page.getByTestId('save-group-ratings').click();
+  await expect(page.getByTestId('group-rating-error')).toContainText('Could not save ratings for Alex.');
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex');
+  await expect(page.getByTestId('group-note-alex-me-focus')).toHaveValue('Stayed focused with support.');
+  await expect(page.getByTestId('group-note-alex-me-communication')).toHaveValue('Asked for help clearly.');
+  await page.getByTestId('save-group-ratings').click();
+  await expect(page.getByTestId('group-rating-error')).toHaveCount(0);
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Casey');
+  await page.getByTestId('skip-group-person').click();
 
   const saved = await page.evaluate(() => ({
     alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
     alexRoutines: localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines'),
     alexProgress: localStorage.getItem('@routine-flow/person/alex/@routine-flow/progress'),
+    caseySkills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
+    caseyRoutines: localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines'),
+    caseyProgress: localStorage.getItem('@routine-flow/person/casey/@routine-flow/progress'),
     meRoutines: JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]'),
   }));
   expect(saved.alexSkills).toHaveLength(2);
@@ -148,6 +184,16 @@ test('a shared run saves separate ratings for each selected person without chang
     note: 'Stayed focused with support.',
     routineTitle: 'Shared group routine',
   });
+  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Focus').ratings).toHaveLength(1);
+  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings).toHaveLength(1);
+  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings[0]).toMatchObject({
+    rating: 7,
+    note: 'Asked for help clearly.',
+    routineTitle: 'Shared group routine',
+  });
+  expect(saved.caseySkills).toEqual(caseyOriginalSkills);
+  expect(saved.caseyRoutines).toBe('[{"id":"casey-saved-routine"}]');
+  expect(saved.caseyProgress).toBe('{"keep":{"casey-old":true}}');
   expect(saved.alexRoutines).toBe('[]');
   expect(saved.alexProgress).toBe('{"keep":{"old-entry":true}}');
   expect(saved.meRoutines).toHaveLength(1);

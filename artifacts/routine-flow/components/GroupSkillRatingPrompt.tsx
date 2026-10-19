@@ -63,7 +63,9 @@ export function GroupSkillRatingPrompt({
       });
       nextPerson();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : `Could not save ratings for ${person.name}.`);
+      setError(cause instanceof Error
+        ? `Could not save ratings for ${person.name}. ${cause.message}`
+        : `Could not save ratings for ${person.name}. Please try again.`);
     } finally {
       setSaving(false);
     }
@@ -130,7 +132,7 @@ export function GroupSkillRatingPrompt({
               </ScrollView>
             </>
           ) : null}
-          {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
+          {error ? <Text testID="group-rating-error" accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
           <View style={styles.actions}>
             <Pressable testID="skip-group-ratings" onPress={onDone} style={styles.action}>
               <Text style={[styles.skip, { color: colors.inkSoft }]}>Skip remaining</Text>
