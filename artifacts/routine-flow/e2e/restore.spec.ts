@@ -95,6 +95,64 @@ test('two routine timers can run independently and switch without changing saved
   expect(await page.evaluate(() => localStorage.getItem('@routine-flow/progress'))).toBe('{}');
 });
 
+test('a shared run saves separate ratings for each selected person without changing their routines or progress', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const routine = {
+    id: 'group-rated',
+    title: 'Shared group routine',
+    subtitle: 'Group rating test',
+    icon: 'sunny-outline',
+    tone: 'coral',
+    createdAt: '2026-10-14T00:00:00.000Z',
+    steps: [{ id: 'group-step', title: 'Practice focus', durationSeconds: 1, description: 'Stay on task.', skillIds: ['me-focus'] }],
+  };
+  await page.addInitScript(({ routine: seededRoutine }) => {
+    const profile = (id: string, name: string) => ({
+      id, name, speechVoiceId: null, defaultRateSkillsAtPlaylistEnd: true,
+      defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+      defaultSpeakRoutineDescription: true,
+    });
+    const seed = {
+      '@routine-flow/people': { version: 1, activePersonId: 'me', people: [profile('me', 'Me'), profile('alex', 'Alex')] },
+      '@routine-flow/routines': [seededRoutine],
+      '@routine-flow/progress': '{}',
+      '@routine-flow/skills': [{ id: 'me-focus', name: 'Focus' }],
+      '@routine-flow/person/alex/@routine-flow/routines': '[]',
+      '@routine-flow/person/alex/@routine-flow/progress': '{"keep":{"old-entry":true}}',
+      '@routine-flow/person/alex/@routine-flow/skills': [{ id: 'alex-communication', name: 'Communication' }],
+    };
+    for (const [key, value] of Object.entries(seed)) {
+      localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+    }
+  }, { routine });
+  await page.goto('/routine/group-rated/run?voice=0');
+  await page.getByTestId('rating-people-picker').click();
+  await page.getByTestId('rating-person-alex').click();
+  await page.getByTestId('rating-person-me').click();
+  await page.getByTestId('done-rating-people').click();
+  await page.getByTestId('start-pause-timer').click();
+  await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex', { timeout: 10000 });
+  await page.getByTestId('group-rate-alex-me-focus-8').click();
+  await page.getByTestId('group-note-alex-me-focus').fill('Stayed focused with support.');
+  await page.getByTestId('save-group-ratings').click();
+
+  const saved = await page.evaluate(() => ({
+    alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
+    alexRoutines: localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines'),
+    alexProgress: localStorage.getItem('@routine-flow/person/alex/@routine-flow/progress'),
+    meRoutines: JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]'),
+  }));
+  expect(saved.alexSkills).toHaveLength(2);
+  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Focus').ratings[0]).toMatchObject({
+    rating: 8,
+    note: 'Stayed focused with support.',
+    routineTitle: 'Shared group routine',
+  });
+  expect(saved.alexRoutines).toBe('[]');
+  expect(saved.alexProgress).toBe('{"keep":{"old-entry":true}}');
+  expect(saved.meRoutines).toHaveLength(1);
+});
+
 test('person theme settings can be changed and their collapsed choice is remembered', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   await page.goto('/people');

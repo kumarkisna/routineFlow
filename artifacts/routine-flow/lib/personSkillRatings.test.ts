@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPersonStorage, PERSON_DATA_KEYS } from './personStorage';
+import { recordPersonSkillRatings } from './personSkillRatings';
 import {
   getSkillAverage,
   getSkillRatingPoints,
@@ -234,4 +235,60 @@ test('renaming a skill in one profile leaves the other profile and both historie
   ]);
   assert.equal(parseSkillRatingWindow(await meStorage.getItem(PERSON_DATA_KEYS.skillRatingWindow)), 2);
   assert.deepEqual(getSkillAverage(renamedSkill, 2), { average: 6, count: 2 });
+});
+
+test('group rating creates a missing same-named skill and leaves routines and progress unchanged', async () => {
+  const values = new Map<string, string>([
+    ['@routine-flow/person/alex/@routine-flow/skills', JSON.stringify([
+      { id: 'alex-existing', name: 'Communication', ratings: [] },
+    ])],
+    ['@routine-flow/person/alex/@routine-flow/routines', '[{"id":"saved-routine"}]'],
+    ['@routine-flow/person/alex/@routine-flow/progress', '{"saved-day":{"saved-routine":true}}'],
+  ]);
+  const backend = {
+    getItem: async (key: string) => values.get(key) ?? null,
+    setItem: async (key: string, value: string) => { values.set(key, value); },
+    removeItem: async (key: string) => { values.delete(key); },
+  };
+
+  await recordPersonSkillRatings({
+    personId: 'alex',
+    storageOverride: createPersonStorage('alex', backend),
+    sourceSkills: [{ id: 'me-focus', name: 'Focus' }],
+    routineTitle: 'Morning routine',
+    entries: [{ sourceSkillId: 'me-focus', rating: 8, note: 'Stayed with the task', sequence: 0 }],
+    run: { runId: 'group-run-1', sourceRoutineId: 'me-routine', completedAt: '2026-10-19T10:00:00.000Z' },
+  });
+
+  const skills = parseSkills(values.get('@routine-flow/person/alex/@routine-flow/skills')!);
+  assert.equal(skills.length, 2);
+  assert.deepEqual(skills[0], { id: 'alex-existing', name: 'Communication' });
+  assert.equal(skills[1].name, 'Focus');
+  assert.equal(skills[1].ratings?.[0].rating, 8);
+  assert.equal(skills[1].ratings?.[0].note, 'Stayed with the task');
+  assert.equal(values.get('@routine-flow/person/alex/@routine-flow/routines'), '[{"id":"saved-routine"}]');
+  assert.equal(values.get('@routine-flow/person/alex/@routine-flow/progress'), '{"saved-day":{"saved-routine":true}}');
+});
+
+test('group rating appends to a skill with an exact matching name instead of duplicating it', async () => {
+  const values = new Map<string, string>([
+    ['@routine-flow/person/alex/@routine-flow/skills', JSON.stringify([{ id: 'alex-focus', name: 'Focus' }])],
+  ]);
+  const backend = {
+    getItem: async (key: string) => values.get(key) ?? null,
+    setItem: async (key: string, value: string) => { values.set(key, value); },
+    removeItem: async (key: string) => { values.delete(key); },
+  };
+  await recordPersonSkillRatings({
+    personId: 'alex',
+    storageOverride: createPersonStorage('alex', backend),
+    sourceSkills: [{ id: 'me-focus', name: 'Focus' }],
+    routineTitle: 'Morning routine',
+    entries: [{ sourceSkillId: 'me-focus', rating: 7, sequence: 0 }],
+    run: { runId: 'group-run-2', sourceRoutineId: 'me-routine', completedAt: '2026-10-19T10:00:00.000Z' },
+  });
+  const skills = parseSkills(values.get('@routine-flow/person/alex/@routine-flow/skills')!);
+  assert.equal(skills.length, 1);
+  assert.equal(skills[0].id, 'alex-focus');
+  assert.equal(skills[0].ratings?.[0].rating, 7);
 });

@@ -7,6 +7,7 @@ import {
   Alert,
   AppState,
   Linking,
+  Modal,
   type AppStateStatus,
   Pressable,
   Platform,
@@ -20,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StepDetails } from '@/components/StepDetails';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
+import { GroupSkillRatingPrompt } from '@/components/GroupSkillRatingPrompt';
 import { useSkills } from '@/context/SkillContext';
 import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
@@ -80,6 +82,19 @@ function parseSkillIdsParam(value: string | string[] | undefined): string[] {
   }
 }
 
+function parseRatingPeopleParam(value: string | string[] | undefined): string[] | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every(id => typeof id === 'string' && id.length > 0)
+      ? [...new Set(parsed)]
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function RoutineRunScreen() {
   const { id, cursor = '0', queue, playlistId, playlistRateSkillsAtEnd, stepReminder, routineReminder, sessionId: routeSessionId } =
     useLocalSearchParams<{ id: string; cursor?: string; queue?: string; playlistId?: string;
@@ -96,13 +111,13 @@ export default function RoutineRunScreen() {
 function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { activePerson } = usePeople();
+  const { activePerson, people } = usePeople();
   const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const { id, queue, cursor = '0', playlistId, playlistTitle, playlistSkills: playlistSkillsParam,
-    playlistRateSkillsAtEnd, autoStart, voice, stepReminder, routineReminder } =
+    playlistRateSkillsAtEnd, autoStart, voice, stepReminder, routineReminder, ratingPeople: ratingPeopleParam } =
     useLocalSearchParams<{ id: string; queue?: string; cursor?: string; playlistId?: string; playlistTitle?: string;
       playlistSkills?: string; playlistRateSkillsAtEnd?: string; autoStart?: string; voice?: string;
-      stepReminder?: string; routineReminder?: string }>();
+      stepReminder?: string; routineReminder?: string; ratingPeople?: string }>();
   const playlistQueue = useMemo(() => parsePlaylistQueue(queue), [queue]);
   const playlistSkillIds = useMemo(() => parseSkillIdsParam(playlistSkillsParam), [playlistSkillsParam]);
   const rateSkillsAtPlaylistEnd = playlistRateSkillsAtEnd !== '0';
@@ -110,7 +125,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const inPlaylist = !!playlistQueue && Number.isInteger(queueCursor)
     && queueCursor >= 0 && playlistQueue[queueCursor] === id;
   const { routines, loading, completeRoutine } = useRoutines();
-  const { skills } = useSkills();
+  const { skills, reload: reloadSkills } = useSkills();
   const routine = useMemo(() => {
     const savedRoutine = routines.find((item) => item.id === id);
     return savedRoutine ? getPlayableRoutine(savedRoutine) : undefined;
@@ -130,6 +145,10 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const [ratingSkillIds, setRatingSkillIds] = useState<string[]>([]);
   const [ratingRun, setRatingRun] = useState<SkillRatingRun | null>(null);
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
+  const [showRatingPeoplePicker, setShowRatingPeoplePicker] = useState(false);
+  const [ratingPersonIds, setRatingPersonIds] = useState<string[]>(
+    () => parseRatingPeopleParam(ratingPeopleParam) ?? [activePerson.id],
+  );
   const [pendingPlaylistCursor, setPendingPlaylistCursor] = useState<number | null>(null);
   const autoStartedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -140,6 +159,9 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const [notificationSettings, setNotificationSettings] = useState<RoutineNotificationSettings>(
     { ...DEFAULT_NOTIFICATION_SETTINGS, stepCompletion: stepReminder === '1', routineCompletion: routineReminder === '1' },
   );
+  const ratingPeople = people.filter(person => ratingPersonIds.includes(person.id));
+  const groupRating = ratingPeople.length > 1 || ratingPeople.some(person => person.id !== activePerson.id);
+  const sourceRatingSkills = skills.filter(skill => ratingSkillIds.includes(skill.id));
   const activeIndexRef = useRef(0);
   const remainingMillisecondsRef = useRef(initialRemainingSeconds * 1000);
   const stepEndsAtRef = useRef<number | null>(null);
@@ -372,9 +394,10 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
         voice: voiceEnabled ? '1' : '0',
         stepReminder: notificationSettingsRef.current.stepCompletion ? '1' : '0',
         routineReminder: notificationSettingsRef.current.routineCompletion ? '1' : '0',
+        ratingPeople: JSON.stringify(ratingPersonIds),
       },
     });
-  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled, sessionId]);
+  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled, sessionId, ratingPersonIds]);
 
   const closeRatingPrompt = useCallback(() => {
     const nextCursor = pendingPlaylistCursor;
@@ -382,8 +405,9 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     setShowRatingPrompt(false);
     setRatingSkillIds([]);
     setRatingRun(null);
+    void reloadSkills();
     if (nextCursor !== null) advancePlaylist(nextCursor);
-  }, [advancePlaylist, pendingPlaylistCursor]);
+  }, [advancePlaylist, pendingPlaylistCursor, reloadSkills]);
 
   const updateKeepaliveForStep = useCallback((index: number, start: boolean) => {
     if (Platform.OS !== 'android' || !routine) return;
@@ -748,6 +772,18 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
           <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
           <Text style={[styles.addParallelRunText, { color: colors.primary }]}>Run another routine</Text>
         </Pressable>
+        <Pressable
+          testID="rating-people-picker"
+          accessibilityRole="button"
+          accessibilityLabel={`Choose people for ratings, ${ratingPeople.length} selected`}
+          onPress={() => setShowRatingPeoplePicker(true)}
+          style={({ pressed }) => [styles.addParallelRun, { backgroundColor: colors.card, borderColor: colors.border }, pressed && styles.pressed]}
+        >
+          <Ionicons name="people-outline" size={18} color={colors.primary} />
+          <Text style={[styles.addParallelRunText, { color: colors.primary }]} numberOfLines={1}>
+            Ratings for: {ratingPeople.map(person => person.name).join(', ') || 'Choose people'}
+          </Text>
+        </Pressable>
 
         <View style={[styles.timerCard, { backgroundColor: colors.hero }]}>
           {inPlaylist ? (
@@ -957,17 +993,74 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
           })}
         </View>
       </ScrollView>
-      <SkillRatingPrompt
-        visible={showRatingPrompt}
-        skillIds={ratingSkillIds}
-        routineTitle={currentRoutine.title}
-        contextLabel={inPlaylist && rateSkillsAtPlaylistEnd
-          ? `Playlist: ${playlistTitle ?? 'Playlist'}`
-          : undefined}
-        run={ratingRun ?? undefined}
-        onSkip={closeRatingPrompt}
-        onSaved={closeRatingPrompt}
-      />
+      {groupRating && ratingRun ? (
+        <GroupSkillRatingPrompt
+          visible={showRatingPrompt}
+          people={ratingPeople}
+          sourceSkills={sourceRatingSkills}
+          routineTitle={currentRoutine.title}
+          contextLabel={inPlaylist && rateSkillsAtPlaylistEnd ? `Playlist: ${playlistTitle ?? 'Playlist'}` : undefined}
+          run={ratingRun}
+          onDone={closeRatingPrompt}
+        />
+      ) : (
+        <SkillRatingPrompt
+          visible={showRatingPrompt}
+          skillIds={ratingSkillIds}
+          routineTitle={currentRoutine.title}
+          contextLabel={inPlaylist && rateSkillsAtPlaylistEnd
+            ? `Playlist: ${playlistTitle ?? 'Playlist'}`
+            : undefined}
+          run={ratingRun ?? undefined}
+          onSkip={closeRatingPrompt}
+          onSaved={closeRatingPrompt}
+        />
+      )}
+      <Modal
+        visible={showRatingPeoplePicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRatingPeoplePicker(false)}
+      >
+        <View style={styles.peoplePickerBackdrop}>
+          <View style={[styles.peoplePickerCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <Text style={[styles.peoplePickerTitle, { color: colors.foreground }]}>Who should be rated?</Text>
+            <Text style={[styles.peoplePickerHint, { color: colors.mutedForeground }]}>
+              One shared run. Each selected person gets separate skill ratings and notes.
+            </Text>
+            <ScrollView style={{ maxHeight: 340 }}>
+              {people.map(person => {
+                const selected = ratingPersonIds.includes(person.id);
+                return (
+                  <Pressable
+                    key={person.id}
+                    testID={`rating-person-${person.id}`}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    accessibilityLabel={`Rate ${person.name}`}
+                    onPress={() => setRatingPersonIds(current => {
+                      if (current.includes(person.id)) return current.length > 1 ? current.filter(id => id !== person.id) : current;
+                      return [...current, person.id];
+                    })}
+                    style={[styles.peoplePickerRow, { borderColor: colors.border }]}
+                  >
+                    <Ionicons name={selected ? 'checkbox' : 'square-outline'} size={21} color={selected ? colors.primary : colors.mutedForeground} />
+                    <Text style={[styles.peoplePickerName, { color: colors.foreground }]}>{person.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable
+              testID="done-rating-people"
+              accessibilityRole="button"
+              onPress={() => setShowRatingPeoplePicker(false)}
+              style={[styles.peoplePickerDone, { backgroundColor: colors.primary }]}
+            >
+              <Text style={{ color: colors.primaryForeground, fontFamily: 'Inter_600SemiBold', fontSize: 14 }}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -979,6 +1072,13 @@ const styles = StyleSheet.create({
   headerCenter: { flex: 1, alignItems: 'center' },
   addParallelRun: { minHeight: 40, borderWidth: 1, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 12 },
   addParallelRunText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  peoplePickerBackdrop: { flex: 1, justifyContent: 'center', padding: 22, backgroundColor: '#14191dcc' },
+  peoplePickerCard: { borderWidth: 1, borderRadius: 20, padding: 18 },
+  peoplePickerTitle: { fontFamily: 'Inter_700Bold', fontSize: 19 },
+  peoplePickerHint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginTop: 6, marginBottom: 10 },
+  peoplePickerRow: { minHeight: 50, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  peoplePickerName: { fontFamily: 'Inter_500Medium', fontSize: 14 },
+  peoplePickerDone: { minHeight: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   headerSpacer: { width: 42 },
   headerLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 10, letterSpacing: 1.1 },
   headerTitle: { fontFamily: 'Inter_700Bold', fontSize: 17, marginTop: 5, maxWidth: 250 },
