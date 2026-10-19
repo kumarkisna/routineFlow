@@ -423,3 +423,76 @@ test('skill history can edit a reflection and the corrected note appears in rout
   await page.getByTestId('history-edit-reflection-routine-reflection').waitFor({ state: 'visible' });
   await expect(page.getByText('Updated from skill history')).toBeVisible();
 });
+
+test('individual rating prompt shows the latest score and note and appends new ratings', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const routine = {
+    id: 'individual-rating-context',
+    title: 'Reflection routine',
+    subtitle: '',
+    icon: 'sunny-outline',
+    tone: 'coral',
+    createdAt: '2026-10-18T00:00:00.000Z',
+    steps: [{
+      id: 'reflection-step',
+      title: 'Practice focus',
+      durationSeconds: 1,
+      skillIds: ['focus', 'breathing'],
+    }],
+  };
+  const previousRatings = [
+    { id: 'focus-rating-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Earlier routine', note: 'Earlier reflection.' },
+    { id: 'focus-rating-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: 'Recent routine', note: 'Latest reflection.' },
+  ];
+  const skills = [
+    { id: 'focus', name: 'Focus', ratings: previousRatings },
+    { id: 'breathing', name: 'Breathing' },
+  ];
+  await page.addInitScript(({ routine: seededRoutine, skills: seededSkills }) => {
+    localStorage.setItem('@routine-flow/people', JSON.stringify({
+      version: 1,
+      activePersonId: 'me',
+      people: [{
+        id: 'me',
+        name: 'Me',
+        speechVoiceId: null,
+        defaultRateSkillsAtPlaylistEnd: true,
+        defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+        defaultSpeakRoutineDescription: true,
+      }],
+    }));
+    localStorage.setItem('@routine-flow/routines', JSON.stringify([seededRoutine]));
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/playlists', '[]');
+    localStorage.setItem('@routine-flow/skills', JSON.stringify(seededSkills));
+  }, { routine, skills });
+
+  await page.goto('/routine/individual-rating-context/run?voice=0');
+  await page.getByTestId('start-pause-timer').click();
+  await expect(page.getByText('Rate the skills you used')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByTestId('save-skill-ratings')).toBeDisabled();
+  await expect(page.getByTestId('previous-rating-focus')).toContainText('Previous rating (reference only) · 8/10');
+  await expect(page.getByTestId('previous-rating-focus')).toContainText('Latest reflection.');
+  await expect(page.getByTestId('previous-rating-breathing')).toHaveText('No previous rating yet.');
+
+  await page.getByTestId('rate-skill-focus-9').click();
+  await page.getByTestId('skill-note-focus').fill('New focus reflection.');
+  await page.getByTestId('rate-skill-breathing-6').click();
+  await page.getByTestId('skill-note-breathing').fill('New breathing reflection.');
+  await page.getByTestId('save-skill-ratings').click();
+  await expect(page.getByText('Rate the skills you used')).toHaveCount(0);
+
+  const savedSkills = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('@routine-flow/skills') ?? '[]') as {
+      id: string;
+      ratings?: { id: string; rating: number; note?: string; routineTitle: string }[];
+    }[],
+  );
+  const focus = savedSkills.find(skill => skill.id === 'focus');
+  const breathing = savedSkills.find(skill => skill.id === 'breathing');
+  expect(focus?.ratings).toHaveLength(3);
+  expect(focus?.ratings?.slice(0, 2)).toEqual(previousRatings);
+  expect(focus?.ratings?.[2]).toMatchObject({ rating: 9, note: 'New focus reflection.' });
+  expect(breathing?.ratings).toHaveLength(1);
+  expect(breathing?.ratings?.[0]).toMatchObject({ rating: 6, note: 'New breathing reflection.' });
+});

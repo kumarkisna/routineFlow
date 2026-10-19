@@ -324,6 +324,11 @@ function chronologicalRatings(skill: RoutineSkill) {
     Date.parse(a.ratedAt) - Date.parse(b.ratedAt) || a.id.localeCompare(b.id));
 }
 
+export function getLatestSkillRating(skill: RoutineSkill): SkillRating | null {
+  const ratings = chronologicalRatings(skill);
+  return ratings[ratings.length - 1] ?? null;
+}
+
 export function getSkillRatingPoints(skill: RoutineSkill, windowSize: number, limit = 12): SkillRatingPoint[] {
   const ratings = chronologicalRatings(skill);
   return ratings.map((rating, index) => {

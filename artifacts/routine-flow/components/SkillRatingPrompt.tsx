@@ -4,7 +4,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View 
 import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
-import { MAX_SKILL_NOTE_LENGTH, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
+import { getLatestSkillRating, MAX_SKILL_NOTE_LENGTH, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
 import type { MissingSkillRatingNote } from '@/lib/progressHistory';
 import { formatHistoryDay } from '@/lib/progressHistory';
 
@@ -161,7 +161,9 @@ export function SkillRatingPrompt({
               : 'Choose a score from 1 to 10 for any skill. Add an optional note to remember what went well or what to work on.'}
           </Text>
           <View style={styles.list}>
-            {items.map(({ skill, key, noteTarget }) => (
+            {items.map(({ skill, key, noteTarget }) => {
+              const previousRating = !noteOnly && !editing ? getLatestSkillRating(skill) : null;
+              return (
               <View key={key} style={[styles.skillRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[styles.skillName, { color: colors.foreground }]}>{skill.name}</Text>
                 {noteOnly || editing ? (
@@ -180,32 +182,48 @@ export function SkillRatingPrompt({
                     ) : null}
                   </>
                 ) : (
-                  <View style={styles.scores}>
-                    {Array.from({ length: 10 }, (_, index) => index + 1).map(score => {
-                      const active = selected[skill.id] === score;
-                      return (
-                        <Pressable
-                          key={score}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Rate ${skill.name} ${score} out of 10`}
-                          accessibilityState={{ selected: active }}
-                          testID={`rate-skill-${skill.id}-${score}`}
-                          disabled={saving}
-                          onPress={() => {
-                            setSelected(previous => ({ ...previous, [skill.id]: score }));
-                            setError('');
-                          }}
-                          style={({ pressed }) => [
-                            styles.score,
-                            { backgroundColor: active ? colors.primary : colors.background, borderColor: active ? colors.primary : colors.border },
-                            pressed && styles.pressed,
-                          ]}
-                        >
-                          <Text style={[styles.scoreText, { color: active ? colors.primaryForeground : colors.inkSoft }]}>{score}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
+                  <>
+                    <View testID={`previous-rating-${skill.id}`} style={styles.previousRating}>
+                      {previousRating ? (
+                        <>
+                          <Text style={[styles.savedScore, { color: colors.primary }]}>
+                            Previous rating (reference only) · {previousRating.rating}/10 · {new Date(previousRating.ratedAt).toLocaleDateString()}
+                          </Text>
+                          <Text style={[styles.previousNote, { color: colors.mutedForeground }]}>
+                            {previousRating.note ? `Previous note: ${previousRating.note}` : 'No note saved with the previous rating.'}
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={[styles.previousNote, { color: colors.mutedForeground }]}>No previous rating yet.</Text>
+                      )}
+                    </View>
+                    <View style={styles.scores}>
+                      {Array.from({ length: 10 }, (_, index) => index + 1).map(score => {
+                        const active = selected[skill.id] === score;
+                        return (
+                          <Pressable
+                            key={score}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Rate ${skill.name} ${score} out of 10`}
+                            accessibilityState={{ selected: active }}
+                            testID={`rate-skill-${skill.id}-${score}`}
+                            disabled={saving}
+                            onPress={() => {
+                              setSelected(previous => ({ ...previous, [skill.id]: score }));
+                              setError('');
+                            }}
+                            style={({ pressed }) => [
+                              styles.score,
+                              { backgroundColor: active ? colors.primary : colors.background, borderColor: active ? colors.primary : colors.border },
+                              pressed && styles.pressed,
+                            ]}
+                          >
+                            <Text style={[styles.scoreText, { color: active ? colors.primaryForeground : colors.inkSoft }]}>{score}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </>
                 )}
                 <Text style={[styles.noteLabel, { color: colors.inkSoft }]}>
                   {editing ? 'Reflection note' : noteOnly ? 'Add reflection note' : 'Reflection note · optional'}
@@ -241,7 +259,8 @@ export function SkillRatingPrompt({
                   {(notes[key] ?? '').length}/{MAX_SKILL_NOTE_LENGTH}
                 </Text>
               </View>
-            ))}
+              );
+            })}
           </View>
           {error ? <Text accessibilityRole="alert" testID="skill-rating-error" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
           <View style={styles.actions}>
@@ -298,6 +317,8 @@ const styles = StyleSheet.create({
   score: { width: 27, height: 34, borderRadius: 9, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   scoreText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   savedScore: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 10 },
+  previousRating: { gap: 3 },
+  previousNote: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15 },
   targetDate: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   noteLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
   noteInput: { minHeight: 74, maxHeight: 140, borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 9, fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18, textAlignVertical: 'top' },
