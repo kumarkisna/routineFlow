@@ -148,6 +148,24 @@ test('a shared run retries a failed participant rating save without losing input
   await page.getByTestId('group-rate-alex-me-communication-7').click();
   await page.getByTestId('group-note-alex-me-focus').fill('Stayed focused with support.');
   await page.getByTestId('group-note-alex-me-communication').fill('Asked for help clearly.');
+  const alexSkillsBeforeBackground = await page.evaluate(() => localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills'));
+  const selectedScoreColor = await page.getByTestId('group-rate-alex-me-focus-8').evaluate(element => getComputedStyle(element).backgroundColor);
+  const unselectedScoreColor = await page.getByTestId('group-rate-alex-me-focus-7').evaluate(element => getComputedStyle(element).backgroundColor);
+  await page.evaluate(() => {
+    const visibilityDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    if (visibilityDescriptor) Object.defineProperty(document, 'visibilityState', visibilityDescriptor);
+    else Reflect.deleteProperty(document, 'visibilityState');
+  });
+  expect(await page.evaluate(() => localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills'))).toBe(alexSkillsBeforeBackground);
+  await expect(page.getByTestId('group-note-alex-me-focus')).toHaveValue('Stayed focused with support.');
+  await expect(page.getByTestId('group-note-alex-me-communication')).toHaveValue('Asked for help clearly.');
+  const selectedScoreColorAfterBackground = await page.getByTestId('group-rate-alex-me-focus-8').evaluate(element => getComputedStyle(element).backgroundColor);
+  expect(selectedScoreColorAfterBackground).toBe(selectedScoreColor);
+  expect(selectedScoreColorAfterBackground).not.toBe(unselectedScoreColor);
   await page.evaluate(() => {
     const originalSetItem = Storage.prototype.setItem;
     let failNext = true;
