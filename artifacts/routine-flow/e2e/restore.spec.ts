@@ -196,7 +196,14 @@ test('a shared run retries a failed participant rating save without losing input
       ],
       '@routine-flow/person/alex/@routine-flow/routines': '[]',
       '@routine-flow/person/alex/@routine-flow/progress': '{"keep":{"old-entry":true}}',
-      '@routine-flow/person/alex/@routine-flow/skills': [{ id: 'alex-communication', name: 'Communication' }],
+      '@routine-flow/person/alex/@routine-flow/skills': [{
+        id: 'alex-communication',
+        name: 'Communication',
+        ratings: [
+          { id: 'alex-communication-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Older practice', note: 'Earlier note.' },
+          { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: 'Recent practice', note: 'Latest saved note.' },
+        ],
+      }],
       '@routine-flow/person/casey/@routine-flow/routines': '[{"id":"casey-saved-routine"}]',
       '@routine-flow/person/casey/@routine-flow/progress': '{"keep":{"casey-old":true}}',
       '@routine-flow/person/casey/@routine-flow/skills': caseySkills,
@@ -205,14 +212,22 @@ test('a shared run retries a failed participant rating save without losing input
       localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
     }
   }, { routine, caseyOriginalSkills });
-  await page.goto('/routine/group-rated/run?voice=0');
-  await page.getByTestId('rating-people-picker').click();
-  await page.getByTestId('rating-person-alex').click();
-  await page.getByTestId('rating-person-casey').click();
-  await page.getByTestId('rating-person-me').click();
-  await page.getByTestId('done-rating-people').click();
+  await page.goto('/routine/group-rated');
+  await expect(page.getByTestId('routine-run-people-picker')).toContainText('Selected: Me');
+  await page.getByTestId('routine-run-people-picker').click();
+  await page.getByTestId('routine-run-person-alex').click();
+  await page.getByTestId('routine-run-person-casey').click();
+  await page.getByTestId('routine-run-person-me').click();
+  await page.getByTestId('done-routine-run-people').click();
+  await expect(page.getByTestId('routine-run-people-picker')).toContainText('Selected: Alex, Casey');
+  await page.getByLabel('Run routine timer').click();
+  await expect(page.getByTestId('rating-people-picker')).toContainText('Alex, Casey');
+  await page.getByTestId('toggle-step-voice').click();
   await page.getByTestId('start-pause-timer').click();
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex', { timeout: 10000 });
+  await expect(page.getByTestId('previous-rating-alex-me-focus')).toContainText('No previous rating for this person.');
+  await expect(page.getByTestId('previous-rating-alex-me-communication')).toContainText('Previous: 8/10');
+  await expect(page.getByTestId('previous-rating-alex-me-communication')).toContainText('Latest saved note.');
   await page.getByTestId('group-rate-alex-me-focus-8').click();
   await page.getByTestId('group-rate-alex-me-communication-7').click();
   await page.getByTestId('group-note-alex-me-focus').fill('Stayed focused with support.');
@@ -260,6 +275,8 @@ test('a shared run retries a failed participant rating save without losing input
   await page.getByTestId('save-group-ratings').click();
   await expect(page.getByTestId('group-rating-error')).toHaveCount(0);
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Casey');
+  await expect(page.getByTestId('previous-rating-casey-me-focus')).toContainText('Previous: 5/10');
+  await expect(page.getByTestId('previous-rating-casey-me-focus')).toContainText('Existing note');
   await page.getByTestId('group-rate-casey-me-focus-4').click();
   await page.getByTestId('group-note-casey-me-focus').fill('Not saved after choosing to skip.');
   await page.getByTestId('skip-group-ratings').click();
@@ -283,8 +300,12 @@ test('a shared run retries a failed participant rating save without losing input
     routineTitle: 'Shared group routine',
   });
   expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Focus').ratings).toHaveLength(1);
-  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings).toHaveLength(1);
-  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings[0]).toMatchObject({
+  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings).toHaveLength(3);
+  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings.slice(0, 2)).toEqual([
+    { id: 'alex-communication-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Older practice', note: 'Earlier note.' },
+    { id: 'alex-communication-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: 'Recent practice', note: 'Latest saved note.' },
+  ]);
+  expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Communication').ratings[2]).toMatchObject({
     rating: 7,
     note: 'Asked for help clearly.',
     routineTitle: 'Shared group routine',
@@ -373,6 +394,8 @@ test('playlist-end group ratings retain participants across routines and isolate
   await expect(page.getByText('First short step').last()).toBeVisible({ timeout: 10000 });
   await expect(page.getByTestId('group-rating-person-name')).toHaveCount(0);
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex', { timeout: 10000 });
+  await expect(page.getByTestId('previous-rating-alex-me-focus')).toHaveText('No previous rating for this person.');
+  await expect(page.getByTestId('previous-rating-alex-me-communication')).toHaveText('No previous rating for this person.');
   for (const [skillId, score] of [['me-focus', '8'], ['me-communication', '7'], ['me-independence', '9']]) {
     await page.getByTestId(`group-rate-alex-${skillId}-${score}`).click();
   }

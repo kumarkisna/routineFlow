@@ -5,6 +5,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -30,7 +31,7 @@ export default function RoutineDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { activePerson } = usePeople();
+  const { activePerson, people } = usePeople();
   const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const { routines, loading, progress, getCompletedCount, updateRoutine, copyRoutine, setStepHidden, deleteRoutine } = useRoutines();
   const { skills } = useSkills();
@@ -44,6 +45,8 @@ export default function RoutineDetailScreen() {
   const deleteLock = React.useRef(false);
   const [visibilityBusy, setVisibilityBusy] = React.useState(false);
   const [showHiddenSteps, setShowHiddenSteps] = React.useState(false);
+  const [showRunPeoplePicker, setShowRunPeoplePicker] = React.useState(false);
+  const [runPersonIds, setRunPersonIds] = React.useState<string[]>([activePerson.id]);
   const [reorderError, setReorderError] = React.useState('');
   const [speakingStepId, setSpeakingStepId] = React.useState<string | null>(null);
   const [speakingAll, setSpeakingAll] = React.useState(false);
@@ -54,7 +57,11 @@ export default function RoutineDetailScreen() {
   const speakingAllPausedRef = React.useRef(false);
   const speakAllIndexRef = React.useRef(0);
   const reorderLock = React.useRef(false);
+  React.useEffect(() => {
+    setRunPersonIds([activePerson.id]);
+  }, [activePerson.id]);
   const routine = routines.find((item) => item.id === id);
+  const selectedRunPeople = people.filter(person => runPersonIds.includes(person.id));
   React.useEffect(() => () => {
     speechToken.current += 1;
     void Speech.stop();
@@ -581,12 +588,29 @@ export default function RoutineDetailScreen() {
           })}
 
           <Pressable
+            testID="routine-run-people-picker"
+            accessibilityRole="button"
+            accessibilityLabel={`Choose people for this run. Currently selected: ${selectedRunPeople.map(person => person.name).join(', ') || 'none'}`}
+            onPress={() => setShowRunPeoplePicker(true)}
+            style={({ pressed }) => [styles.runPeoplePicker, { backgroundColor: colors.card, borderColor: colors.border }, pressed && styles.pressed]}
+          >
+            <Ionicons name="people-outline" size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.runPeopleTitle, { color: colors.foreground }]}>Run for people</Text>
+              <Text style={[styles.runPeopleSummary, { color: colors.mutedForeground }]} numberOfLines={1}>
+                {selectedRunPeople.length ? `Selected: ${selectedRunPeople.map(person => person.name).join(', ')}` : 'Choose who this run is for'}
+              </Text>
+            </View>
+            <Text style={[styles.runPeopleAction, { color: colors.primary }]}>Choose</Text>
+          </Pressable>
+          <Pressable
             accessibilityLabel="Run routine timer"
             disabled={visibleSteps.length === 0}
             onPress={() => router.push({
               pathname: '/routine/[id]/run',
               params: {
                 id: currentRoutine.id,
+                ratingPeople: JSON.stringify(runPersonIds),
                 stepReminder: activePerson.defaultPlaylistReminderSettings.stepCompletion ? '1' : '0',
                 routineReminder: activePerson.defaultPlaylistReminderSettings.routineCompletion ? '1' : '0',
               },
@@ -616,6 +640,60 @@ export default function RoutineDetailScreen() {
 
         </View>
       </ScrollView>
+      <Modal visible={showRunPeoplePicker} transparent animationType="slide" onRequestClose={() => setShowRunPeoplePicker(false)}>
+        <View style={styles.runPeopleBackdrop}>
+          <View style={[styles.runPeopleSheet, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <View style={styles.runPeopleHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.runPeopleModalTitle, { color: colors.foreground }]}>Who is this run for?</Text>
+                <Text style={[styles.runPeopleHint, { color: colors.mutedForeground }]}>
+                  They don’t need this routine in their library. Selected people can receive separate ratings and notes.
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close people selection"
+                onPress={() => setShowRunPeoplePicker(false)}
+                style={styles.runPeopleClose}
+              >
+                <Ionicons name="close" size={21} color={colors.inkSoft} />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.runPeopleList}>
+              {people.map(person => {
+                const selected = runPersonIds.includes(person.id);
+                return (
+                  <Pressable
+                    key={person.id}
+                    testID={`routine-run-person-${person.id}`}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    accessibilityLabel={`Include ${person.name} in this run`}
+                    onPress={() => setRunPersonIds(current => {
+                      if (current.includes(person.id)) {
+                        return current.length > 1 ? current.filter(id => id !== person.id) : current;
+                      }
+                      return [...current, person.id];
+                    })}
+                    style={[styles.runPeopleRow, { borderColor: colors.border }]}
+                  >
+                    <Ionicons name={selected ? 'checkbox' : 'square-outline'} size={21} color={selected ? colors.primary : colors.mutedForeground} />
+                    <Text style={[styles.runPeopleName, { color: colors.foreground }]}>{person.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable
+              testID="done-routine-run-people"
+              accessibilityRole="button"
+              onPress={() => setShowRunPeoplePicker(false)}
+              style={[styles.runPeopleDone, { backgroundColor: colors.primary }]}
+            >
+              <Text style={[styles.runPeopleDoneText, { color: colors.primaryForeground }]}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -676,6 +754,21 @@ const styles = StyleSheet.create({
   duration: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 4 },
   completeButton: { minHeight: 54, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 22 },
   runButton: { minHeight: 54, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 22 },
+  runPeoplePicker: { minHeight: 64, borderRadius: 15, borderWidth: 1, paddingHorizontal: 13, marginTop: 20, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  runPeopleTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  runPeopleSummary: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 2 },
+  runPeopleAction: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  runPeopleBackdrop: { flex: 1, backgroundColor: '#14191dcc', justifyContent: 'flex-end' },
+  runPeopleSheet: { maxHeight: '80%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, padding: 18 },
+  runPeopleHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  runPeopleModalTitle: { fontFamily: 'Inter_700Bold', fontSize: 19 },
+  runPeopleHint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginTop: 6, marginBottom: 10 },
+  runPeopleClose: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  runPeopleList: { maxHeight: 340 },
+  runPeopleRow: { minHeight: 50, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  runPeopleName: { fontFamily: 'Inter_500Medium', fontSize: 14 },
+  runPeopleDone: { minHeight: 46, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  runPeopleDoneText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   completeButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 15 },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   missingTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 18 },

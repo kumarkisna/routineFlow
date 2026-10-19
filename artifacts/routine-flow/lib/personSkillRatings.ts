@@ -1,10 +1,33 @@
 import { createPersonStorage, PERSON_DATA_KEYS, waitForPersonWrites, type PersonStorage } from './personStorage';
 import {
   MAX_SKILLS, MAX_SKILL_NOTE_LENGTH, normalizeSkillName, parseSkills, skillNameKey,
-  type RoutineSkill, type SkillRatingRun,
+  type RoutineSkill, type SkillRating, type SkillRatingRun,
 } from './skills';
 
 export type PersonRatingEntry = { sourceSkillId: string; rating: number; note?: string; sequence: number };
+
+export async function getPreviousPersonSkillRatings(
+  personId: string,
+  sourceSkills: RoutineSkill[],
+  storageOverride?: PersonStorage,
+): Promise<Record<string, SkillRating | null>> {
+  if (!personId.trim()) throw new Error('Previous skill ratings could not be loaded.');
+  await waitForPersonWrites(personId);
+  const storage = storageOverride ?? createPersonStorage(personId);
+  const stored = await storage.getItem(PERSON_DATA_KEYS.skills);
+  const skills = stored === null ? [] : parseSkills(stored);
+  const nameToSkill = new Map(skills.map(skill => [skillNameKey(skill.name), skill]));
+  const result: Record<string, SkillRating | null> = {};
+
+  for (const source of sourceSkills) {
+    const history = nameToSkill.get(skillNameKey(source.name))?.ratings ?? [];
+    const latest = history.reduce<(typeof history)[number] | null>((current, rating) => (
+      !current || Date.parse(rating.ratedAt) >= Date.parse(current.ratedAt) ? rating : current
+    ), null);
+    result[source.id] = latest;
+  }
+  return result;
+}
 
 function makeSkillId(used: Set<string>) {
   let id = '';

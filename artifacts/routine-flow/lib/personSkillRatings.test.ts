@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPersonStorage, PERSON_DATA_KEYS } from './personStorage';
-import { recordPersonSkillRatings } from './personSkillRatings';
+import { getPreviousPersonSkillRatings, recordPersonSkillRatings } from './personSkillRatings';
 import {
   getSkillAverage,
   getSkillRatingPoints,
@@ -291,4 +291,36 @@ test('group rating appends to a skill with an exact matching name instead of dup
   assert.equal(skills.length, 1);
   assert.equal(skills[0].id, 'alex-focus');
   assert.equal(skills[0].ratings?.[0].rating, 7);
+});
+
+test('group rating context finds the latest name-matched rating without changing saved history', async () => {
+  const previous = [
+    { ...rating('alex-communication-old', 4, '01', 'Earlier note.'), routineTitle: 'Older routine' },
+    { ...rating('alex-communication-new', 8, '03', 'Latest note.'), routineTitle: 'Recent routine' },
+  ];
+  const originalSkills = [
+    { id: 'alex-communication', name: 'Communication', ratings: previous },
+    { id: 'alex-focus', name: 'Focus' },
+  ];
+  const values = new Map<string, string>([
+    ['@routine-flow/person/alex/@routine-flow/skills', JSON.stringify(originalSkills)],
+  ]);
+  const backend = {
+    getItem: async (key: string) => values.get(key) ?? null,
+    setItem: async (key: string, value: string) => { values.set(key, value); },
+    removeItem: async (key: string) => { values.delete(key); },
+  };
+
+  const context = await getPreviousPersonSkillRatings('alex', [
+    { id: 'source-communication', name: ' communication ' },
+    { id: 'source-focus', name: 'Focus' },
+    { id: 'source-independence', name: 'Independence' },
+  ], createPersonStorage('alex', backend));
+
+  assert.deepEqual(context, {
+    'source-communication': previous[1],
+    'source-focus': null,
+    'source-independence': null,
+  });
+  assert.equal(values.get('@routine-flow/person/alex/@routine-flow/skills'), JSON.stringify(originalSkills));
 });

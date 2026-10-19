@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
-import { MAX_SKILL_NOTE_LENGTH, type RoutineSkill, type SkillRatingRun } from '@/lib/skills';
-import { recordPersonSkillRatings } from '@/lib/personSkillRatings';
+import { MAX_SKILL_NOTE_LENGTH, type RoutineSkill, type SkillRating, type SkillRatingRun } from '@/lib/skills';
+import { getPreviousPersonSkillRatings, recordPersonSkillRatings } from '@/lib/personSkillRatings';
 import type { Person } from '@/types/people';
 
 export function GroupSkillRatingPrompt({
@@ -24,16 +24,48 @@ export function GroupSkillRatingPrompt({
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
   const [pendingDiscardAction, setPendingDiscardAction] = React.useState<'close' | 'skipPerson' | 'skipRemaining' | null>(null);
+  const [previousRatings, setPreviousRatings] = React.useState<Record<string, SkillRating | null>>({});
+  const [loadingPreviousRatings, setLoadingPreviousRatings] = React.useState(false);
+  const [previousRatingsError, setPreviousRatingsError] = React.useState('');
   const person = people[personIndex];
+  const peopleSignature = people.map(item => item.id).join('|');
+  const sourceSkillSignature = sourceSkills.map(skill => `${skill.id}\u0000${skill.name}`).join('\u0001');
   React.useEffect(() => {
-    if (visible) {
-      setPersonIndex(0);
-      setRatings({});
-      setNotes({});
-      setError('');
-      setPendingDiscardAction(null);
+    if (!visible) return;
+    setPersonIndex(0);
+    setRatings({});
+    setNotes({});
+    setError('');
+    setPendingDiscardAction(null);
+  }, [visible, peopleSignature]);
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!visible || !person) {
+      setPreviousRatings({});
+      setPreviousRatingsError('');
+      setLoadingPreviousRatings(false);
+      return () => { cancelled = true; };
     }
-  }, [visible, people.map(item => item.id).join('|')]);
+
+    setPreviousRatings({});
+    setPreviousRatingsError('');
+    setLoadingPreviousRatings(true);
+    void getPreviousPersonSkillRatings(person.id, sourceSkills)
+      .then(result => {
+        if (!cancelled) setPreviousRatings(result);
+      })
+      .catch(cause => {
+        if (!cancelled) {
+          setPreviousRatingsError(cause instanceof Error
+            ? `Previous ratings for ${person.name} could not be loaded. ${cause.message}`
+            : `Previous ratings for ${person.name} could not be loaded.`);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPreviousRatings(false);
+      });
+    return () => { cancelled = true; };
+  }, [visible, person?.id, sourceSkillSignature]);
 
   function nextPerson() {
     if (personIndex + 1 >= people.length) {
@@ -129,6 +161,26 @@ export function GroupSkillRatingPrompt({
                 {sourceSkills.map(skill => (
                   <View key={skill.id} style={[styles.skill, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Text style={[styles.skillName, { color: colors.foreground }]}>{skill.name}</Text>
+                    <View testID={`previous-rating-${person.id}-${skill.id}`} style={styles.previousRating}>
+                      {loadingPreviousRatings ? (
+                        <Text style={[styles.previousRatingText, { color: colors.mutedForeground }]}>Loading previous rating…</Text>
+                      ) : previousRatingsError ? (
+                        <Text style={[styles.previousRatingText, { color: colors.destructive }]}>{previousRatingsError}</Text>
+                      ) : previousRatings[skill.id] ? (
+                        <>
+                          <Text style={[styles.previousRatingText, { color: colors.mutedForeground }]}>
+                            Previous: {previousRatings[skill.id]!.rating}/10 · {new Date(previousRatings[skill.id]!.ratedAt).toLocaleDateString()}
+                          </Text>
+                          <Text style={[styles.previousRatingText, { color: colors.mutedForeground }]}>
+                            {previousRatings[skill.id]!.note
+                              ? `Previous note: ${previousRatings[skill.id]!.note}`
+                              : 'No previous note saved.'}
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={[styles.previousRatingText, { color: colors.mutedForeground }]}>No previous rating for this person.</Text>
+                      )}
+                    </View>
                     <View style={styles.scores}>
                       {Array.from({ length: 10 }, (_, index) => index + 1).map(score => {
                         const selected = ratings[skill.id] === score;
@@ -237,6 +289,8 @@ const styles = StyleSheet.create({
   list: { marginTop: 12 },
   skill: { borderWidth: 1, borderRadius: 14, padding: 11, marginBottom: 9, gap: 9 },
   skillName: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  previousRating: { gap: 3 },
+  previousRatingText: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15 },
   scores: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   score: { width: 27, height: 33, borderWidth: 1, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   note: { minHeight: 58, borderWidth: 1, borderRadius: 10, padding: 9, textAlignVertical: 'top', fontFamily: 'Inter_400Regular', fontSize: 12 },
