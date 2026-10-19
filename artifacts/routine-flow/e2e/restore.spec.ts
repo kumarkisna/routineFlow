@@ -167,12 +167,13 @@ test('playlist-end group ratings retain participants across routines and isolate
       steps: [{ id: 'group-playlist-step-two', title: 'Second short step', durationSeconds: 2, description: 'Second.', skillIds: ['me-communication'] }],
     },
   ];
+  const playlistQueue = ['group-playlist-one', 'group-playlist-two', 'group-playlist-one'];
   const caseyOriginalSkills = [{
     id: 'casey-focus',
     name: 'Focus',
     ratings: [{ id: 'casey-old-rating', rating: 5, ratedAt: '2026-10-10T10:00:00.000Z', routineTitle: 'Past routine', note: 'Existing note' }],
   }];
-  await page.addInitScript(({ seededRoutines, caseySkills }) => {
+  await page.addInitScript(({ seededRoutines, caseySkills, playlistQueue: seededPlaylistQueue }) => {
     const profile = (id: string, name: string) => ({
       id, name, speechVoiceId: null, defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
@@ -185,7 +186,7 @@ test('playlist-end group ratings retain participants across routines and isolate
       '@routine-flow/playlists': [{
         id: 'group-playlist',
         title: 'Group playlist',
-        routineIds: ['group-playlist-one', 'group-playlist-two'],
+        routineIds: seededPlaylistQueue,
         skillIds: ['me-independence'],
         rateSkillsAtPlaylistEnd: true,
       }],
@@ -204,10 +205,10 @@ test('playlist-end group ratings retain participants across routines and isolate
     for (const [key, value] of Object.entries(seed)) {
       localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
     }
-  }, { seededRoutines: routines, caseySkills: caseyOriginalSkills });
+  }, { seededRoutines: routines, caseySkills: caseyOriginalSkills, playlistQueue });
 
   const params = new URLSearchParams({
-    queue: JSON.stringify(routines.map(routine => routine.id)),
+    queue: JSON.stringify(playlistQueue),
     cursor: '0',
     playlistId: 'group-playlist',
     playlistTitle: 'Group playlist',
@@ -224,6 +225,8 @@ test('playlist-end group ratings retain participants across routines and isolate
   await page.getByTestId('start-pause-timer').click();
 
   await expect(page.getByText('Second short step').last()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByTestId('group-rating-person-name')).toHaveCount(0);
+  await expect(page.getByText('First short step').last()).toBeVisible({ timeout: 10000 });
   await expect(page.getByTestId('group-rating-person-name')).toHaveCount(0);
   await expect(page.getByTestId('group-rating-person-name')).toHaveText('Alex', { timeout: 10000 });
   for (const [skillId, score] of [['me-focus', '8'], ['me-communication', '7'], ['me-independence', '9']]) {
