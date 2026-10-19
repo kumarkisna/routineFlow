@@ -232,6 +232,9 @@ test('a shared run retries a failed participant rating save without losing input
   await page.getByTestId('group-rate-alex-me-communication-7').click();
   await page.getByTestId('group-note-alex-me-focus').fill('Stayed focused with support.');
   await page.getByTestId('group-note-alex-me-communication').fill('Asked for help clearly.');
+  await page.getByTestId('group-rate-alex-me-focus-6').click();
+  await expect(page.getByTestId('group-note-alex-me-focus')).toHaveValue('Stayed focused with support.');
+  await expect(page.getByTestId('group-note-alex-me-communication')).toHaveValue('Asked for help clearly.');
   await page.getByTestId('close-group-rating-prompt').click();
   await expect(page.getByTestId('unsaved-rating-confirmation')).toBeVisible();
   await page.getByTestId('cancel-discard-unsaved-ratings').click();
@@ -239,8 +242,8 @@ test('a shared run retries a failed participant rating save without losing input
   await expect(page.getByTestId('group-note-alex-me-focus')).toHaveValue('Stayed focused with support.');
   await expect(page.getByTestId('group-note-alex-me-communication')).toHaveValue('Asked for help clearly.');
   const alexSkillsBeforeBackground = await page.evaluate(() => localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills'));
-  const selectedScoreColor = await page.getByTestId('group-rate-alex-me-focus-8').evaluate(element => getComputedStyle(element).backgroundColor);
-  const unselectedScoreColor = await page.getByTestId('group-rate-alex-me-focus-7').evaluate(element => getComputedStyle(element).backgroundColor);
+  const selectedScoreColor = await page.getByTestId('group-rate-alex-me-focus-6').evaluate(element => getComputedStyle(element).backgroundColor);
+  const unselectedScoreColor = await page.getByTestId('group-rate-alex-me-focus-8').evaluate(element => getComputedStyle(element).backgroundColor);
   await page.evaluate(() => {
     const visibilityDescriptor = Object.getOwnPropertyDescriptor(document, 'visibilityState');
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
@@ -253,7 +256,7 @@ test('a shared run retries a failed participant rating save without losing input
   expect(await page.evaluate(() => localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills'))).toBe(alexSkillsBeforeBackground);
   await expect(page.getByTestId('group-note-alex-me-focus')).toHaveValue('Stayed focused with support.');
   await expect(page.getByTestId('group-note-alex-me-communication')).toHaveValue('Asked for help clearly.');
-  const selectedScoreColorAfterBackground = await page.getByTestId('group-rate-alex-me-focus-8').evaluate(element => getComputedStyle(element).backgroundColor);
+  const selectedScoreColorAfterBackground = await page.getByTestId('group-rate-alex-me-focus-6').evaluate(element => getComputedStyle(element).backgroundColor);
   expect(selectedScoreColorAfterBackground).toBe(selectedScoreColor);
   expect(selectedScoreColorAfterBackground).not.toBe(unselectedScoreColor);
   await page.evaluate(() => {
@@ -295,7 +298,7 @@ test('a shared run retries a failed participant rating save without losing input
   }));
   expect(saved.alexSkills).toHaveLength(2);
   expect(saved.alexSkills.find((skill: { name: string }) => skill.name === 'Focus').ratings[0]).toMatchObject({
-    rating: 8,
+    rating: 6,
     note: 'Stayed focused with support.',
     routineTitle: 'Shared group routine',
   });
