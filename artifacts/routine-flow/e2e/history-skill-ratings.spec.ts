@@ -444,8 +444,15 @@ test('individual rating prompt stays usable with wrapped text on a narrow phone'
   };
   const previousRatings = [
     { id: 'focus-rating-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Earlier routine', note: 'Earlier reflection.' },
-    { id: 'focus-rating-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: 'Recent routine', note: 'Latest reflection.' },
+    {
+      id: 'focus-rating-latest',
+      rating: 8,
+      ratedAt: '2026-10-18T10:00:00.000Z',
+      routineTitle: 'Recent routine',
+      note: Array(21).fill('I paused, listened, and chose a calm response.').join(' '),
+    },
   ];
+  const longPreviousReflection = previousRatings[1].note;
   const skills: {
     id: string;
     name: string;
@@ -489,7 +496,16 @@ test('individual rating prompt stays usable with wrapped text on a narrow phone'
   await expect(page.getByTestId('save-skill-ratings')).toBeDisabled();
   await expect(page.getByTestId('previous-rating-focus')).toContainText('Previous rating (reference only) · 8/10');
   await expect(page.getByTestId('previous-rating-routine-focus')).toHaveText('Routine: Recent routine');
-  await expect(page.getByTestId('previous-rating-focus')).toContainText('Latest reflection.');
+  const previousNote = page.getByTestId('previous-rating-note-focus');
+  await expect(previousNote).toHaveText(`Previous note: ${longPreviousReflection}`);
+  expect(longPreviousReflection.length).toBeGreaterThan(950);
+  expect(longPreviousReflection.length).toBeLessThanOrEqual(1000);
+  const previousNoteLayout = await previousNote.evaluate(element => {
+    const { height, width } = element.getBoundingClientRect();
+    return { height, width, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth };
+  });
+  expect(previousNoteLayout.height).toBeGreaterThan(100);
+  expect(previousNoteLayout.scrollWidth).toBeLessThanOrEqual(previousNoteLayout.clientWidth + 1);
   await expect(page.getByTestId('previous-rating-routine-breathing')).toHaveText('Routine: Breathing practice');
   await expect(page.getByTestId('previous-rating-breathing')).toContainText('Slow breaths helped when I paused');
   await expect(page.getByTestId('previous-rating-communication')).toContainText('Previous rating (reference only) · 7/10');

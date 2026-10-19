@@ -194,7 +194,7 @@ export function SkillRatingPrompt({
                               Routine: {previousRating.routineTitle}
                             </Text>
                           ) : null}
-                          <Text style={[styles.previousNote, { color: colors.mutedForeground }]}>
+                          <Text testID={`previous-rating-note-${skill.id}`} style={[styles.previousNote, { color: colors.mutedForeground }]}>
                             {previousRating.note ? `Previous note: ${previousRating.note}` : 'No note saved with the previous rating.'}
                           </Text>
                         </>
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
   scoreText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   savedScore: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 10 },
   previousRating: { gap: 3 },
-  previousNote: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15 },
+  previousNote: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15, alignSelf: 'stretch', flexShrink: 1 },
   targetDate: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
   noteLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 1 },
   noteInput: { minHeight: 74, maxHeight: 140, borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 9, fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 18, textAlignVertical: 'top' },
