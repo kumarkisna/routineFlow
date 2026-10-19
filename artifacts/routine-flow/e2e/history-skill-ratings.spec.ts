@@ -424,8 +424,10 @@ test('skill history can edit a reflection and the corrected note appears in rout
   await expect(page.getByText('Updated from skill history')).toBeVisible();
 });
 
-test('individual rating prompt shows the latest score and note and appends new ratings', async ({ page }) => {
+test('individual rating prompt stays scrollable with prior notes on a compact phone', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await page.setViewportSize({ width: 360, height: 640 });
+  const skillIds = ['focus', 'breathing', 'communication', 'patience', 'flexibility'];
   const routine = {
     id: 'individual-rating-context',
     title: 'Reflection routine',
@@ -437,16 +439,25 @@ test('individual rating prompt shows the latest score and note and appends new r
       id: 'reflection-step',
       title: 'Practice focus',
       durationSeconds: 1,
-      skillIds: ['focus', 'breathing'],
+      skillIds,
     }],
   };
   const previousRatings = [
     { id: 'focus-rating-old', rating: 4, ratedAt: '2026-10-17T10:00:00.000Z', routineTitle: 'Earlier routine', note: 'Earlier reflection.' },
     { id: 'focus-rating-latest', rating: 8, ratedAt: '2026-10-18T10:00:00.000Z', routineTitle: 'Recent routine', note: 'Latest reflection.' },
   ];
-  const skills = [
+  const skills: { id: string; name: string; ratings?: typeof previousRatings }[] = [
     { id: 'focus', name: 'Focus', ratings: previousRatings },
-    { id: 'breathing', name: 'Breathing' },
+    { id: 'breathing', name: 'Breathing', ratings: [
+      { id: 'breathing-rating', rating: 5, ratedAt: '2026-10-18T09:00:00.000Z', routineTitle: 'Breathing practice', note: 'Slow breaths helped.' },
+    ] },
+    { id: 'communication', name: 'Communication', ratings: [
+      { id: 'communication-rating', rating: 7, ratedAt: '2026-10-18T08:00:00.000Z', routineTitle: 'Conversation practice', note: 'Paused before replying.' },
+    ] },
+    { id: 'patience', name: 'Patience', ratings: [
+      { id: 'patience-rating', rating: 6, ratedAt: '2026-10-18T07:00:00.000Z', routineTitle: 'Waiting practice', note: 'A short break was useful.' },
+    ] },
+    { id: 'flexibility', name: 'Flexibility' },
   ];
   await page.addInitScript(({ routine: seededRoutine, skills: seededSkills }) => {
     localStorage.setItem('@routine-flow/people', JSON.stringify({
@@ -473,12 +484,27 @@ test('individual rating prompt shows the latest score and note and appends new r
   await expect(page.getByTestId('save-skill-ratings')).toBeDisabled();
   await expect(page.getByTestId('previous-rating-focus')).toContainText('Previous rating (reference only) · 8/10');
   await expect(page.getByTestId('previous-rating-focus')).toContainText('Latest reflection.');
-  await expect(page.getByTestId('previous-rating-breathing')).toHaveText('No previous rating yet.');
+  await expect(page.getByTestId('previous-rating-breathing')).toContainText('Slow breaths helped.');
+  await expect(page.getByTestId('previous-rating-communication')).toContainText('Paused before replying.');
+  await expect(page.getByTestId('previous-rating-patience')).toContainText('A short break was useful.');
+  await expect(page.getByTestId('previous-rating-flexibility')).toHaveText('No previous rating yet.');
 
-  await page.getByTestId('rate-skill-focus-9').click();
+  const newScores: Record<string, number> = {
+    focus: 9,
+    breathing: 6,
+    communication: 7,
+    patience: 5,
+    flexibility: 4,
+  };
+  for (const skillId of skillIds) {
+    const scoreButton = page.getByTestId(`rate-skill-${skillId}-${newScores[skillId]}`);
+    await scoreButton.click();
+    await expect(scoreButton).toBeInViewport();
+  }
   await page.getByTestId('skill-note-focus').fill('New focus reflection.');
-  await page.getByTestId('rate-skill-breathing-6').click();
   await page.getByTestId('skill-note-breathing').fill('New breathing reflection.');
+  await page.getByTestId('save-skill-ratings').scrollIntoViewIfNeeded();
+  await expect(page.getByTestId('save-skill-ratings')).toBeInViewport();
   await page.getByTestId('save-skill-ratings').click();
   await expect(page.getByText('Rate the skills you used')).toHaveCount(0);
 
@@ -490,9 +516,19 @@ test('individual rating prompt shows the latest score and note and appends new r
   );
   const focus = savedSkills.find(skill => skill.id === 'focus');
   const breathing = savedSkills.find(skill => skill.id === 'breathing');
+  const communication = savedSkills.find(skill => skill.id === 'communication');
+  const patience = savedSkills.find(skill => skill.id === 'patience');
+  const flexibility = savedSkills.find(skill => skill.id === 'flexibility');
   expect(focus?.ratings).toHaveLength(3);
   expect(focus?.ratings?.slice(0, 2)).toEqual(previousRatings);
   expect(focus?.ratings?.[2]).toMatchObject({ rating: 9, note: 'New focus reflection.' });
-  expect(breathing?.ratings).toHaveLength(1);
-  expect(breathing?.ratings?.[0]).toMatchObject({ rating: 6, note: 'New breathing reflection.' });
+  expect(breathing?.ratings).toHaveLength(2);
+  expect(breathing?.ratings?.[0]).toMatchObject({ rating: 5, note: 'Slow breaths helped.' });
+  expect(breathing?.ratings?.[1]).toMatchObject({ rating: 6, note: 'New breathing reflection.' });
+  expect(communication?.ratings).toHaveLength(2);
+  expect(communication?.ratings?.[1]).toMatchObject({ rating: 7 });
+  expect(patience?.ratings).toHaveLength(2);
+  expect(patience?.ratings?.[1]).toMatchObject({ rating: 5 });
+  expect(flexibility?.ratings).toHaveLength(1);
+  expect(flexibility?.ratings?.[0]).toMatchObject({ rating: 4 });
 });
