@@ -11,6 +11,7 @@
       "supportsTablet": false
     },
     "android": {
+      "package": "co.median.android.qdqkeor",
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
