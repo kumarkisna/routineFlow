@@ -10,7 +10,11 @@
     "ios": {
       "supportsTablet": false
     },
-    "android": {},
+    "android": {
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
@@ -37,6 +41,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c51d947c-31e2-4b97-b7fe-21f9acd2c1b0"
+      }
+    },
+    "owner": "kumarkisna"
   }
 }
