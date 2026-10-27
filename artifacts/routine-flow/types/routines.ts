@@ -41,8 +41,9 @@ export type Routine = {
   descriptionAttachments?: StepDetailAttachment[];
   /** Optional links to reusable, person-specific skills. */
   skillIds?: string[];
-  /** Optional rich-text starter for the editable reflection saved with each run. */
+  /** Optional plain-text fallback for the rich-text reflection prompt. */
   reflectionTemplate?: string;
+  /** Sanitized rich-text prompt captured for each completed run. */
   reflectionTemplateHtml?: string;
   /** Hidden routines remain saved but are omitted from the main list and progress. */
   hidden?: boolean;
@@ -58,11 +59,22 @@ export type RoutineNotificationSettings = {
 };
 
 export type PlaylistCompletionSource = { playlistId: string; playlistTitle: string };
+export type RunReflection = {
+  runId: string;
+  sourceType: 'routine' | 'playlist';
+  sourceId: string;
+  sourceTitle: string;
+  routineId: string;
+  completedAt: string;
+  templateHtml: string;
+  responseHtml?: string;
+};
 /** Older saved completions are booleans; new completions retain their original labels. */
 export type CompletionValue = boolean | {
   routineTitle: string;
   stepTitle: string;
   playlistRuns?: PlaylistCompletionSource[];
+  runReflections?: RunReflection[];
 };
 export type CompletionMap = Record<string, Record<string, CompletionValue>>;
 

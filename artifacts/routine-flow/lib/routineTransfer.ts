@@ -1,15 +1,16 @@
-import { getStepSeconds, isCompleted, STEP_DETAIL_ATTACHMENT_MAX_COUNT, type CompletionMap, type Routine, type RoutineStep, type RoutineTone } from '@/types/routines';
+import { getStepSeconds, isCompleted, STEP_DETAIL_ATTACHMENT_MAX_COUNT, type CompletionMap, type Routine, type RoutineStep, type RoutineTone, type RunReflection } from '@/types/routines';
 import { MAX_CATEGORY_LENGTH, categoryKey } from '@/lib/routineCategories';
 import { detachedHistoryId, progressRoutineIds, splitProgressKey } from '@/lib/historyIdentity';
 import { parsePlaylists, type RoutinePlaylist } from './playlists';
 import { parseSchedules, type RoutineSchedule } from './schedules';
 import { parseSkillRatingWindow, parseSkills, type RoutineSkill } from './skills';
 import type { Person } from '@/types/people';
+import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
 
 export const MAX_ROUTINE_FILE_BYTES = 50_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
 export const ALL_PEOPLE_FILE_FORMAT = 'routine-flow-all-people';
-export const ROUTINE_BACKUP_VERSION = 7;
+export const ROUTINE_BACKUP_VERSION = 8;
 export const ALL_PEOPLE_BACKUP_VERSION = 1;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
 
@@ -165,6 +166,10 @@ function parseRoutine(value: unknown, index: number): Routine {
       (typeof value.category !== 'string' || !value.category.trim() || value.category.length > MAX_CATEGORY_LENGTH)) {
     throw new Error(`${label} has an invalid category.`);
   }
+  if (value.reflectionTemplateHtml !== undefined &&
+      (typeof value.reflectionTemplateHtml !== 'string' || value.reflectionTemplateHtml.length > 100_000)) {
+    throw new Error(`${label} has an invalid reflection template.`);
+  }
   const steps = value.steps.map((step, stepIndex) => parseStep(step, index, stepIndex));
   const skillIds = parseSkillIds(value.skillIds, label);
   if (new Set(steps.map((step) => step.id)).size !== steps.length) {
@@ -175,6 +180,9 @@ function parseRoutine(value: unknown, index: number): Routine {
     title: value.title,
     subtitle: value.subtitle,
     ...(value.subtitleHtml !== undefined ? { subtitleHtml: value.subtitleHtml as string } : {}),
+    ...(typeof value.reflectionTemplateHtml === 'string'
+      && detailHtmlToText(sanitizeStepDetailHtml(value.reflectionTemplateHtml)).trim()
+      ? { reflectionTemplateHtml: sanitizeStepDetailHtml(value.reflectionTemplateHtml) } : {}),
     ...(value.speakSubtitle !== undefined ? { speakSubtitle: value.speakSubtitle as boolean } : {}),
     ...(value.descriptionAttachments !== undefined
       ? { descriptionAttachments: [...(value.descriptionAttachments as NonNullable<Routine['descriptionAttachments']>)] } : {}),
@@ -194,22 +202,45 @@ function isDay(value: string): boolean {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
-function isValidCompletion(value: unknown, allowPlaylistRuns = true): value is CompletionMap[string][string] {
-  if (typeof value === 'boolean') return true;
-  if (!isRecord(value) || !isText(value.routineTitle) || !isText(value.stepTitle)) return false;
-  if (value.playlistRuns === undefined) return Object.keys(value).length === 2;
-  if (!allowPlaylistRuns || Object.keys(value).length !== 3
-    || !Array.isArray(value.playlistRuns) || value.playlistRuns.length === 0 || value.playlistRuns.length > 1000) {
+function isValidRunReflection(value: unknown): value is RunReflection {
+  if (!isRecord(value)
+    || Object.keys(value).some(key => !['runId', 'sourceType', 'sourceId', 'sourceTitle', 'routineId', 'completedAt', 'templateHtml', 'responseHtml'].includes(key))
+    || typeof value.runId !== 'string' || !value.runId.trim() || value.runId.length > 160 || value.runId.includes(':')
+    || (value.sourceType !== 'routine' && value.sourceType !== 'playlist')
+    || typeof value.sourceId !== 'string' || !value.sourceId.trim() || value.sourceId.length > 160 || value.sourceId.includes(':')
+    || typeof value.sourceTitle !== 'string' || !value.sourceTitle.trim() || value.sourceTitle.length > 200
+    || typeof value.routineId !== 'string' || !value.routineId.trim() || value.routineId.length > 160 || value.routineId.includes(':')
+    || typeof value.completedAt !== 'string' || !Number.isFinite(Date.parse(value.completedAt))
+    || typeof value.templateHtml !== 'string' || value.templateHtml.length > 100_000
+    || (value.responseHtml !== undefined && (typeof value.responseHtml !== 'string' || value.responseHtml.length > 100_000))) {
     return false;
   }
-  const ids = new Set<string>();
-  return value.playlistRuns.every(run => {
-    if (!isRecord(run) || Object.keys(run).length !== 2
-      || typeof run.playlistId !== 'string' || !run.playlistId.trim() || run.playlistId.length > 160
-      || !isText(run.playlistTitle) || run.playlistTitle.length > 100 || ids.has(run.playlistId)) return false;
-    ids.add(run.playlistId);
-    return true;
-  });
+  return true;
+}
+
+function isValidCompletion(value: unknown, allowPlaylistRuns = true, allowRunReflections = true): value is CompletionMap[string][string] {
+  if (typeof value === 'boolean') return true;
+  if (!isRecord(value) || !isText(value.routineTitle) || !isText(value.stepTitle)) return false;
+  if (Object.keys(value).some(key => !['routineTitle', 'stepTitle', 'playlistRuns', 'runReflections'].includes(key))) return false;
+  if (value.playlistRuns !== undefined) {
+    if (!allowPlaylistRuns || !Array.isArray(value.playlistRuns)
+      || value.playlistRuns.length === 0 || value.playlistRuns.length > 1000) return false;
+    const ids = new Set<string>();
+    if (!value.playlistRuns.every(run => {
+      if (!isRecord(run) || Object.keys(run).length !== 2
+        || typeof run.playlistId !== 'string' || !run.playlistId.trim() || run.playlistId.length > 160
+        || !isText(run.playlistTitle) || run.playlistTitle.length > 100 || ids.has(run.playlistId)) return false;
+      ids.add(run.playlistId);
+      return true;
+    })) return false;
+  }
+  if (value.runReflections !== undefined
+    && (!allowRunReflections || !Array.isArray(value.runReflections) || value.runReflections.length > 1000
+      || value.runReflections.some(reflection => !isValidRunReflection(reflection))
+      || new Set(value.runReflections.map(reflection => (reflection as RunReflection).runId)).size !== value.runReflections.length)) {
+    return false;
+  }
+  return true;
 }
 
 function parseProgress(value: unknown, routines: Routine[], version: number): CompletionMap {
@@ -228,11 +259,22 @@ function parseProgress(value: unknown, routines: Routine[], version: number): Co
       const historicalStep = parsed && version >= 4 &&
         (version >= 5 || routineIds.has(parsed.routineId));
       if (!(allowed.has(key) || historicalStep)
-        || !isValidCompletion(completed, version >= 7) || ++count > 100_000) {
+        || !isValidCompletion(completed, version >= 7, version >= 8) || ++count > 100_000) {
         throw new Error('The backup has invalid step progress.');
       }
       if (isCompleted(completed)) {
-        result[day][key] = completed;
+        if (typeof completed === 'object' && completed !== null) {
+          result[day][key] = {
+            ...completed,
+            ...(completed.runReflections ? {
+              runReflections: completed.runReflections.map(reflection => ({
+                ...reflection,
+                templateHtml: sanitizeStepDetailHtml(reflection.templateHtml),
+                ...(reflection.responseHtml ? { responseHtml: sanitizeStepDetailHtml(reflection.responseHtml) } : {}),
+              })),
+            } : {}),
+          };
+        } else result[day][key] = completed;
       }
     }
   }
@@ -476,6 +518,7 @@ function routineSignature(routine: Routine): string {
     routine.createdAt,
     routine.hidden ?? false,
     routine.skillIds ?? [],
+    routine.reflectionTemplateHtml ?? '',
     routine.steps.map((step) => [
       step.id,
       step.title,
@@ -544,18 +587,53 @@ export function mergeImportedProgress(
       const targetId = Object.prototype.hasOwnProperty.call(idMap, parsed.routineId)
         ? idMap[parsed.routineId] : detachedHistoryId(parsed.routineId);
       const targetKey = `${targetId}:${parsed.stepId}`;
-      if (Object.prototype.hasOwnProperty.call(nextDay, targetKey)) {
-        kept++;
-      } else {
-        nextDay[targetKey] = typeof completed === 'object' && completed !== null && completed.playlistRuns?.length
-          ? {
-              ...completed,
+      const remapped = typeof completed === 'object' && completed !== null
+        ? {
+            ...completed,
+            ...(completed.playlistRuns?.length ? {
               playlistRuns: completed.playlistRuns.map(run => ({
                 ...run,
                 playlistId: playlistIdMap[run.playlistId] ?? run.playlistId,
               })),
+            } : {}),
+            ...(completed.runReflections?.length ? {
+              runReflections: completed.runReflections.map(reflection => ({
+                ...reflection,
+                routineId: idMap[reflection.routineId] ?? detachedHistoryId(reflection.routineId),
+                ...(reflection.sourceType === 'routine'
+                  ? { sourceId: idMap[reflection.sourceId] ?? detachedHistoryId(reflection.sourceId) }
+                  : { sourceId: playlistIdMap[reflection.sourceId] ?? reflection.sourceId }),
+              })),
+            } : {}),
+          }
+        : completed;
+      if (Object.prototype.hasOwnProperty.call(nextDay, targetKey)) {
+        kept++;
+        const local = nextDay[targetKey];
+        if (typeof remapped === 'object' && remapped !== null) {
+          if (typeof local === 'object' && local !== null) {
+            const playlistRuns = [...(local.playlistRuns ?? [])];
+            for (const run of remapped.playlistRuns ?? []) {
+              if (!playlistRuns.some(item => item.playlistId === run.playlistId)) playlistRuns.push(run);
             }
-          : completed;
+            const runReflections = [...(local.runReflections ?? [])];
+            for (const reflection of remapped.runReflections ?? []) {
+              if (!runReflections.some(item => item.runId === reflection.runId)) runReflections.push(reflection);
+            }
+            if (playlistRuns.length !== (local.playlistRuns ?? []).length
+              || runReflections.length !== (local.runReflections ?? []).length) {
+              nextDay[targetKey] = {
+                ...local,
+                ...(playlistRuns.length ? { playlistRuns } : {}),
+                ...(runReflections.length ? { runReflections } : {}),
+              };
+            }
+          } else if (remapped.playlistRuns?.length || remapped.runReflections?.length) {
+            nextDay[targetKey] = remapped;
+          }
+        }
+      } else {
+        nextDay[targetKey] = remapped;
         added++;
       }
     }

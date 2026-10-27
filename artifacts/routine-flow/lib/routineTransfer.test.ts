@@ -62,7 +62,7 @@ test('reads version 1 backups with legacy step durations but no history', () => 
   );
 });
 
-test('version 7 export and import keep completed labels and legacy booleans', () => {
+test('current export and import keep completed labels and legacy booleans', () => {
   const source = routine();
   const raw = serializeRoutines([source], {
     [day]: { 'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
@@ -70,7 +70,7 @@ test('version 7 export and import keep completed labels and legacy booleans', ()
     'not-a-date': { 'morning:water': true },
   });
   const json = JSON.parse(raw);
-  assert.equal(json.version, 7);
+  assert.equal(json.version, 8);
   assert.deepEqual(json.progress, { [day]: {
     'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
     'morning:stretch': true,
@@ -86,7 +86,7 @@ test('version 7 export and import keep completed labels and legacy booleans', ()
   });
 });
 
-test('version 7 backs up playlist run tags and remaps restored playlist IDs', () => {
+test('current backups retain playlist run tags and remap restored playlist IDs', () => {
   const source = routine();
   const taggedProgress = {
     [day]: {
@@ -99,7 +99,7 @@ test('version 7 backs up playlist run tags and remaps restored playlist IDs', ()
   };
   const raw = serializeRoutines([source], taggedProgress);
   const json = JSON.parse(raw);
-  assert.equal(json.version, 7);
+  assert.equal(json.version, 8);
   const imported = parseRoutinesFile(raw);
   assert.deepEqual(imported.progress, taggedProgress);
   assert.throws(
@@ -123,6 +123,91 @@ test('version 7 backs up playlist run tags and remaps restored playlist IDs', ()
     stepTitle: 'Drink water',
     playlistRuns: [{ playlistId: 'local-playlist', playlistTitle: 'Morning launch' }],
   });
+});
+
+test('routine backup preserves sanitized templates and run responses through restore merges', () => {
+  const source: Routine = {
+    ...routine(),
+    reflectionTemplateHtml: '<h2 style="color:#345">What stood out?</h2>',
+  };
+  const reflection = {
+    runId: 'routine-run-a',
+    sourceType: 'routine' as const,
+    sourceId: 'morning',
+    sourceTitle: 'Morning',
+    routineId: 'morning',
+    completedAt: '2026-09-28T10:00:00.000Z',
+    templateHtml: '<p onclick="alert(1)">What stood out?</p>',
+    responseHtml: '<p><strong>Good focus.</strong><script>alert(2)</script></p>',
+  };
+  const playlistReflection = {
+    ...reflection,
+    runId: 'playlist-run-a',
+    sourceType: 'playlist' as const,
+    sourceId: 'old-playlist',
+    sourceTitle: 'Morning launch',
+    templateHtml: '<p>Playlist prompt</p>',
+  };
+  const imported = parseRoutinesFile(serializeRoutines([source], {
+    [day]: {
+      'morning:water': {
+        routineTitle: 'Morning',
+        stepTitle: 'Drink water',
+        playlistRuns: [{ playlistId: 'old-playlist', playlistTitle: 'Morning launch' }],
+        runReflections: [reflection, playlistReflection],
+      },
+    },
+  }));
+  assert.equal(imported.routines[0].reflectionTemplateHtml, '<h2 style="color:#345">What stood out?</h2>');
+  const restored = mergeImportedProgress(
+    {},
+    imported.progress!,
+    { morning: 'local-morning' },
+    { 'old-playlist': 'local-playlist' },
+  );
+  const importedReflection = restored.progress[day]['local-morning:water'];
+  assert.equal(typeof importedReflection, 'object');
+  if (typeof importedReflection !== 'object' || importedReflection === null) throw new Error('Expected completion metadata.');
+  assert.deepEqual(importedReflection.runReflections, [
+    {
+      ...reflection,
+      sourceId: 'local-morning',
+      routineId: 'local-morning',
+      templateHtml: '<p>What stood out?</p>',
+      responseHtml: '<p><strong>Good focus.</strong></p>',
+    },
+    {
+      ...playlistReflection,
+      sourceId: 'local-playlist',
+      routineId: 'local-morning',
+      templateHtml: '<p>Playlist prompt</p>',
+      responseHtml: '<p><strong>Good focus.</strong></p>',
+    },
+  ]);
+
+  const existing = {
+    [day]: {
+      'local-morning:water': {
+        routineTitle: 'Saved local name',
+        stepTitle: 'Saved local step',
+        runReflections: [{
+          ...reflection,
+          runId: 'local-run',
+          sourceId: 'local-morning',
+          routineId: 'local-morning',
+          responseHtml: '<p>Already saved.</p>',
+        }],
+      },
+    },
+  };
+  const merged = mergeImportedProgress(existing, imported.progress!, { morning: 'local-morning' }, {
+    'old-playlist': 'local-playlist',
+  });
+  const mergedValue = merged.progress[day]['local-morning:water'];
+  assert.equal(typeof mergedValue, 'object');
+  if (typeof mergedValue !== 'object' || mergedValue === null) throw new Error('Expected merged completion metadata.');
+  assert.equal(mergedValue.routineTitle, 'Saved local name');
+  assert.deepEqual(mergedValue.runReflections?.map(item => item.runId), ['local-run', 'routine-run-a', 'playlist-run-a']);
 });
 
 test('routine backup round-trips skill assignments and rating history', () => {
@@ -660,7 +745,7 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
   const source = routine();
   const invalidFiles = [
     '{',
-    backup(8, [source]),
+    backup(9, [source]),
     backup(2, [source], []),
     backup(2, [source], { '2026-02-30': { 'morning:water': true } }),
     backup(2, [source], { [day]: [] }),

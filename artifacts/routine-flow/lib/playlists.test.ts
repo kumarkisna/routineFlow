@@ -149,6 +149,16 @@ test('saved playlist parsing keeps ordered identifiers and rejects corrupt stora
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":[12]}]'));
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":["a"],"rateSkillsAtPlaylistEnd":"yes"}]'));
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":["a"],"reminderSettings":{"stepCompletion":"yes","routineCompletion":false}}]'));
+  assert.equal(
+    parsePlaylists(JSON.stringify([{
+      ...list[0],
+      reflectionTemplateHtml: '<p onclick="alert(1)" style="color:#345">Think about <strong>today</strong>.</p>',
+    }]))[0].reflectionTemplateHtml,
+    '<p style="color:#345">Think about <strong>today</strong>.</p>',
+  );
+  assert.throws(() => parsePlaylists(JSON.stringify([{
+    ...list[0], reflectionTemplateHtml: 'x'.repeat(100_001),
+  }])));
 });
 
 test('playlist backup imports merge skill links and keep conflicting local playlists intact', () => {

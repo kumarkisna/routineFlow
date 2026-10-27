@@ -29,6 +29,13 @@ test('native rich previews preserve formatting and links while removing executab
   assert.equal(sanitizeStepDetailHtml(formatted), formatted);
   assert.equal(
     sanitizeStepDetailHtml('<p onclick="alert(1)">Safe</p><script>alert(2)</script><a href="javascript:run()">Link</a>'),
-    '<p>Safe</p><a href="run()">Link</a>',
+    '<p>Safe</p><a>Link</a>',
+  );
+});
+
+test('rich HTML removes executable tags and unsafe styles while retaining safe formatting', () => {
+  assert.equal(
+    sanitizeStepDetailHtml('<p style="color:#abc;background-image:url(https://bad)">Keep <strong>this</strong></p><img src=x onerror=alert(1)>'),
+    '<p style="color:#abc">Keep <strong>this</strong></p>',
   );
 });

@@ -1,111 +1,117 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import { StepDetails } from '@/components/StepDetails';
 import { useColors } from '@/hooks/useColors';
-import type { SkillRatingRun } from '@/lib/skills';
+import { detailHtmlToText, sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
 
 export function RunReflectionPrompt({
-  visible, routineTitle, run, initialText, initialHtml, onSave, onSaved, onSkip,
+  visible,
+  sourceTitle,
+  templateHtml,
+  initialResponseHtml,
+  onSkip,
+  onSave,
 }: {
   visible: boolean;
-  routineTitle: string;
-  run: SkillRatingRun;
-  initialText?: string;
-  initialHtml?: string;
-  onSave: (text: string, html: string) => Promise<void>;
-  onSaved: () => void;
-  onSkip: () => void | Promise<void>;
+  sourceTitle: string;
+  templateHtml: string;
+  initialResponseHtml?: string;
+  onSkip: () => void;
+  onSave: (responseHtml: string) => Promise<void>;
 }) {
   const colors = useColors();
-  const [text, setText] = React.useState('');
-  const [html, setHtml] = React.useState('');
+  const [responseHtml, setResponseHtml] = React.useState(initialResponseHtml ?? '');
+  const [responseText, setResponseText] = React.useState(
+    initialResponseHtml ? detailHtmlToText(initialResponseHtml) : '',
+  );
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
+  const lock = React.useRef(false);
+
   React.useEffect(() => {
-    if (visible) {
-      setText(initialText ?? '');
-      setHtml(initialHtml ?? '');
-      setError('');
-    }
-  }, [visible, run.runId, initialText, initialHtml]);
+    if (!visible) return;
+    setResponseHtml(initialResponseHtml ?? '');
+    setResponseText(initialResponseHtml ? detailHtmlToText(initialResponseHtml) : '');
+    setError('');
+  }, [visible, initialResponseHtml]);
 
   async function save() {
-    if (saving) return;
-    setSaving(true);
-    setError('');
-    try {
-      await onSave(text, html);
-      onSaved();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save this run reflection.');
-    } finally {
-      setSaving(false);
+    if (lock.current) return;
+    const safeHtml = sanitizeStepDetailHtml(responseHtml);
+    if (!detailHtmlToText(safeHtml).trim()) {
+      setError('Add a reflection before saving, or come back to it later.');
+      return;
     }
-  }
-
-  async function skip() {
-    if (saving) return;
+    lock.current = true;
     setSaving(true);
     setError('');
     try {
-      await onSkip();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not save this run reflection for later.');
+      await onSave(safeHtml);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save this reflection. Please try again.');
     } finally {
+      lock.current = false;
       setSaving(false);
     }
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => void skip()}>
-      <View style={[styles.backdrop, { backgroundColor: `${colors.foreground}66` }]}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onSkip}>
+      <View style={styles.backdrop}>
         <KeyboardAwareScrollViewCompat
           style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.border }]}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
           bottomOffset={70}
         >
           <View style={styles.header}>
             <View style={[styles.icon, { backgroundColor: colors.sageSoft }]}>
               <Ionicons name="create-outline" size={19} color={colors.success} />
             </View>
-            <View style={{ flex: 1 }}>
+            <View style={styles.heading}>
               <Text style={[styles.title, { color: colors.foreground }]}>Run reflection</Text>
-              <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>{routineTitle}</Text>
+              <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={2}>{sourceTitle}</Text>
             </View>
           </View>
           <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-            Add or change this reflection for this run. It will not change the routine.
+            Use the prompt below to reflect on this run. Your response is saved separately from skill ratings and notes.
           </Text>
-          <TextInput
-            accessibilityLabel="Run reflection"
-            testID="run-reflection-input"
-            multiline
-            editable={!saving}
-            value={text}
-            onChangeText={value => { setText(value); setHtml(''); }}
-            placeholder="Write a reflection for this run…"
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
-          />
+          {templateHtml ? (
+            <View style={[styles.template, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.templateLabel, { color: colors.inkSoft }]}>Your prompt</Text>
+              <StepDetails details={detailHtmlToText(templateHtml)} detailHtml={[sanitizeStepDetailHtml(templateHtml)]}
+                style={{ color: colors.foreground, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 21 }}
+                linkColor={colors.primary} backgroundColor={colors.card} />
+            </View>
+          ) : null}
+          <Text style={[styles.responseLabel, { color: colors.inkSoft }]}>Your response</Text>
           <ExpandableRichDetailEditor
             label="Run reflection"
-            value={text}
-            html={html}
+            value={responseText}
+            html={responseHtml}
             disabled={saving}
-            onSave={(nextText, nextHtml) => { setText(nextText); setHtml(nextHtml); }}
+            onSave={(text, html) => {
+              setResponseText(text);
+              setResponseHtml(sanitizeStepDetailHtml(html));
+              setError('');
+            }}
           />
           {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
           <View style={styles.actions}>
-            <Pressable accessibilityRole="button" disabled={saving} onPress={() => void skip()} style={styles.secondary}>
-              <Text style={[styles.actionText, { color: colors.mutedForeground }]}>Do this later</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Skip reflection for now"
+              testID="skip-run-reflection" disabled={saving} onPress={onSkip} style={styles.skip}>
+              <Text style={[styles.skipText, { color: colors.inkSoft }]}>Later</Text>
             </Pressable>
-            <Pressable accessibilityRole="button" testID="save-run-reflection" disabled={saving} onPress={() => void save()}
-              style={[styles.primary, { backgroundColor: saving ? colors.secondary : colors.primary }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Save run reflection"
+              testID="save-run-reflection" disabled={saving}
+              onPress={() => void save()}
+              style={[styles.save, { backgroundColor: saving ? colors.secondary : colors.primary }]}>
               {saving ? <ActivityIndicator size="small" color={colors.primaryForeground} /> : null}
-              <Text style={[styles.actionText, { color: saving ? colors.mutedForeground : colors.primaryForeground }]}>
+              <Text style={[styles.saveText, { color: saving ? colors.mutedForeground : colors.primaryForeground }]}>
                 {saving ? 'Saving…' : 'Save reflection'}
               </Text>
             </Pressable>
@@ -117,18 +123,22 @@ export function RunReflectionPrompt({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { maxHeight: '88%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1 },
-  content: { padding: 20, paddingBottom: 32, gap: 12 },
+  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#14191dcc' },
+  sheet: { maxHeight: '88%', borderTopLeftRadius: 26, borderTopRightRadius: 26, borderWidth: 1 },
+  content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 28 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  icon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: 'Inter_700Bold', fontSize: 19 },
+  icon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  heading: { flex: 1 },
+  title: { fontFamily: 'Inter_700Bold', fontSize: 18 },
   subtitle: { fontFamily: 'Inter_400Regular', fontSize: 13, marginTop: 2 },
-  hint: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19 },
-  input: { minHeight: 110, borderWidth: 1, borderRadius: 14, padding: 12, fontSize: 15, textAlignVertical: 'top' },
-  error: { fontFamily: 'Inter_500Medium', fontSize: 12 },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 4 },
-  secondary: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 10 },
-  primary: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 12, paddingHorizontal: 15 },
-  actionText: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  hint: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 19, marginTop: 13 },
+  template: { borderWidth: 1, borderRadius: 14, padding: 12, marginTop: 14 },
+  templateLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginBottom: 7 },
+  responseLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginTop: 18 },
+  error: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 10 },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 18 },
+  skip: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 10 },
+  skipText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  save: { minHeight: 46, borderRadius: 14, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  saveText: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
 });

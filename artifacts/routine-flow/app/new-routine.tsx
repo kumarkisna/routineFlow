@@ -37,6 +37,7 @@ import {
 } from '@/lib/stepDetailDraft';
 import { formatDuration, getStepDetails, getStepSeconds } from '@/types/routines';
 import type { Routine, RoutineStep } from '@/types/routines';
+import { detailHtmlToText } from '@/lib/stepDetailHtml';
 
 export default function NewRoutineScreen() {
   const { editId } = useLocalSearchParams<{ editId?: string }>();
@@ -62,8 +63,12 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [title, setTitle] = useState(editingRoutine?.title ?? '');
   const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
   const [subtitleHtml, setSubtitleHtml] = useState(editingRoutine?.subtitleHtml ?? '');
-  const [reflectionTemplate, setReflectionTemplate] = useState(editingRoutine?.reflectionTemplate ?? '');
   const [reflectionTemplateHtml, setReflectionTemplateHtml] = useState(editingRoutine?.reflectionTemplateHtml ?? '');
+  const [reflectionTemplateText, setReflectionTemplateText] = useState(
+    editingRoutine?.reflectionTemplateHtml
+      ? detailHtmlToText(editingRoutine.reflectionTemplateHtml)
+      : editingRoutine?.reflectionTemplate ?? '',
+  );
   const [speakSubtitle, setSpeakSubtitle] = useState(
     editingRoutine ? editingRoutine.speakSubtitle ?? true : activePerson.defaultSpeakRoutineDescription,
   );
@@ -227,10 +232,10 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
         ...(step.skillIds ? { skillIds: step.skillIds.filter(id => availableSkills.has(id)) } : {}),
       }));
       if (editingRoutine) {
-        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments, reflectionTemplate, reflectionTemplateHtml);
+        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments, reflectionTemplateText, reflectionTemplateHtml);
         router.back();
       } else {
-        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments, reflectionTemplate, reflectionTemplateHtml);
+        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments, reflectionTemplateText, reflectionTemplateHtml);
         router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -323,25 +328,6 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           testID="routine-description-attachments"
           label="Files in routine description"
         />
-        <Text style={[styles.label, { color: colors.inkSoft }]}>Run reflection template (optional)</Text>
-        <TextInput
-          accessibilityLabel="Routine run reflection template"
-          testID="routine-reflection-template"
-          multiline
-          value={reflectionTemplate}
-          editable={!saving}
-          onChangeText={value => { setReflectionTemplate(value); setReflectionTemplateHtml(''); }}
-          placeholder="Start a reflection for after each run…"
-          placeholderTextColor={colors.mutedForeground}
-          style={[styles.input, styles.descriptionInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
-        />
-        <ExpandableRichDetailEditor
-          label="Run reflection template"
-          value={reflectionTemplate}
-          html={reflectionTemplateHtml}
-          disabled={saving}
-          onSave={(text, html) => { setReflectionTemplate(text); setReflectionTemplateHtml(html); }}
-        />
         <View style={[styles.speechPreference, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <View style={styles.speechPreferenceText}>
             <Text style={[styles.speechPreferenceTitle, { color: colors.foreground }]}>Speak routine description</Text>
@@ -356,6 +342,15 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           />
         </View>
         <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={saving} testIDPrefix="routine-skill" />
+        <Text style={[styles.categoryLabel, { color: colors.inkSoft }]}>Run reflection template (optional)</Text>
+        <TextInput accessibilityLabel="Routine reflection template" testID="routine-reflection-template-input" multiline
+          value={reflectionTemplateText}
+          placeholder="Add prompts to answer after each run"
+          placeholderTextColor={colors.mutedForeground}
+          onChangeText={value => { setReflectionTemplateText(value); setReflectionTemplateHtml(''); }}
+          style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} />
+        <ExpandableRichDetailEditor label="Routine reflection template" value={reflectionTemplateText} html={reflectionTemplateHtml}
+          disabled={saving} onSave={(text, html) => { setReflectionTemplateText(text); setReflectionTemplateHtml(html); }} />
         <Text style={[styles.categoryLabel, { color: colors.inkSoft }]}>Category (optional)</Text>
         <TextInput
           accessibilityLabel="Routine category"

@@ -6,7 +6,7 @@ import type { RoutineSkill } from './skills';
 import {
   createHistorySkillRatingRun, formatHistoryDay, getHistoryForDay, getUnratedSkillIds,
   getSkillRatingsMissingNotes, groupSkillRatingEvents, playlistHistoryOptions, playlistHistoryRatingAnchorId, recordCompletion,
-  recordedHistoryDays, recordedPastDays, routineHistoryOptions,
+  recordedHistoryDays, recordedPastDays, routineHistoryOptions, updateRunReflectionResponse,
 } from './progressHistory';
 
 const routine: Routine = {
@@ -49,6 +49,73 @@ test('playlist completions are tagged without replacing labels and support multi
       { playlistId: 'wind-down', playlistTitle: 'Wind down' },
     ],
   });
+});
+
+test('history keeps routine and playlist reflections attached to their exact run and filter', () => {
+  const reflections = [
+    {
+      runId: 'routine-run', sourceType: 'routine' as const, sourceId: 'morning', sourceTitle: 'Morning',
+      routineId: 'morning', completedAt: '2026-01-03T10:00:00.000Z', templateHtml: '<p>Routine prompt</p>',
+      responseHtml: '<p>Routine answer</p>',
+    },
+    {
+      runId: 'playlist-run', sourceType: 'playlist' as const, sourceId: 'weekday', sourceTitle: 'Weekday',
+      routineId: 'morning', completedAt: '2026-01-03T11:00:00.000Z', templateHtml: '<p>Playlist prompt</p>',
+    },
+  ];
+  const progress = {
+    '2026-01-03': {
+      'morning:water': {
+        routineTitle: 'Morning',
+        stepTitle: 'Water',
+        playlistRuns: [{ playlistId: 'weekday', playlistTitle: 'Weekday' }],
+        runReflections: reflections,
+      },
+    },
+  };
+
+  assert.deepEqual(getHistoryForDay(progress, [routine], '2026-01-03')[0].runReflections, reflections);
+  assert.deepEqual(
+    getHistoryForDay(progress, [routine], '2026-01-03', [], { kind: 'routine', id: 'morning' })[0].runReflections,
+    [reflections[0]],
+  );
+  assert.deepEqual(
+    getHistoryForDay(progress, [routine], '2026-01-03', [], { kind: 'playlist', id: 'weekday' })[0].runReflections,
+    [reflections[1]],
+  );
+});
+
+test('editing a run response preserves completion labels, playlist tags, and other runs', () => {
+  const reflection = {
+    runId: 'run-to-edit', sourceType: 'playlist' as const, sourceId: 'weekday', sourceTitle: 'Weekday',
+    routineId: 'morning', completedAt: '2026-01-03T11:00:00.000Z', templateHtml: '<p>Prompt</p>',
+  };
+  const otherReflection = {
+    ...reflection, runId: 'other-run', responseHtml: '<p>Keep me</p>',
+  };
+  const original = {
+    '2026-01-03': {
+      'morning:water': {
+        routineTitle: 'Saved routine title',
+        stepTitle: 'Saved step title',
+        playlistRuns: [{ playlistId: 'weekday', playlistTitle: 'Weekday' }],
+        runReflections: [reflection, otherReflection],
+      },
+    },
+  };
+
+  const updated = updateRunReflectionResponse(original, '2026-01-03', 'run-to-edit', '<p>Updated response</p>');
+  const saved = updated['2026-01-03']['morning:water'];
+  assert.equal(typeof saved, 'object');
+  if (typeof saved !== 'object' || saved === null) throw new Error('Expected saved completion metadata.');
+  assert.equal(saved.routineTitle, 'Saved routine title');
+  assert.equal(saved.stepTitle, 'Saved step title');
+  assert.deepEqual(saved.playlistRuns, original['2026-01-03']['morning:water'].playlistRuns);
+  assert.deepEqual(saved.runReflections, [
+    { ...reflection, responseHtml: '<p>Updated response</p>' },
+    otherReflection,
+  ]);
+  assert.throws(() => updateRunReflectionResponse(original, '2026-01-03', 'missing', '<p>no</p>'), /could not be found/);
 });
 
 test('lists only past dates with completions, newest first', () => {

@@ -3,6 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS, mergePlaylistCatalog, parsePlaylists, validatePlaylist, type RoutinePlaylist } from '@/lib/playlists';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import type { RoutineNotificationSettings } from '@/types/routines';
+import { resolveReflectionTemplateHtml } from '@/lib/stepDetailHtml';
 
 const KEY = '@routine-flow/playlists';
 type PlaylistContextValue = {
@@ -59,6 +60,13 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
       validatePlaylist(title, routineIds);
       if (id && !current.current.some(item => item.id === id)) throw new Error('Playlist not found.');
       const previous = id ? current.current.find(item => item.id === id) : undefined;
+      const nextReflectionTemplate = reflectionTemplate !== undefined
+        ? reflectionTemplate.trim()
+        : previous?.reflectionTemplate ?? '';
+      const nextReflectionTemplateHtml = resolveReflectionTemplateHtml(
+        reflectionTemplateHtml !== undefined ? reflectionTemplateHtml : previous?.reflectionTemplateHtml,
+        nextReflectionTemplate,
+      );
       const playlist: RoutinePlaylist = {
         id: id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         title: title.trim(), routineIds: [...routineIds],
@@ -72,11 +80,8 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
             ?? previous?.reminderSettings?.routineCompletion
             ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.routineCompletion,
         },
-        ...((reflectionTemplate?.trim() ?? previous?.reflectionTemplate)
-          ? { reflectionTemplate: reflectionTemplate?.trim() ?? previous?.reflectionTemplate } : {}),
-        ...(reflectionTemplateHtml !== undefined
-          ? { reflectionTemplateHtml: reflectionTemplate?.trim() ? reflectionTemplateHtml : undefined }
-          : previous?.reflectionTemplateHtml ? { reflectionTemplateHtml: previous.reflectionTemplateHtml } : {}),
+        ...(nextReflectionTemplate ? { reflectionTemplate: nextReflectionTemplate } : {}),
+        ...(nextReflectionTemplateHtml ? { reflectionTemplateHtml: nextReflectionTemplateHtml } : {}),
       };
       const next = id ? current.current.map(item => item.id === id ? playlist : item)
         : [...current.current, playlist];

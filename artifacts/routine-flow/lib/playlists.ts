@@ -1,5 +1,6 @@
 import type { Routine, RoutineNotificationSettings } from '../types/routines';
 import { getPlayableRoutine } from './routinePlayback';
+import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
 
 export const DEFAULT_PLAYLIST_REMINDER_SETTINGS: RoutineNotificationSettings = {
   stepCompletion: false,
@@ -25,8 +26,9 @@ export type RoutinePlaylist = {
   rateSkillsAtPlaylistEnd?: boolean;
   /** Reminder choices for runs launched from this playlist. */
   reminderSettings?: RoutineNotificationSettings;
-  /** Optional rich-text starter for the reflection saved with a playlist run. */
+  /** Optional plain-text fallback for the rich-text reflection prompt. */
   reflectionTemplate?: string;
+  /** Sanitized rich-text prompt captured for each completed playlist run. */
   reflectionTemplateHtml?: string;
 };
 
@@ -115,6 +117,9 @@ export function parsePlaylists(value: string): RoutinePlaylist[] {
   )) throw new Error('Saved playlists could not be read.');
   return parsed.map(playlist => ({
     ...playlist,
+    ...(playlist.reflectionTemplateHtml && detailHtmlToText(sanitizeStepDetailHtml(playlist.reflectionTemplateHtml)).trim()
+      ? { reflectionTemplateHtml: sanitizeStepDetailHtml(playlist.reflectionTemplateHtml) }
+      : {}),
     rateSkillsAtPlaylistEnd: playlist.rateSkillsAtPlaylistEnd ?? true,
     reminderSettings: {
       stepCompletion: playlist.reminderSettings?.stepCompletion ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,

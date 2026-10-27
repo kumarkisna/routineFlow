@@ -1,5 +1,5 @@
 import {
-  isCompleted, type CompletionMap, type CompletionValue, type PlaylistCompletionSource, type Routine,
+  isCompleted, type CompletionMap, type CompletionValue, type PlaylistCompletionSource, type Routine, type RunReflection,
 } from '@/types/routines';
 import { historySourceId, splitProgressKey } from '@/lib/historyIdentity';
 import type { RoutineSkill, SkillRatingRun } from '@/lib/skills';
@@ -36,6 +36,7 @@ export type HistoryRoutine = {
   steps: { id: string; title: string; hidden: boolean; removed: boolean }[];
   playlistRuns?: PlaylistCompletionSource[];
   skillRatings?: HistorySkillRating[];
+  runReflections?: RunReflection[];
 };
 
 export function recordCompletion(
@@ -54,6 +55,32 @@ export function recordCompletion(
     playlistRuns.push(playlistRun);
   }
   return playlistRuns.length ? { ...base, playlistRuns } : base;
+}
+
+export function updateRunReflectionResponse(
+  progress: CompletionMap,
+  day: string,
+  runId: string,
+  responseHtml: string,
+): CompletionMap {
+  const entries = progress[day];
+  if (!entries) throw new Error('This run could not be found in History. Refresh and try again.');
+  let found = false;
+  const nextEntries = Object.fromEntries(Object.entries(entries).map(([key, value]) => {
+    if (typeof value !== 'object' || value === null
+      || !value.runReflections?.some(reflection => reflection.runId === runId)) {
+      return [key, value];
+    }
+    found = true;
+    return [key, {
+      ...value,
+      runReflections: value.runReflections.map(reflection => reflection.runId === runId
+        ? { ...reflection, ...(responseHtml.trim() ? { responseHtml } : { responseHtml: undefined }) }
+        : reflection),
+    }];
+  }));
+  if (!found) throw new Error('This run could not be found in History. Refresh and try again.');
+  return { ...progress, [day]: nextEntries };
 }
 
 function isValidDay(day: string): boolean {
@@ -149,6 +176,13 @@ function completionMatchesFilter(
     && Array.isArray(value.playlistRuns) && value.playlistRuns.some(run => run.playlistId === filter.id);
 }
 
+function reflectionMatchesFilter(reflection: RunReflection, filter?: HistoryFilter): boolean {
+  if (!filter) return true;
+  return filter.kind === 'routine'
+    ? reflection.sourceType === 'routine' && reflection.sourceId === filter.id
+    : reflection.sourceType === 'playlist' && reflection.sourceId === filter.id;
+}
+
 export function recordedPastDays(progress: CompletionMap, today: string, filter?: HistoryFilter): string[] {
   return Object.entries(progress)
     .filter(([day, entries]) =>
@@ -242,6 +276,15 @@ export function getHistoryForDay(
       for (const run of completed.playlistRuns ?? []) {
         if (!group.playlistRuns.some(existing => existing.playlistId === run.playlistId)) {
           group.playlistRuns.push(run);
+        }
+      }
+    }
+    if (typeof completed === 'object' && completed !== null && Array.isArray(completed.runReflections)) {
+      group.runReflections ??= [];
+      for (const reflection of completed.runReflections) {
+        if (reflectionMatchesFilter(reflection, filter)
+          && !group.runReflections.some(existing => existing.runId === reflection.runId)) {
+          group.runReflections.push(reflection);
         }
       }
     }

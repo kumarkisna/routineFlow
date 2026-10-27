@@ -8,9 +8,11 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SkillRatingPrompt, type SkillRatingNoteEditTarget } from '@/components/SkillRatingPrompt';
 import { RunReflectionPrompt } from '@/components/RunReflectionPrompt';
+import { StepDetails } from '@/components/StepDetails';
+import { SkillRunReflectionPrompt } from '@/components/SkillRunReflectionPrompt';
 import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
-import { useSkills, type RunReflection } from '@/context/SkillContext';
+import { useSkills, type RunReflection as SkillRunReflection } from '@/context/SkillContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
@@ -25,6 +27,8 @@ import { buildSkillRatingSpeechText } from '@/lib/skillRatingSpeech';
 import { getDeferredReflectionTemplate } from '@/lib/runReflectionTemplates';
 import { getPlaylistSkillIds, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
 import { playablePlaylistIds } from '@/lib/playlists';
+import { sanitizeStepDetailHtml, detailHtmlToText } from '@/lib/stepDetailHtml';
+import type { RunReflection as CompletionRunReflection } from '@/types/routines';
 
 export default function HistoryScreen() {
   const colors = useColors();
@@ -32,8 +36,11 @@ export default function HistoryScreen() {
   const { activePerson } = usePeople();
   const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const disclosure = usePersistentDisclosure('history', activePerson.id);
-  const { progress, routines, loading } = useRoutines();
-  const { skills, runReflections, saveRunReflection, loading: skillsLoading, error: skillsError } = useSkills();
+  const { progress, routines, loading, saveRunReflection: saveCompletionRunReflection } = useRoutines();
+  const {
+    skills, runReflections, saveRunReflection: saveSkillRunReflection,
+    loading: skillsLoading, error: skillsError,
+  } = useSkills();
   const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
   const [selectedDay, setSelectedDay] = React.useState<string | null>(null);
   const [filterKind, setFilterKind] = React.useState<'all' | 'routine' | 'playlist'>('all');
@@ -52,7 +59,10 @@ export default function HistoryScreen() {
     noteTargets?: ReturnType<typeof getSkillRatingsMissingNotes>;
   } | null>(null);
   const [reflectionEditTarget, setReflectionEditTarget] = React.useState<SkillRatingNoteEditTarget | null>(null);
-  const [runReflectionEditTarget, setRunReflectionEditTarget] = React.useState<RunReflection | null>(null);
+  const [runReflectionEditTarget, setRunReflectionEditTarget] = React.useState<SkillRunReflection | null>(null);
+  const [runReflectionTarget, setRunReflectionTarget] = React.useState<{
+    day: string; reflection: CompletionRunReflection;
+  } | null>(null);
   const exportLock = React.useRef(false);
   const speechSessionRef = React.useRef(0);
   const speechEventKeyRef = React.useRef<string | null>(null);
@@ -238,7 +248,7 @@ export default function HistoryScreen() {
     });
   }
 
-  function exportReflectionOnlyRun(reflection: RunReflection) {
+  function exportReflectionOnlyRun(reflection: SkillRunReflection) {
     return exportRunOutcome({
       exportId: reflection.runId,
       routineTitle: reflection.routineTitle,
@@ -285,7 +295,7 @@ export default function HistoryScreen() {
     });
   }
 
-  function openRunReflectionEditor(reflection: RunReflection) {
+  function openRunReflectionEditor(reflection: SkillRunReflection) {
     const template = getDeferredReflectionTemplate(reflection, routines, playlists);
     setRunReflectionEditTarget({
       ...reflection,
@@ -511,6 +521,46 @@ export default function HistoryScreen() {
                   </View>
                 </View>
               ))}
+              {group.runReflections?.length ? (
+                <View style={[styles.runReflections, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Run reflections</Text>
+                  {group.runReflections.map(reflection => {
+                    const hasResponse = Boolean(reflection.responseHtml?.trim());
+                    const reflectionLabel = `${reflection.sourceType === 'playlist' ? 'Playlist' : 'Routine'}: ${reflection.sourceTitle}`;
+                    return (
+                      <View key={reflection.runId} style={[styles.runReflection, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                        <Text style={[styles.runReflectionTitle, { color: colors.foreground }]}>{reflectionLabel}</Text>
+                        <Text style={[styles.skillEventTime, { color: colors.mutedForeground }]}>
+                          Completed · {formatSkillRatingDateTime(reflection.completedAt)}
+                        </Text>
+                        {reflection.responseHtml ? (
+                          <StepDetails
+                            details={detailHtmlToText(reflection.responseHtml)}
+                            detailHtml={[sanitizeStepDetailHtml(reflection.responseHtml)]}
+                            style={[styles.runReflectionResponse, { color: colors.inkSoft }]}
+                            linkColor={colors.primary}
+                            backgroundColor={colors.background}
+                          />
+                        ) : (
+                          <Text style={[styles.runReflectionMissing, { color: colors.mutedForeground }]}>No response saved yet.</Text>
+                        )}
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`${hasResponse ? 'Edit' : 'Complete'} run reflection for ${reflectionLabel}`}
+                          testID={`history-${hasResponse ? 'edit' : 'complete'}-run-reflection-${reflection.runId}`}
+                          onPress={() => setRunReflectionTarget({ day: activeDay, reflection })}
+                          style={({ pressed }) => [styles.reflectionAction, { backgroundColor: colors.sageSoft }, pressed && styles.pressed]}
+                        >
+                          <Ionicons name={hasResponse ? 'pencil-outline' : 'create-outline'} size={16} color={colors.success} />
+                          <Text style={[styles.ratingActionText, { color: colors.success }]}>
+                            {hasResponse ? 'Edit run reflection' : 'Complete reflection'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
               {unratedSkillIds.length ? (
                 <Pressable
                   accessibilityRole="button"
@@ -787,7 +837,7 @@ export default function HistoryScreen() {
         onSaved={() => setRatingPrompt(null)}
       />
       {runReflectionEditTarget ? (
-        <RunReflectionPrompt
+        <SkillRunReflectionPrompt
           visible
           routineTitle={runReflectionEditTarget.routineTitle}
           run={{
@@ -802,7 +852,7 @@ export default function HistoryScreen() {
           initialHtml={runReflectionEditTarget.text.trim() || runReflectionEditTarget.html.trim()
             ? runReflectionEditTarget.html
             : runReflectionEditTarget.templateHtmlSnapshot ?? ''}
-          onSave={(text, html) => saveRunReflection({ ...runReflectionEditTarget, text, html })}
+          onSave={(text, html) => saveSkillRunReflection({ ...runReflectionEditTarget, text, html })}
           onSaved={() => setRunReflectionEditTarget(null)}
           onSkip={() => setRunReflectionEditTarget(null)}
         />
@@ -814,6 +864,22 @@ export default function HistoryScreen() {
         editTarget={reflectionEditTarget ?? undefined}
         onSkip={() => setReflectionEditTarget(null)}
         onSaved={() => setReflectionEditTarget(null)}
+      />
+      <RunReflectionPrompt
+        visible={runReflectionTarget !== null}
+        sourceTitle={runReflectionTarget?.reflection.sourceTitle ?? ''}
+        templateHtml={runReflectionTarget?.reflection.templateHtml ?? ''}
+        initialResponseHtml={runReflectionTarget?.reflection.responseHtml}
+        onSkip={() => setRunReflectionTarget(null)}
+        onSave={async responseHtml => {
+          if (!runReflectionTarget) throw new Error('This saved reflection could not be found.');
+          await saveCompletionRunReflection(
+            runReflectionTarget.day,
+            runReflectionTarget.reflection.runId,
+            responseHtml,
+          );
+          setRunReflectionTarget(null);
+        }}
       />
     </ScrollView>
   );
@@ -857,6 +923,12 @@ const styles = StyleSheet.create({
   skillHistoryError: { fontFamily: 'Inter_500Medium', fontSize: 12, lineHeight: 18, marginBottom: 12 },
   ratingAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderRadius: 12, marginTop: 10 },
   ratingActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  runReflections: { borderTopWidth: 1, paddingTop: 13, marginTop: 4, gap: 9 },
+  runReflection: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 7 },
+  runReflectionTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 13 },
+  runReflectionResponse: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 20 },
+  runReflectionMissing: { fontFamily: 'Inter_400Regular', fontSize: 12, marginTop: 3 },
+  reflectionAction: { minHeight: 38, alignSelf: 'flex-start', borderRadius: 12, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 4 },
   skillNotes: { borderTopWidth: 1, paddingTop: 13, marginTop: 4 },
   skillNotesHeading: { fontFamily: 'Inter_600SemiBold', fontSize: 13, marginBottom: 6 },
   skillEvent: { borderWidth: 1, borderRadius: 13, padding: 10, marginTop: 7 },

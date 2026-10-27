@@ -10,10 +10,10 @@ import React, {
 } from 'react';
 import * as FileSystem from 'expo-file-system/legacy';
 import {
-  isCompleted, type CompletionMap, type PlaylistCompletionSource, type Routine, type RoutineStep,
+  isCompleted, type CompletionMap, type PlaylistCompletionSource, type Routine, type RoutineStep, type RunReflection,
 } from '@/types/routines';
 import { makeRoutineCopy } from '@/lib/copyRoutine';
-import { recordCompletion } from '@/lib/progressHistory';
+import { recordCompletion, updateRunReflectionResponse } from '@/lib/progressHistory';
 import { removeRoutineCategory, renameRoutineCategory } from '@/lib/routineCategories';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { mergeImportedProgress, mergeImportedRoutines, persistImportedBackup, type RoutineBackup } from '@/lib/routineTransfer';
@@ -21,6 +21,7 @@ import {
   saveRoutinesWithStepDetailAttachments,
   type StepDetailAttachmentWriteFileSystem,
 } from '@/lib/stepDetailAttachmentCleanup';
+import { resolveReflectionTemplateHtml, sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
 
 const ROUTINES_KEY = '@routine-flow/routines';
 const PROGRESS_KEY = '@routine-flow/progress';
@@ -80,7 +81,8 @@ type RoutineContextValue = {
   routines: Routine[];
   progress: CompletionMap;
   loading: boolean;
-  completeRoutine: (routineId: string, playlistRun?: PlaylistCompletionSource) => Promise<void>;
+  completeRoutine: (routineId: string, playlistRun?: PlaylistCompletionSource, reflection?: RunReflection | RunReflection[]) => Promise<void>;
+  saveRunReflection: (day: string, runId: string, responseHtml: string) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
   updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => Promise<void>;
@@ -161,19 +163,47 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const completeRoutine = useCallback(
-    async (routineId: string, playlistRun?: PlaylistCompletionSource) => {
+    async (routineId: string, playlistRun?: PlaylistCompletionSource, reflection?: RunReflection | RunReflection[]) => {
       const routine = routines.find((item) => item.id === routineId);
       if (!routine) return;
       const day = todayKey();
       const nextDay = { ...(progress[day] ?? {}) };
-      routine.steps.filter((step) => !step.hidden).forEach((step) => {
+      const visibleSteps = routine.steps.filter((step) => !step.hidden);
+      visibleSteps.forEach((step) => {
         const key = `${routineId}:${step.id}`;
         nextDay[key] = recordCompletion(routine.title, step.title, nextDay[key], playlistRun);
       });
+      const reflections = reflection ? Array.isArray(reflection) ? reflection : [reflection] : [];
+      if (reflections.length && visibleSteps.length) {
+        const key = `${routineId}:${visibleSteps[0].id}`;
+        const existing = nextDay[key];
+        const record = typeof existing === 'object' && existing !== null
+          ? existing
+          : { routineTitle: routine.title, stepTitle: visibleSteps[0].title };
+        const previousReflections = record.runReflections ?? [];
+        const newReflections = reflections.filter(item =>
+          !previousReflections.some(existingReflection => existingReflection.runId === item.runId));
+        if (newReflections.length) {
+          nextDay[key] = {
+            ...record,
+            runReflections: [
+              ...previousReflections,
+              ...newReflections.map(item => ({ ...item, templateHtml: sanitizeStepDetailHtml(item.templateHtml) })),
+            ],
+          };
+        }
+      }
       await saveProgress({ ...progress, [day]: nextDay });
     },
     [progress, routines, saveProgress],
   );
+  const saveRunReflection = useCallback(async (day: string, runId: string, responseHtml: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !runId.trim() || responseHtml.length > 100_000) {
+      throw new Error('This saved reflection is invalid.');
+    }
+    const sanitized = sanitizeStepDetailHtml(responseHtml);
+    await saveProgress(updateRunReflectionResponse(progressRef.current, day, runId, sanitized));
+  }, [saveProgress]);
 
   const createRoutine = useCallback(
     (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => runRoutineWrite(async () => {
@@ -182,12 +212,13 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
         title,
         subtitle,
         ...(subtitleHtml ? { subtitleHtml } : {}),
+        ...(reflectionTemplate?.trim() ? { reflectionTemplate: reflectionTemplate.trim() } : {}),
+        ...(resolveReflectionTemplateHtml(reflectionTemplateHtml, reflectionTemplate)
+          ? { reflectionTemplateHtml: resolveReflectionTemplateHtml(reflectionTemplateHtml, reflectionTemplate) } : {}),
         speakSubtitle: speakSubtitle ?? true,
         ...(descriptionAttachments?.length ? { descriptionAttachments: [...descriptionAttachments] } : {}),
         ...(category ? { category } : {}),
         ...(skillIds?.length ? { skillIds: [...skillIds] } : {}),
-        ...(reflectionTemplate?.trim() ? { reflectionTemplate: reflectionTemplate.trim() } : {}),
-        ...(reflectionTemplateHtml?.trim() ? { reflectionTemplateHtml } : {}),
         icon: 'sparkles-outline',
         tone: 'sun',
         steps,
@@ -224,15 +255,19 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
         routine.id === routineId ? {
           ...routine, title, subtitle, steps, category,
           ...(subtitleHtml !== undefined ? { subtitleHtml } : {}),
+          ...(reflectionTemplate !== undefined
+            ? reflectionTemplate.trim()
+              ? { reflectionTemplate: reflectionTemplate.trim() }
+              : { reflectionTemplate: undefined }
+            : {}),
+          ...(reflectionTemplateHtml !== undefined || reflectionTemplate !== undefined
+            ? resolveReflectionTemplateHtml(reflectionTemplateHtml, reflectionTemplate)
+              ? { reflectionTemplateHtml: resolveReflectionTemplateHtml(reflectionTemplateHtml, reflectionTemplate) }
+              : { reflectionTemplateHtml: undefined }
+            : {}),
           ...(speakSubtitle !== undefined ? { speakSubtitle } : {}),
           ...(descriptionAttachments !== undefined ? { descriptionAttachments: [...descriptionAttachments] } : {}),
           ...(skillIds !== undefined ? { skillIds: [...skillIds] } : {}),
-          ...(reflectionTemplate !== undefined ? { reflectionTemplate: reflectionTemplate.trim() || undefined } : {}),
-          ...(reflectionTemplateHtml !== undefined ? {
-            reflectionTemplateHtml: typeof reflectionTemplate === 'string' && reflectionTemplate.trim()
-              ? reflectionTemplateHtml
-              : undefined,
-          } : {}),
         } : routine,
       );
       await persistRoutineList(nextRoutines);
@@ -404,6 +439,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       progress,
       loading,
       completeRoutine,
+      saveRunReflection,
       createRoutine,
       copyRoutine,
       updateRoutine,
@@ -424,6 +460,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
       progress,
       loading,
       completeRoutine,
+      saveRunReflection,
       createRoutine,
       copyRoutine,
       updateRoutine,
