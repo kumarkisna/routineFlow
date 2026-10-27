@@ -25,6 +25,9 @@ export type RoutinePlaylist = {
   rateSkillsAtPlaylistEnd?: boolean;
   /** Reminder choices for runs launched from this playlist. */
   reminderSettings?: RoutineNotificationSettings;
+  /** Optional rich-text starter for the reflection saved with a playlist run. */
+  reflectionTemplate?: string;
+  reflectionTemplateHtml?: string;
 };
 
 export function playablePlaylistIds(ids: string[], routines: Routine[]): string[] {
@@ -105,6 +108,10 @@ export function parsePlaylists(value: string): RoutinePlaylist[] {
       || typeof item.reminderSettings.stepCompletion !== 'boolean'
       || typeof item.reminderSettings.routineCompletion !== 'boolean'
     ))
+    || (item.reflectionTemplate !== undefined
+      && (typeof item.reflectionTemplate !== 'string' || item.reflectionTemplate.length > 20_000))
+    || (item.reflectionTemplateHtml !== undefined
+      && (typeof item.reflectionTemplateHtml !== 'string' || item.reflectionTemplateHtml.length > 100_000))
   )) throw new Error('Saved playlists could not be read.');
   return parsed.map(playlist => ({
     ...playlist,

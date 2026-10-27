@@ -81,9 +81,9 @@ type RoutineContextValue = {
   progress: CompletionMap;
   loading: boolean;
   completeRoutine: (routineId: string, playlistRun?: PlaylistCompletionSource) => Promise<void>;
-  createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments']) => Promise<Routine>;
+  createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
-  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments']) => Promise<void>;
+  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => Promise<void>;
   renameCategory: (source: string, target: string) => Promise<void>;
   removeCategory: (source: string) => Promise<void>;
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
@@ -176,7 +176,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createRoutine = useCallback(
-    (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments']) => runRoutineWrite(async () => {
+    (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => runRoutineWrite(async () => {
       const routine: Routine = {
         id: makeId(),
         title,
@@ -186,6 +186,8 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
         ...(descriptionAttachments?.length ? { descriptionAttachments: [...descriptionAttachments] } : {}),
         ...(category ? { category } : {}),
         ...(skillIds?.length ? { skillIds: [...skillIds] } : {}),
+        ...(reflectionTemplate?.trim() ? { reflectionTemplate: reflectionTemplate.trim() } : {}),
+        ...(reflectionTemplateHtml?.trim() ? { reflectionTemplateHtml } : {}),
         icon: 'sparkles-outline',
         tone: 'sun',
         steps,
@@ -214,7 +216,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateRoutine = useCallback(
-    (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments']) => runRoutineWrite(async () => {
+    (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => runRoutineWrite(async () => {
       if (!routines.some((routine) => routine.id === routineId)) {
         throw new Error('Routine not found');
       }
@@ -225,6 +227,12 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
           ...(speakSubtitle !== undefined ? { speakSubtitle } : {}),
           ...(descriptionAttachments !== undefined ? { descriptionAttachments: [...descriptionAttachments] } : {}),
           ...(skillIds !== undefined ? { skillIds: [...skillIds] } : {}),
+          ...(reflectionTemplate !== undefined ? { reflectionTemplate: reflectionTemplate.trim() || undefined } : {}),
+          ...(reflectionTemplateHtml !== undefined ? {
+            reflectionTemplateHtml: typeof reflectionTemplate === 'string' && reflectionTemplate.trim()
+              ? reflectionTemplateHtml
+              : undefined,
+          } : {}),
         } : routine,
       );
       await persistRoutineList(nextRoutines);

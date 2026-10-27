@@ -12,7 +12,7 @@ type PlaylistContextValue = {
   reload: () => Promise<void>;
   savePlaylist: (
     title: string, routineIds: string[], id?: string, skillIds?: string[], rateSkillsAtPlaylistEnd?: boolean,
-    reminderSettings?: RoutineNotificationSettings,
+    reminderSettings?: RoutineNotificationSettings, reflectionTemplate?: string, reflectionTemplateHtml?: string,
   ) => Promise<RoutinePlaylist>;
   mergeImportedPlaylists: (playlists: RoutinePlaylist[]) => Promise<{
     added: number; skipped: number; renamed: number; updated: number; idMap: Record<string, string>;
@@ -51,6 +51,8 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     skillIds?: string[],
     rateSkillsAtPlaylistEnd?: boolean,
     reminderSettings?: RoutineNotificationSettings,
+    reflectionTemplate?: string,
+    reflectionTemplateHtml?: string,
   ) =>
     runWrite(async () => {
       if (loading || error) throw new Error('Wait for playlists to load successfully before saving.');
@@ -70,6 +72,11 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
             ?? previous?.reminderSettings?.routineCompletion
             ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.routineCompletion,
         },
+        ...((reflectionTemplate?.trim() ?? previous?.reflectionTemplate)
+          ? { reflectionTemplate: reflectionTemplate?.trim() ?? previous?.reflectionTemplate } : {}),
+        ...(reflectionTemplateHtml !== undefined
+          ? { reflectionTemplateHtml: reflectionTemplate?.trim() ? reflectionTemplateHtml : undefined }
+          : previous?.reflectionTemplateHtml ? { reflectionTemplateHtml: previous.reflectionTemplateHtml } : {}),
       };
       const next = id ? current.current.map(item => item.id === id ? playlist : item)
         : [...current.current, playlist];

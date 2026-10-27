@@ -7,9 +7,10 @@ import React from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SkillRatingPrompt, type SkillRatingNoteEditTarget } from '@/components/SkillRatingPrompt';
+import { RunReflectionPrompt } from '@/components/RunReflectionPrompt';
 import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
-import { useSkills } from '@/context/SkillContext';
+import { useSkills, type RunReflection } from '@/context/SkillContext';
 import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
@@ -31,7 +32,7 @@ export default function HistoryScreen() {
   const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const disclosure = usePersistentDisclosure('history', activePerson.id);
   const { progress, routines, loading } = useRoutines();
-  const { skills, loading: skillsLoading, error: skillsError } = useSkills();
+  const { skills, runReflections, saveRunReflection, loading: skillsLoading, error: skillsError } = useSkills();
   const { playlists, loading: playlistsLoading, error: playlistsError } = usePlaylists();
   const [selectedDay, setSelectedDay] = React.useState<string | null>(null);
   const [filterKind, setFilterKind] = React.useState<'all' | 'routine' | 'playlist'>('all');
@@ -50,6 +51,7 @@ export default function HistoryScreen() {
     noteTargets?: ReturnType<typeof getSkillRatingsMissingNotes>;
   } | null>(null);
   const [reflectionEditTarget, setReflectionEditTarget] = React.useState<SkillRatingNoteEditTarget | null>(null);
+  const [runReflectionEditTarget, setRunReflectionEditTarget] = React.useState<RunReflection | null>(null);
   const exportLock = React.useRef(false);
   const speechSessionRef = React.useRef(0);
   const speechEventKeyRef = React.useRef<string | null>(null);
@@ -174,6 +176,8 @@ export default function HistoryScreen() {
         dateTime: event.dateTime,
         isRunTime: event.isRunTime,
         ratings: event.ratings,
+        runReflection: runReflections.find(reflection =>
+          reflection.runId === event.ratings.find(rating => rating.runId)?.runId)?.text,
       });
       if (Platform.OS === 'web') {
         if (typeof window === 'undefined') throw new Error('Browser printing is unavailable.');
@@ -415,6 +419,12 @@ export default function HistoryScreen() {
             const ratingContext = ratingScope === 'playlist'
               ? `Playlist: ${selectedPlaylist?.title ?? group.playlistRuns?.find(run => run.playlistId === ratingSourceId)?.playlistTitle ?? 'Playlist'}`
               : `Routine: ${group.title}`;
+            const groupRunReflections = activeDay
+              ? runReflections.filter(reflection =>
+                reflection.sourceRoutineId === group.id
+                && localDayKey(new Date(reflection.completedAt)) === activeDay
+                && (activeFilter?.kind !== 'playlist' || reflection.sourcePlaylistId === activeFilter.id))
+              : [];
             const disclosureId = `${activeDay}:${group.id}:${ratingSourceId}`;
             const expanded = disclosure.isExpanded(disclosureId);
 
@@ -495,6 +505,30 @@ export default function HistoryScreen() {
                     {missingNoteTargets.length === 1 ? 'Add missing note' : 'Add missing notes'}
                   </Text>
                 </Pressable>
+              ) : null}
+              {groupRunReflections.length ? (
+                <View style={[styles.skillNotes, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Run reflections</Text>
+                  {groupRunReflections.map(reflection => (
+                    <View key={reflection.runId} style={[styles.skillNote, { backgroundColor: colors.background }]}>
+                      <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>
+                        {reflection.text.trim() || 'No reflection saved yet.'}
+                      </Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`${reflection.text.trim() ? 'Edit' : 'Add'} run reflection for ${group.title}`}
+                        testID={`history-edit-run-reflection-${reflection.runId}`}
+                        onPress={() => setRunReflectionEditTarget(reflection)}
+                        style={({ pressed }) => [styles.editReflection, pressed && styles.pressed]}
+                      >
+                        <Ionicons name="pencil-outline" size={15} color={colors.primary} />
+                        <Text style={[styles.editReflectionText, { color: colors.primary }]}>
+                          {reflection.text.trim() ? 'Edit run reflection' : 'Add run reflection'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
               ) : null}
           {group.skillRatings?.length ? (
                 <View style={[styles.skillNotes, { borderTopColor: colors.border }]}>
@@ -643,6 +677,23 @@ export default function HistoryScreen() {
         onSkip={() => setRatingPrompt(null)}
         onSaved={() => setRatingPrompt(null)}
       />
+      {runReflectionEditTarget ? (
+        <RunReflectionPrompt
+          visible
+          routineTitle={runReflectionEditTarget.routineTitle}
+          run={{
+            runId: runReflectionEditTarget.runId,
+            sourceRoutineId: runReflectionEditTarget.sourceRoutineId,
+            ...(runReflectionEditTarget.sourcePlaylistId ? { sourcePlaylistId: runReflectionEditTarget.sourcePlaylistId } : {}),
+            completedAt: runReflectionEditTarget.completedAt,
+          }}
+          initialText={runReflectionEditTarget.text}
+          initialHtml={runReflectionEditTarget.html}
+          onSave={(text, html) => saveRunReflection({ ...runReflectionEditTarget, text, html })}
+          onSaved={() => setRunReflectionEditTarget(null)}
+          onSkip={() => setRunReflectionEditTarget(null)}
+        />
+      ) : null}
       <SkillRatingPrompt
         visible={reflectionEditTarget !== null}
         skillIds={[]}

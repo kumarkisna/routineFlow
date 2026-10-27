@@ -41,6 +41,9 @@ export type Routine = {
   descriptionAttachments?: StepDetailAttachment[];
   /** Optional links to reusable, person-specific skills. */
   skillIds?: string[];
+  /** Optional rich-text starter for the editable reflection saved with each run. */
+  reflectionTemplate?: string;
+  reflectionTemplateHtml?: string;
   /** Hidden routines remain saved but are omitted from the main list and progress. */
   hidden?: boolean;
   icon: string;

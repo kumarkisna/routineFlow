@@ -11,6 +11,7 @@ import { useSchedules } from '@/context/ScheduleContext';
 import { useSkills } from '@/context/SkillContext';
 import { usePeople } from '@/context/PeopleContext';
 import { SkillPicker } from '@/components/SkillPicker';
+import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
 import { useColors } from '@/hooks/useColors';
 import { playablePlaylistIds, resolvePlaylistReminderSettings } from '@/lib/playlists';
 import { scheduledPlaylistSource } from '@/lib/schedules';
@@ -50,14 +51,18 @@ export default function PlaylistEditor() {
     initialRateSkillsAtPlaylistEnd={src
       ? src.rateSkillsAtPlaylistEnd ?? true
       : activePerson.defaultRateSkillsAtPlaylistEnd}
-    initialReminderSettings={resolvePlaylistReminderSettings(activePerson.defaultPlaylistReminderSettings, src?.reminderSettings)} />;
+    initialReminderSettings={resolvePlaylistReminderSettings(activePerson.defaultPlaylistReminderSettings, src?.reminderSettings)}
+    initialReflectionTemplate={src?.reflectionTemplate}
+    initialReflectionTemplateHtml={src?.reflectionTemplateHtml} />;
 }
 
 function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds, initialSkillIds,
-  initialRateSkillsAtPlaylistEnd, initialReminderSettings }: {
+  initialRateSkillsAtPlaylistEnd, initialReminderSettings, initialReflectionTemplate, initialReflectionTemplateHtml }: {
   editId?: string; scheduleId?: string; hasOverride: boolean; canReset: boolean;
   initialTitle: string; initialIds: string[]; initialSkillIds: string[]; initialRateSkillsAtPlaylistEnd: boolean;
   initialReminderSettings: RoutineNotificationSettings;
+  initialReflectionTemplate?: string;
+  initialReflectionTemplateHtml?: string;
 }) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -72,6 +77,8 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const [skillIds, setSkillIds] = React.useState<string[]>(initialSkillIds);
   const [rateSkillsAtPlaylistEnd, setRateSkillsAtPlaylistEnd] = React.useState(initialRateSkillsAtPlaylistEnd);
   const [reminderSettings, setReminderSettings] = React.useState<RoutineNotificationSettings>({ ...initialReminderSettings });
+  const [reflectionTemplate, setReflectionTemplate] = React.useState(initialReflectionTemplate ?? '');
+  const [reflectionTemplateHtml, setReflectionTemplateHtml] = React.useState(initialReflectionTemplateHtml ?? '');
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const lock = React.useRef(false);
@@ -103,7 +110,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
       const availableSkills = new Set(skills.map(skill => skill.id));
       const savedSkillIds = skillIds.filter(id => availableSkills.has(id));
       if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds, reminderSettings);
-      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd, reminderSettings);
+      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd, reminderSettings, reflectionTemplate, reflectionTemplateHtml);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e) {
@@ -164,6 +171,25 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
           onChangeText={(t) => { setTitle(t); setError(''); }}
           style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]} />
         <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={busy} testIDPrefix="playlist-skill" />
+        <Text style={[styles.label, { color: colors.inkSoft }]}>Run reflection template (optional)</Text>
+        <TextInput
+          accessibilityLabel="Playlist run reflection template"
+          testID="playlist-reflection-template"
+          multiline
+          value={reflectionTemplate}
+          editable={!busy && !scheduleId}
+          onChangeText={value => { setReflectionTemplate(value); setReflectionTemplateHtml(''); }}
+          placeholder="Start a reflection for after the full playlist…"
+          placeholderTextColor={colors.mutedForeground}
+          style={[styles.input, { minHeight: 90, textAlignVertical: 'top', backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+        />
+        <ExpandableRichDetailEditor
+          label="Playlist run reflection template"
+          value={reflectionTemplate}
+          html={reflectionTemplateHtml}
+          disabled={busy || !!scheduleId}
+          onSave={(text, html) => { setReflectionTemplate(text); setReflectionTemplateHtml(html); }}
+        />
         {!scheduleId ? (
           <View style={[styles.ratingSetting, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.ratingSettingCopy}>

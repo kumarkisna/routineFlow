@@ -22,9 +22,11 @@ import { StepDetails } from '@/components/StepDetails';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { SkillRatingPrompt } from '@/components/SkillRatingPrompt';
 import { GroupSkillRatingPrompt } from '@/components/GroupSkillRatingPrompt';
+import { RunReflectionPrompt } from '@/components/RunReflectionPrompt';
 import { useSkills } from '@/context/SkillContext';
 import { usePeople } from '@/context/PeopleContext';
 import { useRoutines } from '@/context/RoutineContext';
+import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { Notifications } from '@/lib/localNotifications';
@@ -137,11 +139,24 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const inPlaylist = !!playlistQueue && Number.isInteger(queueCursor)
     && queueCursor >= 0 && playlistQueue[queueCursor] === id;
   const { routines, loading, completeRoutine } = useRoutines();
-  const { skills, reload: reloadSkills } = useSkills();
+  const { playlists } = usePlaylists();
+  const { skills, reload: reloadSkills, saveRunReflection } = useSkills();
   const routine = useMemo(() => {
     const savedRoutine = routines.find((item) => item.id === id);
     return savedRoutine ? getPlayableRoutine(savedRoutine) : undefined;
   }, [routines, id]);
+  const activePlaylist = useMemo(
+    () => playlists.find(playlist => playlist.id === playlistId),
+    [playlists, playlistId],
+  );
+  const isLastPlaylistRoutine = inPlaylist && playlistQueue !== null
+    && nextPlaylistCursor(playlistQueue, queueCursor, routines) === -1;
+  const reflectionTemplate = isLastPlaylistRoutine && activePlaylist?.reflectionTemplate
+    ? activePlaylist.reflectionTemplate
+    : routine?.reflectionTemplate;
+  const reflectionTemplateHtml = isLastPlaylistRoutine && activePlaylist?.reflectionTemplateHtml
+    ? activePlaylist.reflectionTemplateHtml
+    : routine?.reflectionTemplateHtml;
   const initialRemainingSeconds = routine?.steps.length ? getRoutinePlaybackStepSeconds(routine, 0) : 0;
   const [activeIndex, setActiveIndex] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(initialRemainingSeconds);
@@ -157,6 +172,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const [ratingSkillIds, setRatingSkillIds] = useState<string[]>([]);
   const [ratingRun, setRatingRun] = useState<SkillRatingRun | null>(null);
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
+  const [showRunReflectionPrompt, setShowRunReflectionPrompt] = useState(false);
   const [showRatingPeoplePicker, setShowRatingPeoplePicker] = useState(false);
   const [peoplePickerError, setPeoplePickerError] = useState('');
   const [ratingPersonIds, setRatingPersonIds] = useState<string[]>(
@@ -164,6 +180,8 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   );
   const [adminMode, setAdminMode] = useState(adminModeParam === '1');
   const [pendingPlaylistCursor, setPendingPlaylistCursor] = useState<number | null>(null);
+  const advanceAfterReflectionRef = useRef(false);
+  const rateAfterReflectionRef = useRef(false);
   const autoStartedRef = useRef(false);
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -414,6 +432,28 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     if (nextCursor !== null) advancePlaylist(nextCursor);
   }, [advancePlaylist, pendingPlaylistCursor, reloadSkills]);
 
+  const continueAfterReflection = useCallback(() => {
+    setShowRunReflectionPrompt(false);
+    if (advanceAfterReflectionRef.current && pendingPlaylistCursor !== null) {
+      advanceAfterReflectionRef.current = false;
+      setPendingPlaylistCursor(null);
+      advancePlaylist(pendingPlaylistCursor);
+      return;
+    }
+    if (rateAfterReflectionRef.current) {
+      rateAfterReflectionRef.current = false;
+      setShowRatingPrompt(true);
+      return;
+    }
+    if (pendingPlaylistCursor !== null) {
+      const nextCursor = pendingPlaylistCursor;
+      setPendingPlaylistCursor(null);
+      advancePlaylist(nextCursor);
+    } else {
+      stopRunKeepalive(sessionId);
+    }
+  }, [advancePlaylist, pendingPlaylistCursor, sessionId]);
+
   const updateKeepaliveForStep = useCallback((index: number, start: boolean) => {
     if (Platform.OS !== 'android' || !routine) return;
     if (!isRunKeepaliveAvailable) {
@@ -526,27 +566,21 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const next = inPlaylist && playlistQueue ? nextPlaylistCursor(playlistQueue, queueCursor, routines) : -1;
       const deferUntilPlaylistEnd = inPlaylist && rateSkillsAtPlaylistEnd;
-      if (deferUntilPlaylistEnd && next !== -1) {
-        advancePlaylist(next);
-        return;
-      }
       const involvedSkillIds = deferUntilPlaylistEnd && playlistQueue
         ? getPlaylistSkillIds(playablePlaylistIds(playlistQueue, routines), routines, playlistSkillIds)
         : [...new Set([
           ...getRoutineSkillIds(routine),
           ...(inPlaylist ? playlistSkillIds : []),
         ])];
-      if (next !== -1) setPendingPlaylistCursor(next);
-      if (involvedSkillIds.length && (!adminMode || ratingPeople.length > 0)) {
-        stopRunKeepalive(sessionId);
-        setRatingRun(ratingRun);
-        setRatingSkillIds(involvedSkillIds);
-        setShowRatingPrompt(true);
-      } else if (next !== -1) {
-        advancePlaylist(next);
-      } else {
-        stopRunKeepalive(sessionId);
-      }
+      const defer = deferUntilPlaylistEnd && next !== -1;
+      const shouldRate = !defer && involvedSkillIds.length > 0 && (!adminMode || ratingPeople.length > 0);
+      setPendingPlaylistCursor(next !== -1 ? next : null);
+      setRatingRun(ratingRun);
+      setRatingSkillIds(involvedSkillIds);
+      advanceAfterReflectionRef.current = defer;
+      rateAfterReflectionRef.current = shouldRate;
+      stopRunKeepalive(sessionId);
+      setShowRunReflectionPrompt(true);
     }).catch(() => {
       if (!mountedRef.current) return;
       stopRunKeepalive(sessionId);
@@ -555,7 +589,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     });
   }, [cancelNotifications, completeRoutine, routine, stopAnnouncement, inPlaylist,
     playlistQueue, queueCursor, routines, playlistSkillIds, playlistId, playlistTitle,
-    rateSkillsAtPlaylistEnd, advancePlaylist, sessionId, adminMode, ratingPeople.length]);
+    rateSkillsAtPlaylistEnd, sessionId, adminMode, ratingPeople.length]);
 
   const reconcileTimer = useCallback(
     (now: number) => {
@@ -1029,6 +1063,39 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
           onSaved={closeRatingPrompt}
         />
       )}
+      {ratingRun ? (
+        <RunReflectionPrompt
+          visible={showRunReflectionPrompt}
+          routineTitle={currentRoutine.title}
+          run={ratingRun}
+          initialText={reflectionTemplate}
+          initialHtml={reflectionTemplateHtml}
+          onSave={async (text, html) => {
+            await saveRunReflection({
+              runId: ratingRun.runId,
+              sourceRoutineId: ratingRun.sourceRoutineId,
+              ...(ratingRun.sourcePlaylistId ? { sourcePlaylistId: ratingRun.sourcePlaylistId } : {}),
+              routineTitle: currentRoutine.title,
+              completedAt: ratingRun.completedAt ?? new Date().toISOString(),
+              text,
+              html,
+            });
+          }}
+          onSaved={continueAfterReflection}
+          onSkip={async () => {
+            await saveRunReflection({
+              runId: ratingRun.runId,
+              sourceRoutineId: ratingRun.sourceRoutineId,
+              ...(ratingRun.sourcePlaylistId ? { sourcePlaylistId: ratingRun.sourcePlaylistId } : {}),
+              routineTitle: currentRoutine.title,
+              completedAt: ratingRun.completedAt ?? new Date().toISOString(),
+              text: '',
+              html: '',
+            });
+            continueAfterReflection();
+          }}
+        />
+      ) : null}
       <Modal
         visible={showRatingPeoplePicker}
         transparent

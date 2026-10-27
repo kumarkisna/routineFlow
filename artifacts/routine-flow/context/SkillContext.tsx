@@ -25,6 +25,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 
 type SkillContextValue = {
   skills: RoutineSkill[];
+  runReflections: RunReflection[];
   ratingWindow: number;
   loading: boolean;
   error: string;
@@ -40,12 +41,24 @@ type SkillContextValue = {
   ) => Promise<void>;
   addRatingNotes: (notes: { skillId: string; ratingId: string; note: string }[]) => Promise<void>;
   updateRatingNote: (skillId: string, ratingId: string, note: string) => Promise<void>;
+  saveRunReflection: (reflection: RunReflection) => Promise<void>;
   mergeImportedSkills: (skills: RoutineSkill[]) => Promise<Record<string, string>>;
+};
+
+export type RunReflection = {
+  runId: string;
+  sourceRoutineId: string;
+  sourcePlaylistId?: string;
+  routineTitle: string;
+  completedAt: string;
+  text: string;
+  html: string;
 };
 
 const SkillContext = createContext<SkillContextValue | null>(null);
 const KEY = PERSON_DATA_KEYS.skills;
 const RATING_WINDOW_KEY = PERSON_DATA_KEYS.skillRatingWindow;
+const RUN_REFLECTIONS_KEY = PERSON_DATA_KEYS.runReflections;
 
 function makeId() {
   return `skill-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -57,24 +70,36 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
   const { removeSkillAssignments: removePlaylistAssignments } = usePlaylists();
   const { removeSkillAssignments: removeScheduleAssignments } = useSchedules();
   const [skills, setSkills] = useState<RoutineSkill[]>([]);
+  const [runReflections, setRunReflections] = useState<RunReflection[]>([]);
   const [ratingWindow, setRatingWindowState] = useState(DEFAULT_SKILL_RATING_WINDOW);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const current = useRef<RoutineSkill[]>([]);
+  const currentReflections = useRef<RunReflection[]>([]);
   const runWrite = useRef(createRoutineWriteGuard()).current;
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [stored, storedWindow] = await Promise.all([
+      const [stored, storedWindow, storedReflections] = await Promise.all([
         storage.getItem(KEY),
         storage.getItem(RATING_WINDOW_KEY),
+        storage.getItem(RUN_REFLECTIONS_KEY),
       ]);
       const next = stored === null ? [] : parseSkills(stored);
       const nextWindow = parseSkillRatingWindow(storedWindow);
+      const nextReflections: RunReflection[] = storedReflections === null ? [] : JSON.parse(storedReflections);
+      if (!Array.isArray(nextReflections) || nextReflections.some(item =>
+        !item || typeof item.runId !== 'string' || typeof item.sourceRoutineId !== 'string'
+        || typeof item.routineTitle !== 'string' || typeof item.completedAt !== 'string'
+        || typeof item.text !== 'string' || typeof item.html !== 'string')) {
+        throw new Error('Saved run reflections could not be read.');
+      }
       current.current = next;
       setSkills(next);
+      currentReflections.current = nextReflections;
+      setRunReflections(nextReflections);
       setRatingWindowState(nextWindow);
     } catch {
       setError('Your skills could not load. Retry before making changes.');
@@ -259,6 +284,24 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
     setSkills(next);
   }), [error, loading, runWrite, storage]);
 
+  const saveRunReflection = useCallback((reflection: RunReflection) => runWrite(async () => {
+    if (loading || error) throw new Error('Wait for your data to load before saving this run reflection.');
+    if (!reflection.runId.trim() || !reflection.sourceRoutineId.trim()
+      || !reflection.routineTitle.trim() || !Number.isFinite(Date.parse(reflection.completedAt))
+      || typeof reflection.text !== 'string' || typeof reflection.html !== 'string'
+      || reflection.text.length > 20_000 || reflection.html.length > 100_000) {
+      throw new Error('Enter a valid run reflection.');
+    }
+    const next = [
+      ...currentReflections.current.filter(item => item.runId !== reflection.runId),
+      { ...reflection, text: reflection.text.trim() },
+    ].sort((a, b) => Date.parse(a.completedAt) - Date.parse(b.completedAt));
+    if (next.length > 20_000) throw new Error('Run reflection history has reached its saved limit.');
+    await storage.setItem(RUN_REFLECTIONS_KEY, JSON.stringify(next));
+    currentReflections.current = next;
+    setRunReflections(next);
+  }), [error, loading, runWrite, storage]);
+
   const deleteSkill = useCallback((id: string) => runWrite(async () => {
     if (loading || error) throw new Error('Wait for skills to load successfully before making changes.');
     if (!current.current.some(skill => skill.id === id)) throw new Error('Skill not found.');
@@ -290,8 +333,8 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SkillContext.Provider value={{
-      skills, ratingWindow, loading, error, reload, createSkill, updateSkill, deleteSkill,
-      setRatingWindow, recordRatings, addRatingNotes, updateRatingNote, mergeImportedSkills,
+      skills, runReflections, ratingWindow, loading, error, reload, createSkill, updateSkill, deleteSkill,
+      setRatingWindow, recordRatings, addRatingNotes, updateRatingNote, saveRunReflection, mergeImportedSkills,
     }}>
       {children}
     </SkillContext.Provider>

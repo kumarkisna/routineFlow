@@ -7,6 +7,7 @@ export type SkillRatingReportInput = {
   dateTime: string;
   isRunTime: boolean;
   ratings: readonly HistorySkillRating[];
+  runReflection?: string;
 };
 
 function escapeHtml(value: string): string {
@@ -61,6 +62,9 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
       <td class="note">${escapeHtml(item.note?.trim() || 'No note recorded.')}</td>
     </tr>`).join('');
   const dateLabel = input.isRunTime ? 'Run date and time' : 'Rating recorded';
+  const reflection = input.runReflection?.trim()
+    ? `<section class="reflection"><h2>Run reflection</h2><p>${escapeHtml(input.runReflection.trim()).replace(/\n/g, '<br>')}</p></section>`
+    : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -86,6 +90,9 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
     td.note { overflow-wrap: anywhere; }
     tbody tr { break-inside: avoid; }
     .footer { margin-top: 26px; color: #63736d; font-size: 11px; }
+    .reflection { margin-top: 24px; padding: 14px 16px; border: 1px solid #d9e2dc; border-radius: 10px; break-inside: avoid; }
+    .reflection h2 { margin: 0 0 7px; font-size: 16px; }
+    .reflection p { margin: 0; overflow-wrap: anywhere; }
     @page { margin: 18mm; }
     @media print {
       body { max-width: none; padding: 0; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -107,6 +114,7 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
       <thead><tr><th scope="col">Order</th><th scope="col">Skill</th><th scope="col">Rating</th><th scope="col">Notes</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${reflection}
     <p class="footer">Ratings are shown in the order they were presented after this routine run.</p>
   </main>
 </body>
