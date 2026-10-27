@@ -119,9 +119,7 @@ class RoutineKeepaliveService : Service() {
         .setOnlyAlertOnce(true)
         .setVisibility(Notification.VISIBILITY_PRIVATE)
         .setShowWhen(false)
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        builder.setSilent(true)
-      } else {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
         @Suppress("DEPRECATION")
         builder.setPriority(Notification.PRIORITY_LOW)
       }
