@@ -14,3 +14,9 @@ Early SDK 57 releases have a documented Hermes V1 memory regression; Expo Doctor
 **Why:** Runtime diagnostics identified this regression in the initial 57.0.0 installation. Successful TypeScript checks and browser rendering do not establish native-runtime compatibility.
 
 **How to apply:** Use Expo's dependency alignment and Doctor checks when investigating native-only problems. Do not assume resolving their warnings proves an Android gesture problem fixed; native interaction needs separate verification.
+
+Custom Expo Android library modules should define `android.defaultConfig.versionName` in their library `build.gradle`.
+
+**Why:** Expo's module Gradle plugin reads the Android library's `defaultConfig.versionName` during project configuration; omitting it can stop autolinking before app compilation.
+
+**How to apply:** When a Gradle log reports `android.defaultConfig.versionName is not defined` while configuring a local Expo module, add its module version to that module's Android `defaultConfig`.
