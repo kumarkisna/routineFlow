@@ -34,5 +34,20 @@ test('skill report rejects empty or invalid export data', () => {
     dateTime: '2030-06-12T12:00:00.000Z',
     isRunTime: true,
     ratings: [],
-  }), /no skill ratings/i);
+  }), /no run outcomes/i);
+});
+
+test('run outcome report can print a reflection without skill ratings', () => {
+  const html = buildSkillRatingReportHtml({
+    personName: 'Alex',
+    personId: 'profile-42',
+    routineTitle: 'Morning',
+    dateTime: '2030-06-12T12:00:00.000Z',
+    isRunTime: true,
+    ratings: [],
+    runReflection: 'Keep the new habit.',
+  });
+
+  assert.match(html, /No skill ratings were saved for this run/);
+  assert.match(html, /Keep the new habit\./);
 });

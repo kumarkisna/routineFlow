@@ -39,8 +39,11 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
   }
   const routineTitle = input.routineTitle.trim();
   if (!routineTitle || routineTitle.length > 200) throw new Error('The routine name is invalid.');
-  if (!Array.isArray(input.ratings) || input.ratings.length === 0) {
-    throw new Error('There are no skill ratings to include in this PDF.');
+  if (!Array.isArray(input.ratings)) {
+    throw new Error('The saved run outcomes could not be read.');
+  }
+  if (input.ratings.length === 0 && !input.runReflection?.trim()) {
+    throw new Error('There are no run outcomes to include in this PDF.');
   }
   if (input.ratings.some(item => !item.skillName.trim()
     || !Number.isInteger(item.rating) || item.rating < 1 || item.rating > 10
@@ -65,13 +68,19 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
   const reflection = input.runReflection?.trim()
     ? `<section class="reflection"><h2>Run reflection</h2><p>${escapeHtml(input.runReflection.trim()).replace(/\n/g, '<br>')}</p></section>`
     : '';
+  const ratingContent = rows
+    ? `<table>
+       <thead><tr><th scope="col">Order</th><th scope="col">Skill</th><th scope="col">Rating</th><th scope="col">Notes</th></tr></thead>
+       <tbody>${rows}</tbody>
+     </table>`
+    : '<p class="empty">No skill ratings were saved for this run.</p>';
 
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(routineTitle)} — Skill ratings</title>
+    <title>${escapeHtml(routineTitle)} — Run outcomes</title>
   <style>
     * { box-sizing: border-box; }
     body { max-width: 780px; margin: 0 auto; padding: 34px; color: #1e2d28; font: 15px/1.55 Arial, sans-serif; }
@@ -93,6 +102,7 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
     .reflection { margin-top: 24px; padding: 14px 16px; border: 1px solid #d9e2dc; border-radius: 10px; break-inside: avoid; }
     .reflection h2 { margin: 0 0 7px; font-size: 16px; }
     .reflection p { margin: 0; overflow-wrap: anywhere; }
+    .empty { padding: 14px 16px; border: 1px solid #d9e2dc; border-radius: 10px; color: #63736d; }
     @page { margin: 18mm; }
     @media print {
       body { max-width: none; padding: 0; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
@@ -101,7 +111,7 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
 </head>
 <body>
   <header>
-    <p class="eyebrow">Routine Flow · Skill reflection</p>
+    <p class="eyebrow">Routine Flow · Run outcomes</p>
     <p class="person-details">Person: ${escapeHtml(input.personName)} · Profile ID: ${escapeHtml(input.personId)}</p>
     <h1>${escapeHtml(routineTitle)}</h1>
     <dl class="metadata">
@@ -110,10 +120,7 @@ export function buildSkillRatingReportHtml(input: SkillRatingReportInput): strin
     </dl>
   </header>
   <main>
-    <table>
-      <thead><tr><th scope="col">Order</th><th scope="col">Skill</th><th scope="col">Rating</th><th scope="col">Notes</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
+    ${ratingContent}
     ${reflection}
     <p class="footer">Ratings are shown in the order they were presented after this routine run.</p>
   </main>

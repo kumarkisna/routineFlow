@@ -7,6 +7,8 @@ Routine and playlist templates are starting text, not fixed run data. Copy the t
 
 When a run is deferred, preserve the plain-text and rich-text template snapshot separately from the empty response. History should prefer saved response content, then the snapshot; for older deferred entries without a snapshot, fall back to the current source template when it can be identified.
 
+In History, present a run's reflection together with its matching skill ratings and skill notes as one outcome, and print them in the same report. A reflection-only run should still be printable.
+
 **Why:** The user wants reusable defaults while preserving each run's own final reflection and outcomes.
 
-**How to apply:** Keep template editing in routine/playlist setup separate from run-result persistence; use the same run identity for later edits and exports.
+**How to apply:** Keep template editing in routine/playlist setup separate from run-result persistence; use the same run identity to associate the run reflection, skill ratings, notes, History entry, and printed report.

@@ -164,21 +164,27 @@ export default function HistoryScreen() {
     if (kind === 'playlist' && playlistOptions[0]) setSelectedPlaylistId(playlistOptions[0].id);
   }
 
-  async function exportSkillRatings(routineTitle: string, event: SkillRatingEvent) {
+  async function exportRunOutcome(outcome: {
+    exportId: string;
+    routineTitle: string;
+    dateTime: string;
+    isRunTime: boolean;
+    ratings: SkillRatingEvent['ratings'];
+    runReflection?: string;
+  }) {
     if (exportLock.current) return;
     exportLock.current = true;
-    setExportingRunId(event.id);
+    setExportingRunId(outcome.exportId);
     setExportError(null);
     try {
       const html = buildSkillRatingReportHtml({
         personName: activePerson.name,
         personId: activePerson.id,
-        routineTitle,
-        dateTime: event.dateTime,
-        isRunTime: event.isRunTime,
-        ratings: event.ratings,
-        runReflection: runReflections.find(reflection =>
-          reflection.runId === event.ratings.find(rating => rating.runId)?.runId)?.text,
+        routineTitle: outcome.routineTitle,
+        dateTime: outcome.dateTime,
+        isRunTime: outcome.isRunTime,
+        ratings: outcome.ratings,
+        runReflection: outcome.runReflection,
       });
       if (Platform.OS === 'web') {
         if (typeof window === 'undefined') throw new Error('Browser printing is unavailable.');
@@ -199,7 +205,7 @@ export default function HistoryScreen() {
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(file.uri, {
             mimeType: 'application/pdf',
-            dialogTitle: `${routineTitle} skill ratings`,
+            dialogTitle: `${outcome.routineTitle} run outcomes`,
           });
         } else {
           await Print.printAsync({ html });
@@ -207,13 +213,36 @@ export default function HistoryScreen() {
       }
     } catch (error) {
       setExportError({
-        runId: event.id,
-        message: error instanceof Error ? error.message : 'Could not create the skill ratings PDF.',
+        runId: outcome.exportId,
+        message: error instanceof Error ? error.message : 'Could not create the run outcome report.',
       });
     } finally {
       exportLock.current = false;
       setExportingRunId(null);
     }
+  }
+
+  function exportSkillRatings(routineTitle: string, event: SkillRatingEvent) {
+    const runId = event.ratings.find(rating => rating.runId)?.runId;
+    return exportRunOutcome({
+      exportId: event.id,
+      routineTitle,
+      dateTime: event.dateTime,
+      isRunTime: event.isRunTime,
+      ratings: event.ratings,
+      ...(runId ? { runReflection: runReflections.find(reflection => reflection.runId === runId)?.text } : {}),
+    });
+  }
+
+  function exportReflectionOnlyRun(reflection: RunReflection) {
+    return exportRunOutcome({
+      exportId: reflection.runId,
+      routineTitle: reflection.routineTitle,
+      dateTime: reflection.completedAt,
+      isRunTime: true,
+      ratings: [],
+      runReflection: reflection.text,
+    });
   }
 
   function openHistoryRatingPrompt(
@@ -435,6 +464,14 @@ export default function HistoryScreen() {
                 && localDayKey(new Date(reflection.completedAt)) === activeDay
                 && (activeFilter?.kind !== 'playlist' || reflection.sourcePlaylistId === activeFilter.id))
               : [];
+            const skillRatingEvents = group.skillRatings?.length
+              ? groupSkillRatingEvents(group.skillRatings)
+              : [];
+            const skillRatingRunIds = new Set(skillRatingEvents.flatMap(event =>
+              event.ratings.flatMap(rating => rating.runId ? [rating.runId] : [])));
+            const unpairedRunReflections = groupRunReflections.filter(
+              reflection => !skillRatingRunIds.has(reflection.runId),
+            );
             const disclosureId = `${activeDay}:${group.id}:${ratingSourceId}`;
             const expanded = disclosure.isExpanded(disclosureId);
 
@@ -516,36 +553,16 @@ export default function HistoryScreen() {
                   </Text>
                 </Pressable>
               ) : null}
-              {groupRunReflections.length ? (
+              {skillRatingEvents.length || groupRunReflections.length ? (
                 <View style={[styles.skillNotes, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Run reflections</Text>
-                  {groupRunReflections.map(reflection => (
-                    <View key={reflection.runId} style={[styles.skillNote, { backgroundColor: colors.background }]}>
-                      <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>
-                        {reflection.text.trim() || 'No reflection saved yet.'}
-                      </Text>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`${reflection.text.trim() ? 'Edit' : 'Add'} run reflection for ${group.title}`}
-                        testID={`history-edit-run-reflection-${reflection.runId}`}
-                        onPress={() => openRunReflectionEditor(reflection)}
-                        style={({ pressed }) => [styles.editReflection, pressed && styles.pressed]}
-                      >
-                        <Ionicons name="pencil-outline" size={15} color={colors.primary} />
-                        <Text style={[styles.editReflectionText, { color: colors.primary }]}>
-                          {reflection.text.trim() ? 'Edit run reflection' : 'Add run reflection'}
-                        </Text>
-                      </Pressable>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-          {group.skillRatings?.length ? (
-                <View style={[styles.skillNotes, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Skill ratings &amp; reflections</Text>
-                  {groupSkillRatingEvents(group.skillRatings).map((event, eventIndex) => {
+                  <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Run outcomes</Text>
+                  {skillRatingEvents.map((event, eventIndex) => {
                     const eventKey = `${group.id}:${event.id}`;
                     const isSpeaking = speakingEventKey === eventKey;
+                    const eventRunId = event.ratings.find(rating => rating.runId)?.runId;
+                    const runReflection = eventRunId
+                      ? groupRunReflections.find(reflection => reflection.runId === eventRunId)
+                      : undefined;
                     return (
                     <View key={eventKey} style={[styles.skillEvent, { borderColor: colors.border }]}>
                       <View style={styles.skillEventHeader}>
@@ -583,7 +600,7 @@ export default function HistoryScreen() {
                           </Pressable>
                           <Pressable
                             accessibilityRole="button"
-                            accessibilityLabel={`Export ${group.title} skill ratings as a PDF`}
+                            accessibilityLabel={`Print ${group.title} run outcomes`}
                             accessibilityState={{ disabled: exportingRunId !== null }}
                             disabled={exportingRunId !== null}
                             testID={`history-skill-pdf-${event.id}`}
@@ -598,7 +615,7 @@ export default function HistoryScreen() {
                               ? <ActivityIndicator size="small" color={colors.inkSoft} />
                               : <Ionicons name="document-text-outline" size={16} color={colors.inkSoft} />}
                             <Text style={[styles.pdfButtonText, { color: colors.inkSoft }]}>
-                              {exportingRunId === event.id ? 'Preparing…' : 'Export PDF'}
+                              {exportingRunId === event.id ? 'Preparing…' : 'Print outcomes'}
                             </Text>
                           </Pressable>
                         </View>
@@ -636,6 +653,26 @@ export default function HistoryScreen() {
                           ) : null}
                         </View>
                       ))}
+                      {runReflection ? (
+                        <View style={[styles.skillNote, { backgroundColor: colors.background }]}>
+                          <Text style={[styles.skillNotesHeading, { color: colors.foreground }]}>Run reflection</Text>
+                          <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>
+                            {runReflection.text.trim() || 'No reflection saved yet.'}
+                          </Text>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`${runReflection.text.trim() ? 'Edit' : 'Add'} run reflection for ${group.title}`}
+                            testID={`history-edit-run-reflection-${runReflection.runId}`}
+                            onPress={() => openRunReflectionEditor(runReflection)}
+                            style={({ pressed }) => [styles.editReflection, pressed && styles.pressed]}
+                          >
+                            <Ionicons name="pencil-outline" size={15} color={colors.primary} />
+                            <Text style={[styles.editReflectionText, { color: colors.primary }]}>
+                              {runReflection.text.trim() ? 'Edit run reflection' : 'Add run reflection'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
                       {exportError?.runId === event.id ? (
                         <Text accessibilityRole="alert" style={[styles.pdfError, { color: colors.destructive }]}>
                           {exportError.message}
@@ -649,6 +686,64 @@ export default function HistoryScreen() {
                     </View>
                     );
                   })}
+                  {unpairedRunReflections.map(reflection => (
+                    <View key={`reflection:${reflection.runId}`} style={[styles.skillEvent, { borderColor: colors.border }]}>
+                      <View style={styles.skillEventHeader}>
+                        <View style={styles.skillEventCopy}>
+                          <Text style={[styles.skillEventTitle, { color: colors.foreground }]}>Run reflection</Text>
+                          <Text style={[styles.skillEventTime, { color: colors.mutedForeground }]}>
+                            Completed · {formatSkillRatingDateTime(reflection.completedAt)}
+                          </Text>
+                        </View>
+                        <View style={styles.skillEventActions}>
+                          {reflection.text.trim() ? (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`Print ${group.title} run outcomes`}
+                              accessibilityState={{ disabled: exportingRunId !== null }}
+                              disabled={exportingRunId !== null}
+                              testID={`history-run-outcome-pdf-${reflection.runId}`}
+                              onPress={() => void exportReflectionOnlyRun(reflection)}
+                              style={({ pressed }) => [
+                                styles.pdfButton,
+                                { backgroundColor: colors.secondary },
+                                pressed && styles.pressed,
+                              ]}
+                            >
+                              {exportingRunId === reflection.runId
+                                ? <ActivityIndicator size="small" color={colors.inkSoft} />
+                                : <Ionicons name="document-text-outline" size={16} color={colors.inkSoft} />}
+                              <Text style={[styles.pdfButtonText, { color: colors.inkSoft }]}>
+                                {exportingRunId === reflection.runId ? 'Preparing…' : 'Print outcomes'}
+                              </Text>
+                            </Pressable>
+                          ) : null}
+                        </View>
+                      </View>
+                      <View style={[styles.skillNote, { backgroundColor: colors.background }]}>
+                        <Text style={[styles.skillNoteText, { color: colors.inkSoft }]}>
+                          {reflection.text.trim() || 'No reflection saved yet.'}
+                        </Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`${reflection.text.trim() ? 'Edit' : 'Add'} run reflection for ${group.title}`}
+                          testID={`history-edit-run-reflection-${reflection.runId}`}
+                          onPress={() => openRunReflectionEditor(reflection)}
+                          style={({ pressed }) => [styles.editReflection, pressed && styles.pressed]}
+                        >
+                          <Ionicons name="pencil-outline" size={15} color={colors.primary} />
+                          <Text style={[styles.editReflectionText, { color: colors.primary }]}>
+                            {reflection.text.trim() ? 'Edit run reflection' : 'Add run reflection'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      {exportError?.runId === reflection.runId ? (
+                        <Text accessibilityRole="alert" style={[styles.pdfError, { color: colors.destructive }]}>
+                          {exportError.message}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
                 </View>
               ) : null}
               </> : null}
