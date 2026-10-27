@@ -8,7 +8,8 @@
     "scheme": "routine-flow",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "co.median.ios.qdqkeor"
     },
     "android": {
       "package": "co.median.android.qdqkeor",

@@ -6,7 +6,6 @@ import { ScheduleNotificationLink } from '@/components/ScheduleNotificationLink'
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { setBaseUrl } from '@workspace/api-client-react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,10 +38,6 @@ void SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 const queryClient = new QueryClient();
-const apiDomain = process.env.EXPO_PUBLIC_DOMAIN?.trim();
-if (Platform.OS !== 'web' && apiDomain) {
-  setBaseUrl(/^https?:\/\//i.test(apiDomain) ? apiDomain : `https://${apiDomain}`);
-}
 
 function RootLayoutNav() {
   return <>
