@@ -1091,6 +1091,8 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
               completedAt: ratingRun.completedAt ?? new Date().toISOString(),
               text: '',
               html: '',
+              templateTextSnapshot: reflectionTemplate ?? '',
+              templateHtmlSnapshot: reflectionTemplateHtml ?? '',
             });
             continueAfterReflection();
           }}

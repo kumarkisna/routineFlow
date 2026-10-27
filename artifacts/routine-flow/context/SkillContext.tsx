@@ -53,6 +53,9 @@ export type RunReflection = {
   completedAt: string;
   text: string;
   html: string;
+  /** The original starter content, retained separately when a run is deferred. */
+  templateTextSnapshot?: string;
+  templateHtmlSnapshot?: string;
 };
 
 const SkillContext = createContext<SkillContextValue | null>(null);
@@ -93,7 +96,11 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
       if (!Array.isArray(nextReflections) || nextReflections.some(item =>
         !item || typeof item.runId !== 'string' || typeof item.sourceRoutineId !== 'string'
         || typeof item.routineTitle !== 'string' || typeof item.completedAt !== 'string'
-        || typeof item.text !== 'string' || typeof item.html !== 'string')) {
+        || typeof item.text !== 'string' || typeof item.html !== 'string'
+        || (item.templateTextSnapshot !== undefined
+          && (typeof item.templateTextSnapshot !== 'string' || item.templateTextSnapshot.length > 20_000))
+        || (item.templateHtmlSnapshot !== undefined
+          && (typeof item.templateHtmlSnapshot !== 'string' || item.templateHtmlSnapshot.length > 100_000)))) {
         throw new Error('Saved run reflections could not be read.');
       }
       current.current = next;
@@ -289,7 +296,11 @@ export function SkillProvider({ children }: { children: React.ReactNode }) {
     if (!reflection.runId.trim() || !reflection.sourceRoutineId.trim()
       || !reflection.routineTitle.trim() || !Number.isFinite(Date.parse(reflection.completedAt))
       || typeof reflection.text !== 'string' || typeof reflection.html !== 'string'
-      || reflection.text.length > 20_000 || reflection.html.length > 100_000) {
+      || reflection.text.length > 20_000 || reflection.html.length > 100_000
+      || (reflection.templateTextSnapshot !== undefined
+        && (typeof reflection.templateTextSnapshot !== 'string' || reflection.templateTextSnapshot.length > 20_000))
+      || (reflection.templateHtmlSnapshot !== undefined
+        && (typeof reflection.templateHtmlSnapshot !== 'string' || reflection.templateHtmlSnapshot.length > 100_000))) {
       throw new Error('Enter a valid run reflection.');
     }
     const next = [

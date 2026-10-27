@@ -22,6 +22,7 @@ import {
 } from '@/lib/progressHistory';
 import { buildSkillRatingReportHtml, formatSkillRatingDateTime } from '@/lib/skillRatingReport';
 import { buildSkillRatingSpeechText } from '@/lib/skillRatingSpeech';
+import { getDeferredReflectionTemplate } from '@/lib/runReflectionTemplates';
 import { getPlaylistSkillIds, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
 import { playablePlaylistIds } from '@/lib/playlists';
 
@@ -248,6 +249,15 @@ export default function HistoryScreen() {
       routineTitle,
       contextLabel,
       noteTargets,
+    });
+  }
+
+  function openRunReflectionEditor(reflection: RunReflection) {
+    const template = getDeferredReflectionTemplate(reflection, routines, playlists);
+    setRunReflectionEditTarget({
+      ...reflection,
+      templateTextSnapshot: template.text,
+      templateHtmlSnapshot: template.html,
     });
   }
 
@@ -518,7 +528,7 @@ export default function HistoryScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`${reflection.text.trim() ? 'Edit' : 'Add'} run reflection for ${group.title}`}
                         testID={`history-edit-run-reflection-${reflection.runId}`}
-                        onPress={() => setRunReflectionEditTarget(reflection)}
+                        onPress={() => openRunReflectionEditor(reflection)}
                         style={({ pressed }) => [styles.editReflection, pressed && styles.pressed]}
                       >
                         <Ionicons name="pencil-outline" size={15} color={colors.primary} />
@@ -687,8 +697,12 @@ export default function HistoryScreen() {
             ...(runReflectionEditTarget.sourcePlaylistId ? { sourcePlaylistId: runReflectionEditTarget.sourcePlaylistId } : {}),
             completedAt: runReflectionEditTarget.completedAt,
           }}
-          initialText={runReflectionEditTarget.text}
-          initialHtml={runReflectionEditTarget.html}
+          initialText={runReflectionEditTarget.text.trim() || runReflectionEditTarget.html.trim()
+            ? runReflectionEditTarget.text
+            : runReflectionEditTarget.templateTextSnapshot ?? ''}
+          initialHtml={runReflectionEditTarget.text.trim() || runReflectionEditTarget.html.trim()
+            ? runReflectionEditTarget.html
+            : runReflectionEditTarget.templateHtmlSnapshot ?? ''}
           onSave={(text, html) => saveRunReflection({ ...runReflectionEditTarget, text, html })}
           onSaved={() => setRunReflectionEditTarget(null)}
           onSkip={() => setRunReflectionEditTarget(null)}
