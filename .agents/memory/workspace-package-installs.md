@@ -20,3 +20,9 @@ Expo's automatic SDK alignment can be blocked when its recommended patch release
 **Why:** An SDK fix requested packages published the same day, and pnpm rejected them under the workspace's package-maturity safeguard.
 
 **How to apply:** If `expo install --fix` hits `ERR_PNPM_NO_MATURE_MATCHING_VERSION`, keep the safeguard intact and either use the installed versions or retry alignment after the release matures.
+
+EAS may choose a newer pnpm major than the workspace uses locally. If a cloud build ignores existing `onlyBuiltDependencies` approvals, pin the compatible pnpm version in the EAS build profile rather than broadly allowing every install script.
+
+**Why:** pnpm 11 replaced `onlyBuiltDependencies` with `allowBuilds`; an EAS build using pnpm 11 blocked `esbuild` even though the workspace approved it for pnpm 10.
+
+**How to apply:** Check the local pnpm version and workspace build-script policy, then pin that compatible version using the EAS profile's `pnpm` option or migrate the policy to the new pnpm setting.
