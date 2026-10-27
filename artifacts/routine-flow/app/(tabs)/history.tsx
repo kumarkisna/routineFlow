@@ -121,7 +121,11 @@ export default function HistoryScreen() {
     setSpeakingEventKey(eventKey);
     setSpeechError(null);
     try {
-      const text = buildSkillRatingSpeechText(routineTitle, event);
+      const runId = event.ratings.find(rating => rating.runId)?.runId;
+      const runReflection = runId
+        ? runReflections.find(reflection => reflection.runId === runId)?.text
+        : undefined;
+      const text = buildSkillRatingSpeechText(routineTitle, event, runReflection);
       await Speech.stop();
       if (speechSessionRef.current !== session) return;
       Speech.speak(text, {

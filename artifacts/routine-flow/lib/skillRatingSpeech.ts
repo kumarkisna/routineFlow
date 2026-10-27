@@ -5,7 +5,11 @@ function cleanSpeechText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-export function buildSkillRatingSpeechText(routineTitle: string, event: SkillRatingEvent): string {
+export function buildSkillRatingSpeechText(
+  routineTitle: string,
+  event: SkillRatingEvent,
+  runReflection?: string,
+): string {
   const title = cleanSpeechText(routineTitle);
   if (!title) throw new Error('The routine name is missing.');
   if (!event.ratings.length) throw new Error('There are no skill ratings to speak.');
@@ -23,5 +27,12 @@ export function buildSkillRatingSpeechText(routineTitle: string, event: SkillRat
     return `${index + 1}. ${skillName}. Rating: ${rating.rating} out of 10. Reflection: ${reflection}.`;
   });
 
-  return [`${title}.`, eventSummary, ...ratings].join(' ');
+  const reflection = cleanSpeechText(runReflection ?? '');
+  const spokenReflection = /[.!?]$/.test(reflection) ? reflection : `${reflection}.`;
+  return [
+    `${title}.`,
+    eventSummary,
+    ...ratings,
+    ...(reflection ? [`Run reflection: ${spokenReflection}`] : []),
+  ].join(' ');
 }

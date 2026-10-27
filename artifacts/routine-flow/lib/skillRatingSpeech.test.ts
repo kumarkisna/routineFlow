@@ -63,6 +63,32 @@ test('speech text identifies a manually recorded rating session', () => {
   );
 });
 
+test('speech text adds the matching run reflection after skill ratings', () => {
+  const event: SkillRatingEvent = {
+    id: 'run:practice-2',
+    dateTime: '2026-10-05T10:30:00.000Z',
+    isRunTime: true,
+    ratings: [{
+      id: 'rating-focus',
+      skillId: 'focus',
+      ratingId: 'rating-focus',
+      skillName: 'Focus',
+      rating: 7,
+      ratedAt: '2026-10-05T10:31:00.000Z',
+      runId: 'practice-2',
+    }],
+  };
+
+  const speech = buildSkillRatingSpeechText(
+    'Morning routine',
+    event,
+    '  Keep going.\nRemember to take breaks.  ',
+  );
+
+  assert.ok(speech.indexOf('Focus. Rating: 7 out of 10.') < speech.indexOf('Run reflection:'));
+  assert.ok(speech.endsWith('Run reflection: Keep going. Remember to take breaks.'));
+});
+
 test('speech text rejects empty or invalid rating data', () => {
   const event: SkillRatingEvent = {
     id: 'run:invalid',
