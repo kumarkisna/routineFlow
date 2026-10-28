@@ -14,8 +14,9 @@ This guide builds the native Android app on a Windows computer from the GitHub s
 Install:
 
 1. [GitHub Desktop](https://desktop.github.com/) to clone the repository.
-2. [Node.js LTS](https://nodejs.org/).
+2. [Node.js 24](https://nodejs.org/).
 3. [Android Studio](https://developer.android.com/studio).
+4. Git for Windows (Git Bash). GitHub Desktop normally installs Git for Windows too.
 
 During Android Studio's first-run setup, install the recommended Android SDK, platform tools, and build tools. Use Android Studio's bundled Java unless Gradle reports a Java-version problem.
 
@@ -25,17 +26,26 @@ In GitHub Desktop, sign in to the GitHub account that can access the repository 
 
 ## 3. Install project dependencies and generate Android files
 
-Open PowerShell in the cloned repository's top-level folder (the folder containing `pnpm-workspace.yaml`) and run:
+Open **Git Bash** in the cloned repository's top-level folder (the folder containing `pnpm-workspace.yaml`). Use Git Bash rather than PowerShell for dependency installation: this workspace's install check uses `sh`, which Git Bash provides.
 
-```powershell
+Check the tools first:
+
+```bash
+node --version
+```
+
+Node should report `v24.x`, matching the workspace's Node 24 setup. Then activate the workspace's pnpm version and install from the repository root:
+
+```bash
 corepack enable
 corepack prepare pnpm@10.26.1 --activate
-pnpm install
-cd artifacts\routine-flow
+pnpm --version
+pnpm install --frozen-lockfile
+cd artifacts/routine-flow
 pnpm exec expo prebuild --platform android
 ```
 
-If `corepack` is unavailable, install pnpm version `10.26.1` using the official pnpm installation instructions, then continue with `pnpm install`.
+`pnpm --version` should report `10.26.1`. If Corepack is unavailable, open PowerShell and install that version with `npm install --global pnpm@10.26.1`, then reopen Git Bash and continue.
 
 The last command creates the native Android project at:
 
@@ -50,8 +60,9 @@ The existing `artifacts\routine-flow\static-build\android` directory is preview 
 1. Start Android Studio and choose **File → Open**.
 2. Select `artifacts\routine-flow\android`.
 3. Wait for Gradle sync to finish. Accept prompts to install missing Android SDK components or licenses.
-4. To build an APK, choose **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
-5. Android Studio displays the build result and an option to locate the APK.
+4. If Gradle asks for a Java version, open **File → Settings → Build, Execution, Deployment → Build Tools → Gradle** and select Android Studio's embedded JDK.
+5. Choose **Build → Build Bundle(s) / APK(s) → Build APK(s)**. If that menu is missing, open the Gradle tool window and run `app → Tasks → build → assembleDebug`.
+6. Android Studio displays the build result and an option to locate the APK.
 
 The debug APK is usually saved here:
 
@@ -77,3 +88,14 @@ For Google Play, use **Build → Generate Signed Bundle / APK**:
 - The first native build can take several minutes while Gradle downloads dependencies.
 - Re-running Expo prebuild can regenerate native project files. Avoid making manual Android changes before the first build; if you later customize native files, keep a backup or commit those changes.
 - The debug APK is suitable for testing. Test the installed app with the phone offline to confirm routine use does not depend on Replit hosting.
+
+## Troubleshooting
+
+- **`sh` is not recognized**, or the install check fails before pnpm installs anything: run `pnpm install --frozen-lockfile` from Git Bash at the repository root, not PowerShell and not the app folder.
+- **`pnpm` or `corepack` is not recognized**: install Node.js 24, close and reopen Git Bash, then check `node --version`. If Corepack is still unavailable, install pnpm `10.26.1` globally as described above.
+- **`ERR_PNPM_OUTDATED_LOCKFILE`**: confirm pnpm is exactly `10.26.1` and retry `pnpm install --frozen-lockfile` from the repository root.
+- **Gradle sync reports a missing SDK or license**: open Android Studio's SDK Manager, install the SDK version named in the error, and accept its license.
+- **Gradle reports a Java/JDK error**: set the Gradle JDK to Android Studio's embedded JDK, sync again, and retry.
+- **Build fails**: in Android Studio, open **Build → Build Output** and inspect the first red error. Later errors are often consequences of that first one.
+
+If the build still fails, save or screenshot the first error and the lines immediately above it. Those identify whether the problem is Node/pnpm, Expo prebuild, Android SDK, Java, or Gradle.
