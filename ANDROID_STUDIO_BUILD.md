@@ -96,6 +96,7 @@ For Google Play, use **Build → Generate Signed Bundle / APK**:
 - **`ERR_PNPM_OUTDATED_LOCKFILE`**: confirm pnpm is exactly `10.26.1` and retry `pnpm install --frozen-lockfile` from the repository root.
 - **Gradle sync reports a missing SDK or license**: open Android Studio's SDK Manager, install the SDK version named in the error, and accept its license.
 - **Gradle reports a Java/JDK error**: set the Gradle JDK to Android Studio's embedded JDK, sync again, and retry.
+- **Gradle cannot download `gradle-9.3.1-bin.zip` and reports `Connect timed out`**: this happens before the app is compiled. Open `https://services.gradle.org/distributions/gradle-9.3.1-bin.zip` in your laptop browser. If it does not download, retry on a stable network that permits HTTPS downloads. If the browser works but Android Studio still times out, check **File → Settings → Appearance & Behavior → System Settings → HTTP Proxy** and make it match your network (use **No proxy** only if your network does not require one). Check that your firewall allows Android Studio/Gradle outbound HTTPS; do not disable the firewall. Retry Gradle sync afterward. Do not change the Gradle version to fix a connection timeout.
 - **Build fails**: in Android Studio, open **Build → Build Output** and inspect the first red error. Later errors are often consequences of that first one.
 
 If the build still fails, save or screenshot the first error and the lines immediately above it. Those identify whether the problem is Node/pnpm, Expo prebuild, Android SDK, Java, or Gradle.
