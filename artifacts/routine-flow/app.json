@@ -9,10 +9,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "co.median.ios.qdqkeor"
+      "bundleIdentifier": "com.kumarkisna.routineflow"
     },
     "android": {
-      "package": "co.median.android.qdqkeor",
+      "package": "com.kumarkisna.routineflow",
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
