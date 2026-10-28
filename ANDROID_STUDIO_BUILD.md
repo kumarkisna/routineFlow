@@ -18,7 +18,7 @@ Install:
 3. [Android Studio](https://developer.android.com/studio).
 4. Git for Windows (Git Bash). GitHub Desktop normally installs Git for Windows too.
 
-During Android Studio's first-run setup, install the recommended Android SDK, platform tools, and build tools. Use Android Studio's bundled Java unless Gradle reports a Java-version problem.
+During Android Studio's first-run setup, install the recommended Android SDK, platform tools, and build tools. Configure Gradle to use **JDK 17**. Android Studio's bundled JDK may be newer; do not assume it is the right JDK for this native build.
 
 ## 2. Clone the project
 
@@ -60,7 +60,7 @@ The existing `artifacts\routine-flow\static-build\android` directory is preview 
 1. Start Android Studio and choose **File → Open**.
 2. Select `artifacts\routine-flow\android`.
 3. Wait for Gradle sync to finish. Accept prompts to install missing Android SDK components or licenses.
-4. If Gradle asks for a Java version, open **File → Settings → Build, Execution, Deployment → Build Tools → Gradle** and select Android Studio's embedded JDK.
+4. Open **File → Settings → Build, Execution, Deployment → Build Tools → Gradle** and set **Gradle JDK** to JDK 17 (for example, `jbr-17`). If JDK 17 is not listed, use the drop-down's download option or install a JDK 17 distribution, then select its folder.
 5. Choose **Build → Build Bundle(s) / APK(s) → Build APK(s)**. If that menu is missing, open the Gradle tool window and run `app → Tasks → build → assembleDebug`.
 6. Android Studio displays the build result and an option to locate the APK.
 
@@ -95,7 +95,8 @@ For Google Play, use **Build → Generate Signed Bundle / APK**:
 - **`pnpm` or `corepack` is not recognized**: install Node.js 24, close and reopen Git Bash, then check `node --version`. If Corepack is still unavailable, install pnpm `10.26.1` globally as described above.
 - **`ERR_PNPM_OUTDATED_LOCKFILE`**: confirm pnpm is exactly `10.26.1` and retry `pnpm install --frozen-lockfile` from the repository root.
 - **Gradle sync reports a missing SDK or license**: open Android Studio's SDK Manager, install the SDK version named in the error, and accept its license.
-- **Gradle reports a Java/JDK error**: set the Gradle JDK to Android Studio's embedded JDK, sync again, and retry.
+- **Gradle reports a Java/JDK error**: set the Gradle JDK to JDK 17, sync again, and retry.
+- **`:react-native-worklets:configureCMakeDebug` fails with `WARNING: A restricted method in java.lang.System has been called`**: set Android Studio's **Gradle JDK** to JDK 17, not a newer bundled JDK. Sync and rebuild. If you build from a terminal instead of Android Studio, make `JAVA_HOME` point to that same JDK 17.
 - **Gradle cannot download `gradle-9.3.1-bin.zip` and reports `Connect timed out`**: this happens before the app is compiled. Open `https://services.gradle.org/distributions/gradle-9.3.1-bin.zip` in your laptop browser. If it does not download, retry on a stable network that permits HTTPS downloads. If the browser works but Android Studio still times out, check **File → Settings → Appearance & Behavior → System Settings → HTTP Proxy** and make it match your network (use **No proxy** only if your network does not require one). Check that your firewall allows Android Studio/Gradle outbound HTTPS; do not disable the firewall. Retry Gradle sync afterward. Do not change the Gradle version to fix a connection timeout.
 - **Build fails**: in Android Studio, open **Build → Build Output** and inspect the first red error. Later errors are often consequences of that first one.
 
