@@ -9,6 +9,7 @@
 - [Skill association browsing](skill-associations.md) — include direct/step routine assignments and playlists containing those routines, distinguishing hidden items.
 - [Expo web confirmations](expo-web-confirmations.md) — use an in-app confirmation for destructive actions that must work in the web preview.
 - [Workspace package installs](workspace-package-installs.md) — pnpm package additions can rewrite workspace YAML comments; preserve the original policy text.
+- [Windows Android builds](windows-android-builds.md) — hoisted pnpm shortens CMake paths, but Android Studio release bundling also needs NODE_PATH to resolve Expo from the app workspace.
 - [Browser persistence fixtures](browser-persistence-fixtures.md) — initialization scripts run again after reload; seed storage only when empty when testing persistence.
 - [Expo web checkbox assertions](expo-web-checkboxes.md) — native accessibility checked state may not reach the DOM; verify actual exported content in transfer tests.
 - [Routine write overlap](routine-write-overlap.md) — reject overlapping routine saves until mutations use fresh state, or one successful edit may silently erase another.

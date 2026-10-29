@@ -28,6 +28,14 @@ In GitHub Desktop, sign in to the GitHub account that can access the repository 
 
 Open **Git Bash** in the cloned repository's top-level folder (the folder containing `pnpm-workspace.yaml`). Use Git Bash rather than PowerShell for dependency installation: this workspace's install check uses `sh`, which Git Bash provides.
 
+On Windows, create a `.npmrc` file in the repository root containing:
+
+```ini
+node-linker=hoisted
+```
+
+This keeps native dependency paths shorter for CMake/Ninja. The file belongs beside `pnpm-workspace.yaml`, not inside `artifacts\routine-flow`.
+
 Check the tools first:
 
 ```bash
@@ -55,14 +63,24 @@ artifacts\routine-flow\android
 
 The existing `artifacts\routine-flow\static-build\android` directory is preview output, not the native project. Open the newly generated `android` directory instead.
 
-## 4. Open and build a debug APK
+The hoisted install can place Expo under the app's `node_modules` while Metro's configuration is under the repository's root `node_modules`. To let Node resolve Expo from both locations, set this Windows user environment variable after installing dependencies:
+
+```powershell
+setx NODE_PATH "C:\rf\artifacts\routine-flow\node_modules;C:\rf\node_modules"
+```
+
+Adjust `C:\rf` if you cloned the repository elsewhere. Close and reopen Android Studio after setting this variable so Gradle and its bundling subprocesses inherit it. If you already have a Gradle daemon running, stop it or restart Windows before retrying a bundle that still reports `Cannot find module 'expo/package.json'`.
+
+## 4. Open and build an APK
 
 1. Start Android Studio and choose **File → Open**.
 2. Select `artifacts\routine-flow\android`.
 3. Wait for Gradle sync to finish. Accept prompts to install missing Android SDK components or licenses.
-4. Open **File → Settings → Build, Execution, Deployment → Build Tools → Gradle** and set **Gradle JDK** to JDK 17 (for example, `jbr-17`). If JDK 17 is not listed, use the drop-down's download option or install a JDK 17 distribution, then select its folder.
-5. Choose **Build → Build Bundle(s) / APK(s) → Build APK(s)**. If that menu is missing, open the Gradle tool window and run `app → Tasks → build → assembleDebug`.
-6. Android Studio displays the build result and an option to locate the APK.
+4. Open **File → Settings → Build, Execution, Deployment → Build Tools → Gradle** and set **Gradle JVM criteria → Version** to **17**. Click **OK**. Gradle's JVM version is separate from the Gradle wrapper version; keep the project's wrapper at its configured version.
+5. To create a test/debug APK, choose **Build → Build Bundle(s) / APK(s) → Build APK(s)**, or run `:app:assembleDebug`.
+6. To create an APK that includes the JavaScript bundle and can open without Metro, run `:app:assembleRelease`.
+7. In Android Studio's Gradle tool window, use the **Execute Gradle Task** button (the small square/play icon near the top) and enter the exact task, such as `:app:assembleRelease`. The task tree may not show a `build` group; this button works even when the group is absent. Do not run `bundleDebug` when you need an installable APK.
+8. Wait for **BUILD SUCCESSFUL** in Build Output. If the build fails, use the first meaningful error in the output rather than later summary lines.
 
 The debug APK is usually saved here:
 
@@ -70,9 +88,29 @@ The debug APK is usually saved here:
 artifacts\routine-flow\android\app\build\outputs\apk\debug\app-debug.apk
 ```
 
-Copy the APK to an Android phone and open it to install. Alternatively, enable USB debugging on the phone, connect it to the computer, select the device in Android Studio, and press **Run**.
+The standalone release APK is usually saved here:
 
-You can also create an emulator in Android Studio using **Tools → Device Manager**, then run the app on that emulator.
+```text
+artifacts\routine-flow\android\app\build\outputs\apk\release\app-release.apk
+```
+
+Copy the **release APK** to the Android phone and open it to install. Sending it through WhatsApp as a document/file is also fine. An `.aab` file is an Android App Bundle and cannot be installed by tapping it; use an APK for direct installation. Android 12 and Samsung tablets do not need special project changes for this app.
+
+The debug APK is for development and normally needs Metro running on the computer. If it remains on the splash screen when installed by itself, build and install the release APK instead. If testing the debug APK on a USB-connected phone, enable Developer options and USB debugging, accept the phone's authorization prompt, and run Metro from `artifacts\routine-flow`:
+
+```powershell
+pnpm exec expo start --localhost
+```
+
+In a second PowerShell window, locate ADB and forward Metro's port (the default SDK location is shown):
+
+```powershell
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+& $adb devices
+& $adb reverse tcp:8081 tcp:8081
+```
+
+The `devices` output must list the phone with status `device` before `reverse` will work. If the phone is missing, use a data-capable USB cable, unlock the phone, enable USB debugging, and accept the authorization prompt. Alternatively, create an emulator with **Tools → Device Manager**.
 
 ## 5. Create a Play Store release
 
@@ -97,6 +135,11 @@ For Google Play, use **Build → Generate Signed Bundle / APK**:
 - **Gradle sync reports a missing SDK or license**: open Android Studio's SDK Manager, install the SDK version named in the error, and accept its license.
 - **Gradle reports a Java/JDK error**: set the Gradle JDK to JDK 17, sync again, and retry.
 - **`:react-native-worklets:configureCMakeDebug` fails with `WARNING: A restricted method in java.lang.System has been called`**: set Android Studio's **Gradle JDK** to JDK 17, not a newer bundled JDK. Sync and rebuild. If you build from a terminal instead of Android Studio, make `JAVA_HOME` point to that same JDK 17.
+- **Ninja reports `manifest 'build.ninja' still dirty after 100 tries`**: check that the repository is in a short path such as `C:\rf`, and that the root `.npmrc` contains `node-linker=hoisted`. Reinstall dependencies from the repository root with `pnpm install --frozen-lockfile`. If Android sync still points into the old `.pnpm` virtual-store path, close Android Studio, back up `android\gradle\wrapper\gradle-wrapper.properties` and `android\gradle\gradle-daemon-jvm.properties`, then run `pnpm exec expo prebuild --platform android` from `artifacts\routine-flow`. Reopen the generated `android` folder and confirm the wrapper version and Java 17 criteria afterward; prebuild can rewrite native files.
+- **pnpm warns it could not create `node.exe` bins for `@types/node` on Windows**: these warnings were non-blocking when `pnpm install --frozen-lockfile` completed successfully. Continue unless the install exits with an error or a required package is missing.
+- **Release bundling fails with `Cannot find module 'expo/package.json'`**: confirm the root `.npmrc` uses `node-linker=hoisted`, set the Windows user `NODE_PATH` as described in Section 3, then fully restart Android Studio and retry `:app:assembleRelease`. The `NODE_ENV environment variable is required` line can appear as a warning; the missing Expo module is the blocking error.
+- **`JAVA_HOME is not set` in PowerShell**: Android Studio's Gradle JVM setting does not configure PowerShell. Build from Android Studio's Gradle task runner, or set `JAVA_HOME` in that terminal to the installed JDK 17 before running `gradlew.bat`.
+- **Only a debug APK or `app-debug.aab` exists**: run `:app:assembleRelease` for a standalone APK. `bundleDebug` creates an `.aab`, which is not directly installable by tapping it.
 - **Gradle cannot download `gradle-9.3.1-bin.zip` and reports `Connect timed out`**: this happens before the app is compiled. Open `https://services.gradle.org/distributions/gradle-9.3.1-bin.zip` in your laptop browser. If it does not download, retry on a stable network that permits HTTPS downloads. If the browser works but Android Studio still times out, check **File → Settings → Appearance & Behavior → System Settings → HTTP Proxy** and make it match your network (use **No proxy** only if your network does not require one). Check that your firewall allows Android Studio/Gradle outbound HTTPS; do not disable the firewall. Retry Gradle sync afterward. Do not change the Gradle version to fix a connection timeout.
 - **Build fails**: in Android Studio, open **Build → Build Output** and inspect the first red error. Later errors are often consequences of that first one.
 
