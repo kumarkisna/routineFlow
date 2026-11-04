@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Routine } from '@/types/routines';
 import type { RoutineSkill } from './skills';
+import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
 import {
   createHistorySkillRatingRun, formatHistoryDay, getHistoryForDay, getUnratedSkillIds,
   getSkillRatingsMissingNotes, groupSkillRatingEvents, playlistHistoryOptions, playlistHistoryRatingAnchorId, recordCompletion,
@@ -116,6 +117,40 @@ test('editing a run response preserves completion labels, playlist tags, and oth
     otherReflection,
   ]);
   assert.throws(() => updateRunReflectionResponse(original, '2026-01-03', 'missing', '<p>no</p>'), /could not be found/);
+});
+
+test('formatted reflection content survives save, History lookup, and editor reopen sanitization', () => {
+  const formattedResponse = [
+    '<h2>Today’s progress</h2>',
+    '<ul><li>Completed the first step</li><li><strong>Stayed focused</strong></li></ul>',
+    '<p><em>I will repeat this tomorrow.</em></p>',
+  ].join('');
+  const original = {
+    '2026-01-03': {
+      'morning:water': {
+        routineTitle: 'Morning',
+        stepTitle: 'Water',
+        runReflections: [{
+          runId: 'formatted-run',
+          sourceType: 'routine' as const,
+          sourceId: 'morning',
+          sourceTitle: 'Morning',
+          routineId: 'morning',
+          completedAt: '2026-01-03T10:00:00Z',
+          templateHtml: '<p>What went well?</p>',
+        }],
+      },
+    },
+  };
+
+  const saved = sanitizeStepDetailHtml(formattedResponse);
+  const updated = updateRunReflectionResponse(original, '2026-01-03', 'formatted-run', saved);
+  const reopened = getHistoryForDay(updated, [routine], '2026-01-03')[0].runReflections?.[0];
+
+  assert.ok(reopened);
+  assert.equal(reopened.responseHtml, formattedResponse);
+  assert.equal(sanitizeStepDetailHtml(reopened.responseHtml ?? ''), formattedResponse);
+  assert.equal(detailHtmlToText(reopened.responseHtml ?? ''), 'Today’s progress\nCompleted the first step\nStayed focused\nI will repeat this tomorrow.');
 });
 
 test('lists only past dates with completions, newest first', () => {
