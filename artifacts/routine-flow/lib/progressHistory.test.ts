@@ -119,11 +119,22 @@ test('editing a run response preserves completion labels, playlist tags, and oth
   assert.throws(() => updateRunReflectionResponse(original, '2026-01-03', 'missing', '<p>no</p>'), /could not be found/);
 });
 
-test('formatted reflection content survives save, History lookup, and editor reopen sanitization', () => {
+test('reflection links and styling survive History round-trip while unsafe markup is removed', () => {
+  const reflectionInput = [
+    '<h2>Today’s progress</h2>',
+    '<ul><li>Completed the first step</li><li><strong>Stayed focused</strong></li></ul>',
+    '<p><em>I will repeat this tomorrow.</em></p>',
+    '<p style="text-align:center"><span style="color:#4A6FA5;background-color:#FFF">A centered note</span> ',
+    '<a href="https://example.com/notes" target="_blank" onclick="run()">Read more</a></p>',
+    '<p><a href="javascript:run()">Unsafe link</a><script>alert(1)</script><img src=x onerror="run()"></p>',
+  ].join('');
   const formattedResponse = [
     '<h2>Today’s progress</h2>',
     '<ul><li>Completed the first step</li><li><strong>Stayed focused</strong></li></ul>',
     '<p><em>I will repeat this tomorrow.</em></p>',
+    '<p style="text-align:center"><span style="color:#4a6fa5;background-color:#fff">A centered note</span> ',
+    '<a href="https://example.com/notes">Read more</a></p>',
+    '<p><a>Unsafe link</a></p>',
   ].join('');
   const original = {
     '2026-01-03': {
@@ -143,14 +154,19 @@ test('formatted reflection content survives save, History lookup, and editor reo
     },
   };
 
-  const saved = sanitizeStepDetailHtml(formattedResponse);
+  const saved = sanitizeStepDetailHtml(reflectionInput);
+  assert.equal(saved, formattedResponse);
+  assert.doesNotMatch(saved, /onclick|target=|javascript:|<script|<img/i);
   const updated = updateRunReflectionResponse(original, '2026-01-03', 'formatted-run', saved);
   const reopened = getHistoryForDay(updated, [routine], '2026-01-03')[0].runReflections?.[0];
 
   assert.ok(reopened);
   assert.equal(reopened.responseHtml, formattedResponse);
   assert.equal(sanitizeStepDetailHtml(reopened.responseHtml ?? ''), formattedResponse);
-  assert.equal(detailHtmlToText(reopened.responseHtml ?? ''), 'Today’s progress\nCompleted the first step\nStayed focused\nI will repeat this tomorrow.');
+  assert.equal(
+    detailHtmlToText(reopened.responseHtml ?? ''),
+    'Today’s progress\nCompleted the first step\nStayed focused\nI will repeat this tomorrow.\nA centered note Read more\nUnsafe link',
+  );
 });
 
 test('lists only past dates with completions, newest first', () => {
