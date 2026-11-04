@@ -249,7 +249,7 @@ export function GroupSkillRatingPrompt({
                       multiline
                       placeholder={ratings[skill.id] === undefined ? 'Choose a score to add a note' : 'Add an optional note'}
                       placeholderTextColor={colors.mutedForeground}
-                      style={[styles.note, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+                      style={[styles.note, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]}
                     />
                   </View>
                 ))}

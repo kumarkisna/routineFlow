@@ -174,7 +174,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
         <TextInput accessibilityLabel="Playlist name" testID="playlist-name-input" placeholder="Name your playlist" placeholderTextColor={colors.mutedForeground}
           value={title} maxLength={100} editable={!busy} returnKeyType="done" onSubmitEditing={() => void save()}
           onChangeText={(t) => { setTitle(t); setError(''); }}
-          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]} />
+          style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]} />
         <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={busy} testIDPrefix="playlist-skill" />
         {!scheduleId ? (
           <>
@@ -183,7 +183,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
               value={reflectionTemplateText} editable={!busy} placeholder="Add prompts to answer after the playlist"
               placeholderTextColor={colors.mutedForeground}
               onChangeText={value => { setReflectionTemplateText(value); setReflectionTemplateHtml(''); }}
-              style={[styles.input, { minHeight: 80, paddingVertical: 12, textAlignVertical: 'top', borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} />
+              style={[styles.input, { minHeight: 80, paddingVertical: 12, textAlignVertical: 'top', borderColor: colors.border, color: colors.foreground, backgroundColor: colors.input }]} />
             <ExpandableRichDetailEditor label="Playlist reflection template" value={reflectionTemplateText}
               html={reflectionTemplateHtml} disabled={busy}
               onSave={(text, html) => { setReflectionTemplateText(text); setReflectionTemplateHtml(html); }} />

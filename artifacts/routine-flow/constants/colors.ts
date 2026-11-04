@@ -39,7 +39,7 @@ const colors = {
     destructiveForeground: '#ffffff',
 
     border: '#e2ddd3',
-    input: '#d8d2c8',
+    input: '#fffdf9',
 
     hero: '#27384b',
     heroForeground: '#fffaf2',

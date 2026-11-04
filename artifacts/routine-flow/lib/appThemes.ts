@@ -71,7 +71,7 @@ function palette(surfaceHue: number, accentHue: number, dark: boolean, saturatio
     accent, accentForeground: onColor(accent),
     destructive, destructiveForeground: onColor(destructive),
     border: hsl(surfaceHue, dark ? 15 : 19, dark ? 31 : 82),
-    input: hsl(surfaceHue, dark ? 16 : 20, dark ? 39 : 75),
+    input: hsl(surfaceHue, dark ? 18 : 22, dark ? 28 : 100),
     hero, heroForeground: '#fffdf9',
     sage: hsl(148, 30, dark ? 58 : 66),
     sageSoft: hsl(148, dark ? 22 : 28, dark ? 20 : 91),

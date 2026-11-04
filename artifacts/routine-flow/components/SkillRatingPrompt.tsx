@@ -254,7 +254,7 @@ export function SkillRatingPrompt({
                     styles.noteInput,
                     {
                       color: colors.foreground,
-                      backgroundColor: colors.background,
+                      backgroundColor: colors.input,
                       borderColor: colors.border,
                       opacity: noteOnly || selected[skill.id] !== undefined ? 1 : 0.55,
                     },

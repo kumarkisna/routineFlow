@@ -893,7 +893,7 @@ export default function HomeScreen() {
                       onChangeText={(text) => { setRenameDraft(text); setRenameError(''); }}
                       onSubmitEditing={() => void saveCategoryRename()}
                       returnKeyType="done"
-                      style={[styles.renameInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
+                      style={[styles.renameInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
                     />
                     {renameError ? <Text accessibilityRole="alert" style={[styles.renameError, { color: colors.destructive }]}>{renameError}</Text> : null}
                     <View style={styles.renameActions}>
@@ -1377,7 +1377,7 @@ export default function HomeScreen() {
                             maxLength={50}
                             autoCapitalize="words"
                             style={[styles.profileNameInput, {
-                              backgroundColor: colors.background,
+                              backgroundColor: colors.input,
                               borderColor: colors.border,
                               color: colors.foreground,
                             }]}

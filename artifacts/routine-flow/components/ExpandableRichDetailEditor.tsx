@@ -43,7 +43,7 @@ export function ExpandableRichDetailEditor({ label, value, html, disabled, onSav
               style={[styles.done, { backgroundColor: colors.primary }]}><Text style={{ color: colors.primaryForeground }}>Done</Text></Pressable>
           </View>
           {visible ? (Platform.OS === 'web' ? (
-            <TextInput multiline value={webText} onChangeText={setWebText} style={[styles.webInput, { color: colors.foreground, borderColor: colors.border }]} />
+            <TextInput multiline value={webText} onChangeText={setWebText} style={[styles.webInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
           ) : (
             <>
               <RichToolbar editor={editor} actions={[
@@ -54,7 +54,7 @@ export function ExpandableRichDetailEditor({ label, value, html, disabled, onSav
               ]} />
               <RichEditor ref={editor} initialContentHTML={draftHtml} onChange={setDraftHtml}
                 placeholder="Write step instructions…" style={styles.editor}
-                editorStyle={{ backgroundColor: colors.background, color: colors.foreground, placeholderColor: colors.mutedForeground, contentCSSText: 'font-size:16px;line-height:1.5;padding:12px;' }} />
+                editorStyle={{ backgroundColor: colors.input, color: colors.foreground, placeholderColor: colors.mutedForeground, contentCSSText: 'font-size:16px;line-height:1.5;padding:12px;' }} />
             </>
           )) : null}
         </View>

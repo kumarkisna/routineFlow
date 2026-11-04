@@ -297,7 +297,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             setTitle(value);
             setError('');
           }}
-          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+          style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
         />
         <TextInput
           accessibilityLabel="Routine description"
@@ -308,7 +308,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             setSubtitle(value);
             setSubtitleHtml('');
           }}
-          style={[styles.input, styles.descriptionInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+          style={[styles.input, styles.descriptionInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
         />
         <ExpandableRichDetailEditor
           label="Routine description"
@@ -348,7 +348,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           placeholder="Add prompts to answer after each run"
           placeholderTextColor={colors.mutedForeground}
           onChangeText={value => { setReflectionTemplateText(value); setReflectionTemplateHtml(''); }}
-          style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} />
+          style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.input }]} />
         <ExpandableRichDetailEditor label="Routine reflection template" value={reflectionTemplateText} html={reflectionTemplateHtml}
           disabled={saving} onSave={(text, html) => { setReflectionTemplateText(text); setReflectionTemplateHtml(html); }} />
         <Text style={[styles.categoryLabel, { color: colors.inkSoft }]}>Category (optional)</Text>
@@ -360,7 +360,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           value={category}
           maxLength={MAX_CATEGORY_LENGTH}
           onChangeText={setCategory}
-          style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+          style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
         />
         {existingCategories.length > 0 ? (
           <View style={styles.categorySuggestions}>
@@ -406,7 +406,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 setError('');
               }}
               returnKeyType="next"
-              style={[styles.stepInput, { color: colors.foreground }]}
+              style={[styles.stepInput, { color: colors.foreground, backgroundColor: colors.input, borderColor: colors.border }]}
             />
             <Pressable
               accessibilityLabel={editingStepId ? 'Update step' : 'Add step'}
@@ -431,7 +431,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             placeholderTextColor={colors.mutedForeground}
             value={stepDescriptionDraft}
             onChangeText={(description) => setStepDetailDraft((current) => ({ ...current, description, detailHtml: current.detailHtml.map((html, index) => index === 0 ? '' : html) }))}
-            style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground }]}
+            style={[styles.stepDescriptionInput, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.input }]}
           />
           <ExpandableRichDetailEditor label="Main step detail" value={stepDescriptionDraft} html={detailHtmlDraft[0] ?? ''} disabled={saving}
             onSave={(description, html) => setStepDetailDraft(current => setDraftDetailHtml({ ...current, description }, 0, html))} />
@@ -467,7 +467,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                   style={[
                     styles.stepDescriptionInput,
                     styles.additionalDetailInput,
-                    { borderColor: colors.border, color: colors.foreground },
+                    { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.input },
                   ]}
                 />
                 <ExpandableRichDetailEditor label={`Additional detail ${index + 1}`} value={detail} html={detailHtmlDraft[index + 1] ?? ''} disabled={saving}
@@ -527,7 +527,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 onChangeText={setHoursDraft}
                 placeholder="00"
                 placeholderTextColor={colors.mutedForeground}
-                style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border }]}
+                style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]}
                 value={hoursDraft}
               />
               <Text style={[styles.timeColon, { color: colors.mutedForeground }]}>:</Text>
@@ -538,7 +538,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 onChangeText={setMinutesDraft}
                 placeholder="05"
                 placeholderTextColor={colors.mutedForeground}
-                style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border }]}
+                style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]}
                 value={minutesDraft}
               />
               <Text style={[styles.timeColon, { color: colors.mutedForeground }]}>:</Text>
@@ -549,7 +549,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 onChangeText={setSecondsDraft}
                 placeholder="00"
                 placeholderTextColor={colors.mutedForeground}
-                style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border }]}
+                style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]}
                 value={secondsDraft}
               />
               <Text style={[styles.timeHint, { color: colors.mutedForeground }]}>h&nbsp;&nbsp; m&nbsp;&nbsp; s</Text>

@@ -138,7 +138,7 @@ function Editor({ editId, copyId, initial }: { editId?: string; copyId?: string;
     }
   }
 
-  const input = [styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }];
+  const input = [styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }];
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.top, { paddingTop: (isWeb ? 67 : insets.top) + 8 }]}>

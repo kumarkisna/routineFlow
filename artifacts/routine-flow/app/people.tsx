@@ -473,7 +473,7 @@ export default function PeopleScreen() {
                         onChangeText={(value) => { setEditingName(value); setError(''); }}
                         editable={!disabled}
                         maxLength={50}
-                        style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+                        style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
                       />
                     )}
                     <SpeechVoicePreference
@@ -508,7 +508,7 @@ export default function PeopleScreen() {
                             placeholderTextColor={colors.mutedForeground}
                             value={themeSearch}
                             onChangeText={setThemeSearch}
-                            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+                            style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
                           />
                           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.themeFilterRow}>
                             {(['All', ...THEME_GROUPS] as const).map(group => {
@@ -713,7 +713,7 @@ export default function PeopleScreen() {
               onChangeText={(t) => { setName(t); setError(''); }}
               onSubmitEditing={submitAdd}
               returnKeyType="done"
-              style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, flex: 1 }]} />
+              style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground, flex: 1 }]} />
             <Pressable testID="person-add" accessibilityRole="button" accessibilityLabel="Add person"
               disabled={disabled || !name.trim()}
               onPress={submitAdd}

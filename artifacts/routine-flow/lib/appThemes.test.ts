@@ -24,6 +24,12 @@ test('each theme supplies all the existing color tokens and a distinct complete 
     palettes.add(JSON.stringify(theme.colors));
     assert.ok(contrastRatio(theme.colors.foreground, theme.colors.background) >= 4.5, theme.name);
     assert.ok(contrastRatio(theme.colors.cardForeground, theme.colors.card) >= 4.5, theme.name);
+    assert.ok(contrastRatio(theme.colors.input, theme.colors.background) > 1, `${theme.name} input surface differs from screen`);
+    const luminance = (hex: string) => [1, 3, 5].map(index => {
+      const value = parseInt(hex.slice(index, index + 2), 16) / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    assert.ok(luminance(theme.colors.input) > luminance(theme.colors.background), `${theme.name} input is lighter than screen`);
   }
   assert.equal(palettes.size, 90);
   assert.deepEqual(findAppTheme(DEFAULT_THEME_ID)?.colors, { ...original.light, radius: original.radius });

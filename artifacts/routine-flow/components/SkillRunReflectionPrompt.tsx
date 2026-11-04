@@ -89,7 +89,7 @@ export function SkillRunReflectionPrompt({
             onChangeText={value => { setText(value); setHtml(''); }}
             placeholder="Write a reflection for this run…"
             placeholderTextColor={colors.mutedForeground}
-            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+            style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
           />
           <ExpandableRichDetailEditor
             label="Run reflection"

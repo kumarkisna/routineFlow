@@ -144,7 +144,7 @@ export default function SkillsScreen() {
                   keyboardType="number-pad"
                   maxLength={3}
                   editable={!windowSaving && !loading && !error}
-                  style={[styles.windowInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
+                  style={[styles.windowInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
                 />
                 <Text style={[styles.windowUnit, { color: colors.inkSoft }]}>ratings</Text>
                 <Pressable
@@ -181,7 +181,7 @@ export default function SkillsScreen() {
                   editable={!busy && !loading && !error}
                   returnKeyType="done"
                   onSubmitEditing={() => void addSkill()}
-                  style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
+                  style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
                 />
                 <Pressable
                   accessibilityRole="button"
@@ -249,7 +249,7 @@ export default function SkillsScreen() {
                     editable={!busy}
                     returnKeyType="done"
                     onSubmitEditing={() => void saveEdit()}
-                    style={[styles.input, styles.editInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
+                    style={[styles.input, styles.editInput, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
                   />
                   <View style={styles.actions}>
                     <Pressable accessibilityRole="button" accessibilityLabel="Cancel skill edit" testID={`cancel-edit-skill-${item.id}`} disabled={busy}

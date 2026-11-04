@@ -162,7 +162,7 @@ export default function AppearanceScreen({ asTab = false }: { asTab?: boolean } 
               autoCorrect={false}
               autoCapitalize="none"
               returnKeyType="search"
-              style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+              style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]}
             />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
               {chip('All', group === 'All', () => setGroup('All'), 'filter-group-all')}

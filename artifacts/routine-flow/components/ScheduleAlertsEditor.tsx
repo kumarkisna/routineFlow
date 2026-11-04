@@ -69,7 +69,7 @@ export function ScheduleAlertsEditor({ rows, onChange, disabled, scheduledAt, is
             <TextInput accessibilityLabel={`Alert ${i + 1} lead time`} testID={`schedule-alert-value-${i}`} value={r.value} editable={!disabled}
               maxLength={9} placeholder="0" placeholderTextColor={colors.mutedForeground} autoCorrect={false} autoCapitalize="none"
               keyboardType="number-pad" onChangeText={(t) => patch(r.key, { value: t })}
-              style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]} />
+              style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]} />
             <View style={styles.units}>
               {UNITS.map((u) => {
                 const sel = r.unit === u;
