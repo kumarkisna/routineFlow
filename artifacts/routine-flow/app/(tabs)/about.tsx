@@ -1,57 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import * as Print from 'expo-print';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_NAME } from '@/constants/brand';
 import { useColors } from '@/hooks/useColors';
-import {
-  aboutGuideSections,
-  buildAboutGuideHtml,
-  openAboutGuidePrintWindow,
-  type AboutGuidePrintWindow,
-  type AboutGuideSectionId,
-} from '@/lib/aboutGuide';
+import { aboutGuideSections, type AboutGuideSectionId } from '@/lib/aboutGuide';
 
 export default function AboutScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
   const sectionOffsets = React.useRef<Partial<Record<AboutGuideSectionId, number>>>({});
-  const printLock = React.useRef(false);
-  const [printBusy, setPrintBusy] = React.useState(false);
-  const [printError, setPrintError] = React.useState('');
 
   function jumpTo(sectionId: AboutGuideSectionId) {
     const y = sectionOffsets.current[sectionId];
     if (y !== undefined) scrollRef.current?.scrollTo({ y: Math.max(y - 12, 0), animated: true });
-  }
-
-  async function printAll() {
-    if (printLock.current) return;
-    printLock.current = true;
-    setPrintBusy(true);
-    setPrintError('');
-    try {
-      const html = buildAboutGuideHtml(
-        APP_NAME,
-        'Copyright Shreshth Bharat Tennis Trust - 2026 - Present',
-      );
-      if (Platform.OS === 'web') {
-        if (typeof window === 'undefined') throw new Error('Browser printing is unavailable.');
-        openAboutGuidePrintWindow(
-          html,
-          () => window.open('', '_blank') as unknown as AboutGuidePrintWindow | null,
-        );
-      } else {
-        await Print.printAsync({ html });
-      }
-    } catch (error) {
-      setPrintError(error instanceof Error ? error.message : 'Could not open the print dialog.');
-    } finally {
-      printLock.current = false;
-      setPrintBusy(false);
-    }
   }
 
   return (
@@ -77,32 +40,7 @@ export default function AboutScreen() {
           <Text testID="about-copyright" style={[styles.copyright, { color: colors.inkSoft }]}>
             Copyright Shreshth Bharat Tennis Trust - 2026 - Present
           </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={printBusy ? 'Preparing instructions to print' : 'Print all how-to instructions'}
-            accessibilityState={{ disabled: printBusy }}
-            testID="about-print-all"
-            disabled={printBusy}
-            onPress={() => void printAll()}
-            style={({ pressed }) => [
-              styles.printButton,
-              { backgroundColor: colors.primary },
-              pressed && !printBusy && styles.pressed,
-            ]}
-          >
-            {printBusy
-              ? <ActivityIndicator size="small" color={colors.primaryForeground} />
-              : <Ionicons name="print-outline" size={18} color={colors.primaryForeground} />}
-            <Text style={[styles.printButtonText, { color: colors.primaryForeground }]}>
-              {printBusy ? 'Preparing…' : 'Print all'}
-            </Text>
-          </Pressable>
         </View>
-        {printError ? (
-          <Text accessibilityRole="alert" testID="about-print-error" style={[styles.printError, { color: colors.destructive }]}>
-            {printError}
-          </Text>
-        ) : null}
 
         <View style={[styles.guideCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.guideTitle, { color: colors.foreground }]}>How to use the app</Text>
@@ -162,9 +100,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 25, lineHeight: 32, fontWeight: '700', textAlign: 'center' },
   intro: { fontSize: 15, lineHeight: 22, textAlign: 'center', marginTop: 8, maxWidth: 340 },
   copyright: { fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 12 },
-  printButton: { minHeight: 44, borderRadius: 13, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16 },
-  printButtonText: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  printError: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginBottom: 12 },
   guideCard: { borderWidth: 1, borderRadius: 18, padding: 16, marginBottom: 14 },
   guideTitle: { fontSize: 19, lineHeight: 25, fontWeight: '700' },
   guideIntro: { fontSize: 14, lineHeight: 20, marginTop: 4 },
