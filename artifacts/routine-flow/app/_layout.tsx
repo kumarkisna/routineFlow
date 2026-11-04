@@ -26,6 +26,7 @@ import {
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { RoutineProvider } from '@/context/RoutineContext';
+import { APP_NAME } from '@/constants/brand';
 
 const GestureHandlerRoot = GestureHandlerRootView as unknown as React.ComponentType<{
   children?: React.ReactNode;
@@ -63,7 +64,7 @@ function StartupLoading({ detail = 'Loading fonts' }: { detail?: string }) {
   return (
     <View testID="app-startup-loading" style={[styles.startup, { backgroundColor: colors.background }]}>
       <ActivityIndicator size="large" color={colors.primary} />
-      <Text style={[styles.startupTitle, { color: colors.foreground }]}>Routine Flow</Text>
+      <Text style={[styles.startupTitle, { color: colors.foreground }]}>{APP_NAME}</Text>
       <Text testID="app-startup-copyright" style={[styles.startupCopyright, { color: colors.mutedForeground }]}>
         Copyright Shreshth Bharat Tennis Trust - 2026 - Present
       </Text>

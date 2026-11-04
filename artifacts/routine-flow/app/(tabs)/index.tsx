@@ -33,6 +33,7 @@ import { remapRoutineSkillIds } from '@/lib/skills';
 import { remapPlaylistReferences } from '@/lib/playlists';
 import { readPersonExportSnapshot } from '@/lib/personCopy';
 import { getStepDetailAttachmentCleanupFailureMessage } from '@/lib/stepDetailAttachmentCleanup';
+import { APP_NAME } from '@/constants/brand';
 import {
   ALL_PEOPLE_FILE_FORMAT, MAX_ROUTINE_FILE_BYTES, parseAllPeopleBackup, parseRoutinesFile,
   serializeAllPeopleBackup, serializePersonBackup, type AllPeopleBackup, type RoutineBackup,
@@ -664,6 +665,7 @@ export default function HomeScreen() {
           <View>
             <View style={styles.header}>
               <View>
+                <Text style={[styles.brandName, { color: colors.primary }]}>{APP_NAME}</Text>
                 <Text style={[styles.date, { color: colors.mutedForeground }]}>{todayLabel}</Text>
                 <Text style={[styles.greeting, { color: colors.foreground }]}>{greeting}, friend</Text>
               </View>
@@ -1472,6 +1474,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 },
+  brandName: { fontFamily: 'Inter_600SemiBold', fontSize: 12, letterSpacing: 0.3, marginBottom: 3 },
   date: { fontFamily: 'Inter_500Medium', fontSize: 12, letterSpacing: 0.3, marginBottom: 7 },
   greeting: { fontFamily: 'Inter_700Bold', fontSize: 27, letterSpacing: -0.7 },
   activeRunsCard: { borderWidth: 1, borderRadius: 18, padding: 13, marginBottom: 18, gap: 8 },
