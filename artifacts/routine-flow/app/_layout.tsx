@@ -4,7 +4,7 @@ import { SkillProvider, useSkills } from '@/context/SkillContext';
 import { AppearanceProvider } from '@/context/AppearanceContext';
 import { ScheduleNotificationLink } from '@/components/ScheduleNotificationLink';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Image, Platform, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -47,13 +47,13 @@ function RootLayoutNav() {
   </>;
 }
 
-function PersonReadyNav() {
+function PersonReadyNav({ startupDelayElapsed }: { startupDelayElapsed: boolean }) {
   const appearance = useAppearance();
   const routines = useRoutines();
   const playlists = usePlaylists();
   const schedules = useSchedules();
   const skills = useSkills();
-  if (appearance.loading || routines.loading || playlists.loading || schedules.loading || skills.loading) {
+  if (!startupDelayElapsed || appearance.loading || routines.loading || playlists.loading || schedules.loading || skills.loading) {
     return <StartupLoading detail="Loading saved routines and settings" />;
   }
   return <RootLayoutNav />;
@@ -63,6 +63,13 @@ function StartupLoading({ detail = 'Loading fonts' }: { detail?: string }) {
   const colors = useColors();
   return (
     <View testID="app-startup-loading" style={[styles.startup, { backgroundColor: colors.background }]}>
+      <Image
+        testID="app-startup-logo"
+        accessibilityLabel={`${APP_NAME} logo`}
+        source={require('../assets/images/icon.png')}
+        resizeMode="contain"
+        style={styles.startupLogo}
+      />
       <ActivityIndicator size="large" color={colors.primary} />
       <Text style={[styles.startupTitle, { color: colors.foreground }]}>{APP_NAME}</Text>
       <Text testID="app-startup-copyright" style={[styles.startupCopyright, { color: colors.mutedForeground }]}>
@@ -95,7 +102,12 @@ function PersonNotice() {
   </View>;
 }
 
-function PersonApp({ waitingForFonts, fontsLoaded, fontFailed }: { waitingForFonts: boolean; fontsLoaded: boolean; fontFailed: boolean }) {
+function PersonApp({ waitingForFonts, startupDelayElapsed, fontsLoaded, fontFailed }: {
+  waitingForFonts: boolean;
+  startupDelayElapsed: boolean;
+  fontsLoaded: boolean;
+  fontFailed: boolean;
+}) {
   const { activePerson, revision } = usePeople();
   // The person key remounts all person-scoped data providers below on profile changes.
   return (
@@ -109,7 +121,7 @@ function PersonApp({ waitingForFonts, fontsLoaded, fontFailed }: { waitingForFon
                   <PlaylistProvider>
                     <ScheduleProvider>
                       <SkillProvider>
-                        <PersonReadyNav />
+                <PersonReadyNav startupDelayElapsed={startupDelayElapsed} />
                       </SkillProvider>
                     </ScheduleProvider>
                   </PlaylistProvider>
@@ -133,12 +145,18 @@ export default function RootLayout() {
     Inter_700Bold,
   });
   const [fontWaitExpired, setFontWaitExpired] = useState(false);
+  const [startupDelayElapsed, setStartupDelayElapsed] = useState(false);
 
   useEffect(() => {
     if (fontsLoaded || fontError) return;
     const timer = setTimeout(() => setFontWaitExpired(true), 8000);
     return () => clearTimeout(timer);
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setStartupDelayElapsed(true), 1400);
+    return () => clearTimeout(timer);
+  }, []);
 
   const hideSplash = useCallback(() => {
     void SplashScreen.hideAsync().catch(() => {
@@ -150,7 +168,12 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider onLayout={hideSplash}>
       <PeopleProvider>
-        <PersonApp waitingForFonts={waitingForFonts} fontsLoaded={fontsLoaded} fontFailed={!!fontError} />
+        <PersonApp
+          waitingForFonts={waitingForFonts}
+          startupDelayElapsed={startupDelayElapsed}
+          fontsLoaded={fontsLoaded}
+          fontFailed={!!fontError}
+        />
       </PeopleProvider>
     </SafeAreaProvider>
   );
@@ -158,6 +181,7 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   startup: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
+  startupLogo: { width: 72, height: 72, borderRadius: 16 },
   startupTitle: { fontSize: 18, fontWeight: '600' },
   startupCopyright: { fontSize: 11 },
   startupDetail: { fontSize: 14 },
