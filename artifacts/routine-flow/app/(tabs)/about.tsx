@@ -33,18 +33,18 @@ export default function AboutScreen() {
           <View style={[styles.brandMark, { backgroundColor: colors.coralSoft }]}>
             <Ionicons name="tennisball-outline" size={24} color={colors.primary} />
           </View>
-          <Text style={[styles.title, { color: colors.foreground }]}>About {APP_NAME}</Text>
-          <Text style={[styles.intro, { color: colors.mutedForeground }]}>
+          <Text selectable={false} style={[styles.title, { color: colors.foreground }]}>About {APP_NAME}</Text>
+          <Text selectable={false} style={[styles.intro, { color: colors.mutedForeground }]}>
             Build routines, follow them step by step, and keep a record of your progress.
           </Text>
-          <Text testID="about-copyright" style={[styles.copyright, { color: colors.inkSoft }]}>
+          <Text selectable={false} testID="about-copyright" style={[styles.copyright, { color: colors.inkSoft }]}>
             Copyright Shreshth Bharat Tennis Trust - 2026 - Present
           </Text>
         </View>
 
         <View style={[styles.guideCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.guideTitle, { color: colors.foreground }]}>How to use the app</Text>
-          <Text style={[styles.guideIntro, { color: colors.mutedForeground }]}>
+          <Text selectable={false} style={[styles.guideTitle, { color: colors.foreground }]}>How to use the app</Text>
+          <Text selectable={false} style={[styles.guideIntro, { color: colors.mutedForeground }]}>
             Choose a topic to jump to its instructions.
           </Text>
           <View style={styles.topicList}>
@@ -61,7 +61,7 @@ export default function AboutScreen() {
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={[styles.topicText, { color: colors.foreground }]}>{section.title}</Text>
+                <Text selectable={false} style={[styles.topicText, { color: colors.foreground }]}>{section.title}</Text>
                 <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
               </Pressable>
             ))}
@@ -78,12 +78,12 @@ export default function AboutScreen() {
               <View style={[styles.sectionIcon, { backgroundColor: colors.coralSoft }]}>
                 <Ionicons name={section.icon} size={19} color={colors.primary} />
               </View>
-              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{section.title}</Text>
+              <Text selectable={false} style={[styles.sectionTitle, { color: colors.foreground }]}>{section.title}</Text>
             </View>
             {section.steps.map((step, index) => (
               <View key={step} style={styles.stepRow}>
-                <Text style={[styles.stepNumber, { color: colors.primary }]}>{index + 1}</Text>
-                <Text style={[styles.stepText, { color: colors.inkSoft }]}>{step}</Text>
+                <Text selectable={false} style={[styles.stepNumber, { color: colors.primary }]}>{index + 1}</Text>
+                <Text selectable={false} style={[styles.stepText, { color: colors.inkSoft }]}>{step}</Text>
               </View>
             ))}
           </View>
