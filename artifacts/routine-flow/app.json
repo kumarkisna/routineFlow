@@ -38,7 +38,8 @@
           "cameraPermission": "Allow Routine Flow to take photos for routine steps and your app background."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,
