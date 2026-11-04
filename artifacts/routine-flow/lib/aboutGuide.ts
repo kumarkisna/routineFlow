@@ -75,6 +75,32 @@ export const aboutGuideSections = [
 export type AboutGuideSection = (typeof aboutGuideSections)[number];
 export type AboutGuideSectionId = AboutGuideSection['id'];
 
+export type AboutGuidePrintWindow = {
+  document: {
+    open: () => void;
+    write: (html: string) => void;
+    close: () => void;
+  };
+  onafterprint: (() => void) | null;
+  focus: () => void;
+  print: () => void;
+  close: () => void;
+};
+
+export function openAboutGuidePrintWindow(
+  html: string,
+  createWindow: () => AboutGuidePrintWindow | null,
+): void {
+  const printWindow = createWindow();
+  if (!printWindow) throw new Error('Allow pop-ups in your browser to print the instructions.');
+  printWindow.onafterprint = () => printWindow.close();
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, character => ({
     '&': '&amp;',

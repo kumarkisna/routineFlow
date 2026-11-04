@@ -5,7 +5,13 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_NAME } from '@/constants/brand';
 import { useColors } from '@/hooks/useColors';
-import { aboutGuideSections, buildAboutGuideHtml, type AboutGuideSectionId } from '@/lib/aboutGuide';
+import {
+  aboutGuideSections,
+  buildAboutGuideHtml,
+  openAboutGuidePrintWindow,
+  type AboutGuidePrintWindow,
+  type AboutGuideSectionId,
+} from '@/lib/aboutGuide';
 
 export default function AboutScreen() {
   const colors = useColors();
@@ -33,14 +39,10 @@ export default function AboutScreen() {
       );
       if (Platform.OS === 'web') {
         if (typeof window === 'undefined') throw new Error('Browser printing is unavailable.');
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) throw new Error('Allow pop-ups in your browser to print the instructions.');
-        printWindow.onafterprint = () => printWindow.close();
-        printWindow.document.open();
-        printWindow.document.write(html);
-        printWindow.document.close();
-        printWindow.focus();
-        printWindow.print();
+        openAboutGuidePrintWindow(
+          html,
+          () => window.open('', '_blank') as unknown as AboutGuidePrintWindow | null,
+        );
       } else {
         await Print.printAsync({ html });
       }
