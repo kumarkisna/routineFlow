@@ -22,6 +22,7 @@ Routine Flow helps people save repeatable routines and move through them one sma
 ## Where things live
 
 - `artifacts/routine-flow/app/(tabs)/index.tsx` — today screen and routine library
+- `artifacts/routine-flow/lib/aboutGuide.ts` — About topics, jump targets, and help instructions
 - `artifacts/routine-flow/app/routine/[id].tsx` — routine run screen
 - `artifacts/routine-flow/app/routine/[id]/run.tsx` — sequential timer runner
 - `artifacts/routine-flow/app/new-routine.tsx` — create routine flow
@@ -33,6 +34,7 @@ Routine Flow helps people save repeatable routines and move through them one sma
 - Routine data is local-first with AsyncStorage so the core loop works offline and does not require account setup.
 - Completion is tracked per routine step and calendar day, allowing progress to reset naturally without losing the routine library.
 - The main app uses a tab-rooted today screen with stack-pushed creation and routine-run screens for minimal navigation chrome.
+- Update `artifacts/routine-flow/lib/aboutGuide.ts` when adding or removing user-facing features. About topic buttons and instruction sections both render from `ABOUT_GUIDE_SECTIONS`; add or remove a topic there rather than maintaining separate navigation. Revise the affected instructions and remove guidance for retired behavior in the same feature change.
 
 ## Product
 

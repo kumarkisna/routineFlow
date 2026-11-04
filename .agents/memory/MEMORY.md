@@ -30,4 +30,4 @@
 - [Parallel run data safety](parallel-run-data-safety.md) — keep concurrent timer state separate from saved routine, playlist, and completion data.
 - [Run reflection templates](run-reflection-templates.md) — templates prefill an editable per-run reflection; save each response separately and associate it with that run's outcomes.
 - [Restore test rebases](restore-test-rebases.md) — use the latest restore suite as the base, reapply only focused changes, and rerun the full browser suite after rebasing.
-- [About guide maintenance](about-guide-maintenance.md) — keep the navigable About instructions and jump links current as user-facing features are added or removed.
+- [About guide maintenance](about-guide-maintenance.md) — keep screen topics, jump targets, and printable instructions based on the same guide content.
