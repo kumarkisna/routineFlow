@@ -352,6 +352,13 @@ test('history editing starts an unanswered run reflection from its template', as
   const editor = page.getByTestId('rich-detail-web-input');
   await expect(editor).toHaveValue('What went well?');
   await editor.fill('I felt more focused.');
+  await page.getByTestId('rich-detail-close-keep').click();
+  await page.getByRole('button', { name: 'Continue editing draft for Run reflection' }).click();
+  await expect(editor).toHaveValue('I felt more focused.');
+  await page.getByTestId('rich-detail-discard-draft').click();
+  await page.getByRole('button', { name: 'Expand rich text editor for Run reflection' }).click();
+  await expect(editor).toHaveValue('What went well?');
+  await editor.fill('I felt more focused.');
   await page.getByRole('button', { name: 'Save formatted detail' }).click();
   await page.getByTestId('save-run-reflection').click();
   await expect(page.getByText('I felt more focused.', { exact: true })).toBeVisible();

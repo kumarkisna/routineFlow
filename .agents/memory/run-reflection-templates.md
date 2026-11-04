@@ -9,6 +9,8 @@ When a run is deferred, preserve the plain-text and rich-text template snapshot 
 
 In History, present a run's reflection together with its matching skill ratings and skill notes as one outcome, and print them in the same report. A reflection-only run should still be printable.
 
+Closing the rich-text editor with Android Back preserves its unsaved draft for reopening; provide an explicit discard action rather than silently dropping it.
+
 **Why:** The user wants reusable defaults while preserving each run's own final reflection and outcomes.
 
 **How to apply:** Keep template editing in routine/playlist setup separate from run-result persistence; use the same run identity to associate the run reflection, skill ratings, notes, History entry, and printed report.
