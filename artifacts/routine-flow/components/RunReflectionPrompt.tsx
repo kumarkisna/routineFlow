@@ -5,6 +5,7 @@ import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEdi
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { StepDetails } from '@/components/StepDetails';
 import { useColors } from '@/hooks/useColors';
+import { getRunReflectionDraft } from '@/lib/runReflectionTemplates';
 import { detailHtmlToText, sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
 
 export function RunReflectionPrompt({
@@ -23,9 +24,9 @@ export function RunReflectionPrompt({
   onSave: (responseHtml: string) => Promise<void>;
 }) {
   const colors = useColors();
-  const [responseHtml, setResponseHtml] = React.useState(initialResponseHtml ?? '');
+  const [responseHtml, setResponseHtml] = React.useState(getRunReflectionDraft(templateHtml, initialResponseHtml));
   const [responseText, setResponseText] = React.useState(
-    initialResponseHtml ? detailHtmlToText(initialResponseHtml) : '',
+    detailHtmlToText(getRunReflectionDraft(templateHtml, initialResponseHtml)),
   );
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -33,10 +34,11 @@ export function RunReflectionPrompt({
 
   React.useEffect(() => {
     if (!visible) return;
-    setResponseHtml(initialResponseHtml ?? '');
-    setResponseText(initialResponseHtml ? detailHtmlToText(initialResponseHtml) : '');
+    const draft = getRunReflectionDraft(templateHtml, initialResponseHtml);
+    setResponseHtml(draft);
+    setResponseText(detailHtmlToText(draft));
     setError('');
-  }, [visible, initialResponseHtml]);
+  }, [visible, initialResponseHtml, templateHtml]);
 
   async function save() {
     if (lock.current) return;

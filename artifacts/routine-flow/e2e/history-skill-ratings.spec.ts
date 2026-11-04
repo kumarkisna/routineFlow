@@ -308,6 +308,55 @@ async function seedSavedReflections(page: Page) {
   }, reflectionFixtures);
 }
 
+test('history editing starts an unanswered run reflection from its template', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await page.addInitScript(() => {
+    localStorage.setItem('@routine-flow/routines', JSON.stringify([{
+      id: 'morning',
+      title: 'Morning routine',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'coral',
+      createdAt: '2020-03-04T00:00:00.000Z',
+      reflectionTemplate: 'What went well?',
+      reflectionTemplateHtml: '<p>What went well?</p>',
+      steps: [{ id: 'water', title: 'Drink water', durationSeconds: 60 }],
+    }]));
+    localStorage.setItem('@routine-flow/progress', JSON.stringify({
+      '2020-03-04': {
+        'morning:water': {
+          routineTitle: 'Morning routine',
+          stepTitle: 'Drink water',
+          runReflections: [{
+            runId: 'template-run',
+            sourceType: 'routine',
+            sourceId: 'morning',
+            sourceTitle: 'Morning routine',
+            routineId: 'morning',
+            completedAt: '2020-03-04T09:00:00.000Z',
+            templateHtml: '<p>What went well?</p>',
+          }],
+        },
+      },
+    }));
+    localStorage.setItem('@routine-flow/playlists', JSON.stringify([]));
+    localStorage.setItem('@routine-flow/skills', JSON.stringify([]));
+  });
+
+  await page.goto('/history');
+  await page.getByTestId('history-filter-routine').click();
+  await page.getByTestId('history-routine-morning').click();
+  await page.getByTestId('history-complete-run-reflection-template-run').click();
+  await page.getByRole('button', { name: 'Expand rich text editor for Run reflection' }).click();
+
+  const editor = page.getByTestId('rich-detail-web-input');
+  await expect(editor).toHaveValue('What went well?');
+  await editor.fill('I felt more focused.');
+  await page.getByRole('button', { name: 'Save formatted detail' }).click();
+  await page.getByTestId('save-run-reflection').click();
+  await expect(page.getByText('I felt more focused.', { exact: true })).toBeVisible();
+});
+
 test('routine history can cancel or save a reflection edit without changing its rating event', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   await seedSavedReflections(page);

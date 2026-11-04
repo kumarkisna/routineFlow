@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Routine } from '../types/routines';
-import { getDeferredReflectionTemplate } from './runReflectionTemplates';
+import { getDeferredReflectionTemplate, getRunReflectionDraft } from './runReflectionTemplates';
 
 const routine = (id: string, reflectionTemplate?: string, reflectionTemplateHtml?: string): Routine => ({
   id,
@@ -67,4 +67,17 @@ test('keeps an explicitly empty template snapshot empty', () => {
     templateTextSnapshot: '',
     templateHtmlSnapshot: '',
   }, [routine('morning', 'Current template')], []), { text: '', html: '' });
+});
+
+test('uses the reflection template as the editable draft until a response exists', () => {
+  const template = '<p><strong>What went well?</strong></p>';
+  assert.equal(getRunReflectionDraft(template), template);
+  assert.equal(getRunReflectionDraft(template, ''), template);
+  assert.equal(getRunReflectionDraft(template, '  '), template);
+});
+
+test('keeps a saved reflection response instead of replacing it with the template', () => {
+  const response = '<p>I felt more focused today.</p>';
+  assert.equal(getRunReflectionDraft('<p>What went well?</p>', response), response);
+  assert.equal(getRunReflectionDraft('', response), response);
 });

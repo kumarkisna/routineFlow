@@ -13,6 +13,10 @@ export type ReflectionTemplateContent = {
   html: string;
 };
 
+export function getRunReflectionDraft(templateHtml: string, responseHtml?: string): string {
+  return responseHtml?.trim() ? responseHtml : templateHtml;
+}
+
 export function getDeferredReflectionTemplate(
   reflection: DeferredReflectionTemplateInput,
   routines: Routine[],

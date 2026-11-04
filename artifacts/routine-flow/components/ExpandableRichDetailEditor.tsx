@@ -43,7 +43,9 @@ export function ExpandableRichDetailEditor({ label, value, html, disabled, onSav
               style={[styles.done, { backgroundColor: colors.primary }]}><Text style={{ color: colors.primaryForeground }}>Done</Text></Pressable>
           </View>
           {visible ? (Platform.OS === 'web' ? (
-            <TextInput multiline value={webText} onChangeText={setWebText} style={[styles.webInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
+            <TextInput testID="rich-detail-web-input" accessibilityLabel={`Formatted content for ${label}`}
+              multiline value={webText} onChangeText={setWebText}
+              style={[styles.webInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
           ) : (
             <>
               <RichToolbar editor={editor} actions={[

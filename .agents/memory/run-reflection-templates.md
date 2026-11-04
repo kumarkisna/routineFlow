@@ -5,7 +5,7 @@ description: Keep editable reflection defaults distinct from saved reflections f
 
 Routine and playlist templates are starting text, not fixed run data. Copy the template into an editable post-completion reflection, save that response under the unique run ID, and leave the template unchanged. Skipped reflections should remain fillable from History. Printable skill-outcome reports should include the reflection for their matching run only.
 
-When a run is deferred, preserve the plain-text and rich-text template snapshot separately from the empty response. History should prefer saved response content, then the snapshot; for older deferred entries without a snapshot, fall back to the current source template when it can be identified.
+When a run is deferred, preserve the plain-text and rich-text template snapshot separately from the empty response. In History, initialize an unanswered reflection editor from that run's template; otherwise prefer saved response content, then the snapshot. For older deferred entries without a snapshot, fall back to the current source template when it can be identified.
 
 In History, present a run's reflection together with its matching skill ratings and skill notes as one outcome, and print them in the same report. A reflection-only run should still be printable.
 
