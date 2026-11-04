@@ -364,6 +364,117 @@ test('history editing starts an unanswered run reflection from its template', as
   await expect(page.getByText('I felt more focused.', { exact: true })).toBeVisible();
 });
 
+test('playlist history starts an unanswered final-run reflection from the playlist template', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const playlistPrompt = 'What did this playlist help you finish?';
+  const routinePrompt = 'What did this routine help you finish?';
+  const routines = [
+    {
+      id: 'warmup',
+      title: 'Warm-up routine',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'coral',
+      createdAt: '2026-10-01T00:00:00.000Z',
+      steps: [{ id: 'warmup-step', title: 'Warm up', durationSeconds: 60 }],
+    },
+    {
+      id: 'cooldown',
+      title: 'Cool-down routine',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'coral',
+      createdAt: '2026-10-01T00:00:00.000Z',
+      reflectionTemplate: routinePrompt,
+      reflectionTemplateHtml: `<p>${routinePrompt}</p>`,
+      steps: [{ id: 'cooldown-step', title: 'Cool down', durationSeconds: 60 }],
+    },
+  ];
+  const playlist = {
+    id: 'daily',
+    title: 'Daily flow',
+    routineIds: ['warmup', 'cooldown'],
+    rateSkillsAtPlaylistEnd: true,
+    reflectionTemplate: playlistPrompt,
+    reflectionTemplateHtml: `<p>${playlistPrompt}</p>`,
+  };
+  await page.addInitScript(({ seededRoutines, seededPlaylist }) => {
+    if (localStorage.getItem('@routine-flow/routines') === null) {
+      localStorage.setItem('@routine-flow/routines', JSON.stringify(seededRoutines));
+      localStorage.setItem('@routine-flow/progress', '{}');
+      localStorage.setItem('@routine-flow/playlists', JSON.stringify([seededPlaylist]));
+      localStorage.setItem('@routine-flow/skills', '[]');
+    }
+  }, { seededRoutines: routines, seededPlaylist: playlist });
+
+  const params = new URLSearchParams({
+    queue: JSON.stringify(playlist.routineIds),
+    cursor: '0',
+    playlistId: playlist.id,
+    playlistTitle: playlist.title,
+    playlistSkills: '[]',
+    playlistRateSkillsAtEnd: '1',
+    voice: '0',
+  });
+  await page.goto(`/routine/warmup/run?${params.toString()}`);
+  await page.getByLabel('Skip current step').click();
+  await expect(page.getByText('Cool down', { exact: true }).last()).toBeVisible();
+  await page.getByLabel('Skip current step').click();
+
+  await expect(page.getByText(routinePrompt, { exact: true })).toBeVisible();
+  await page.getByTestId('skip-run-reflection').click();
+  await expect(page.getByText(playlistPrompt, { exact: true })).toBeVisible();
+  await page.getByTestId('skip-run-reflection').click();
+
+  const playlistReflection = await page.evaluate(() => {
+    const progress = JSON.parse(localStorage.getItem('@routine-flow/progress') ?? '{}') as Record<
+      string,
+      Record<string, { runReflections?: {
+        runId: string;
+        sourceType: 'routine' | 'playlist';
+        sourceId: string;
+        sourceTitle: string;
+        templateHtml: string;
+        responseHtml?: string;
+      }[] }>
+    >;
+    return Object.values(progress).flatMap(day =>
+      Object.values(day).flatMap(completion => completion.runReflections ?? []),
+    ).find(reflection => reflection.sourceType === 'playlist' && reflection.sourceId === 'daily');
+  });
+  expect(playlistReflection).toMatchObject({
+    sourceType: 'playlist',
+    sourceId: 'daily',
+    sourceTitle: 'Daily flow',
+    templateHtml: `<p>${playlistPrompt}</p>`,
+  });
+  expect(playlistReflection?.responseHtml).toBeUndefined();
+  if (!playlistReflection) throw new Error('The unanswered playlist reflection was not saved.');
+
+  await page.goto('/history');
+  await page.getByTestId('history-filter-playlist').click();
+  await page.getByTestId('history-playlist-daily').click();
+  await page.getByTestId(`history-complete-run-reflection-${playlistReflection.runId}`).click();
+  await page.getByRole('button', { name: 'Expand rich text editor for Run reflection' }).click();
+  const reflectionInput = page.getByTestId('rich-detail-web-input');
+  await expect(reflectionInput).toHaveValue(playlistPrompt);
+  await reflectionInput.fill('I completed the full daily flow.');
+  await page.getByRole('button', { name: 'Save formatted detail' }).click();
+  await page.getByTestId('save-run-reflection').click();
+  await expect(page.getByText('I completed the full daily flow.', { exact: true })).toBeVisible();
+
+  const savedReflection = await page.evaluate(runId => {
+    const progress = JSON.parse(localStorage.getItem('@routine-flow/progress') ?? '{}') as Record<
+      string,
+      Record<string, { runReflections?: { runId: string; responseHtml?: string }[] }>
+    >;
+    return Object.values(progress).flatMap(day =>
+      Object.values(day).flatMap(completion => completion.runReflections ?? []),
+    ).find(reflection => reflection.runId === runId);
+  }, playlistReflection.runId);
+  expect(savedReflection?.responseHtml).toContain('I completed the full daily flow.');
+});
+
 test('routine history can cancel or save a reflection edit without changing its rating event', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   await seedSavedReflections(page);
