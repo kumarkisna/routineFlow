@@ -1,95 +1,55 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Print from 'expo-print';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { APP_NAME } from '@/constants/brand';
 import { useColors } from '@/hooks/useColors';
-
-const guideSections = [
-  {
-    id: 'today',
-    title: 'Today and routines',
-    icon: 'home-outline' as const,
-    steps: [
-      'The Today tab is your starting point. Choose a routine card to open it, or use the add button to make a new routine.',
-      'Use categories to group routines. Reorder, hide, rename, or remove categories and routines from Today.',
-      'Open a routine to edit its steps, timers, details, skills, and spoken instructions.',
-    ],
-  },
-  {
-    id: 'create',
-    title: 'Create a routine',
-    icon: 'create-outline' as const,
-    steps: [
-      'Give the routine a clear name and add steps in the order you want to follow them.',
-      'Set a duration for timed steps. Add step details or photos when they help explain what to do.',
-      'Assign skills to a routine or individual steps. Hidden steps are skipped when the routine runs.',
-      'Save your changes before leaving the editor.',
-    ],
-  },
-  {
-    id: 'run',
-    title: 'Run and reflect',
-    icon: 'play-circle-outline' as const,
-    steps: [
-      'Tap Start on a routine. Follow each step, use the timer controls, and move forward or back as needed.',
-      'When a reflection template is set, it appears as the starting text after the run. Edit it for that run before saving.',
-      'If skill ratings are enabled, rate the skills when prompted. Your ratings and reflection are saved with the run.',
-    ],
-  },
-  {
-    id: 'playlists',
-    title: 'Use playlists',
-    icon: 'list-outline' as const,
-    steps: [
-      'Open Playlists to combine routines into a sequence. Add routines, then arrange them in the order you want.',
-      'Start a playlist to run its available routines in sequence. You can skip unavailable or hidden routines.',
-      'Playlist skill ratings and completion reflections are collected with the playlist run.',
-    ],
-  },
-  {
-    id: 'skills',
-    title: 'Skills and progress',
-    icon: 'sparkles-outline' as const,
-    steps: [
-      'Use Skills to manage the skills you track and see where each skill is used.',
-      'Ratings belong to the active person. Skill history and averages update as you save new ratings.',
-      'Open History to review completed runs by date, routine, or playlist, and edit saved reflections.',
-    ],
-  },
-  {
-    id: 'schedule',
-    title: 'Schedules',
-    icon: 'calendar-outline' as const,
-    steps: [
-      'Open Schedule and choose New schedule to select a routine or playlist and its date and time.',
-      'Set phone reminders and lead times when you want alerts. Tap Start on a schedule when you are ready to run it.',
-      'Schedules are saved on this device and are not included in routine backups.',
-    ],
-  },
-  {
-    id: 'people',
-    title: 'People and backups',
-    icon: 'people-outline' as const,
-    steps: [
-      'Use the person control on Today to switch profiles or manage people. Each person has separate routines, schedules, ratings, and progress.',
-      'Open the backup tools on Today to export or restore one person or all profiles. Imports merge data; review the confirmation before restoring.',
-      'Appearance settings let you choose a theme. Themes are saved separately for each person.',
-    ],
-  },
-] as const;
-
-type GuideSectionId = (typeof guideSections)[number]['id'];
+import { aboutGuideSections, buildAboutGuideHtml, type AboutGuideSectionId } from '@/lib/aboutGuide';
 
 export default function AboutScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
-  const sectionOffsets = React.useRef<Partial<Record<GuideSectionId, number>>>({});
+  const sectionOffsets = React.useRef<Partial<Record<AboutGuideSectionId, number>>>({});
+  const printLock = React.useRef(false);
+  const [printBusy, setPrintBusy] = React.useState(false);
+  const [printError, setPrintError] = React.useState('');
 
-  function jumpTo(sectionId: GuideSectionId) {
+  function jumpTo(sectionId: AboutGuideSectionId) {
     const y = sectionOffsets.current[sectionId];
     if (y !== undefined) scrollRef.current?.scrollTo({ y: Math.max(y - 12, 0), animated: true });
+  }
+
+  async function printAll() {
+    if (printLock.current) return;
+    printLock.current = true;
+    setPrintBusy(true);
+    setPrintError('');
+    try {
+      const html = buildAboutGuideHtml(
+        APP_NAME,
+        'Copyright Shreshth Bharat Tennis Trust - 2026 - Present',
+      );
+      if (Platform.OS === 'web') {
+        if (typeof window === 'undefined') throw new Error('Browser printing is unavailable.');
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) throw new Error('Allow pop-ups in your browser to print the instructions.');
+        printWindow.onafterprint = () => printWindow.close();
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
+      } else {
+        await Print.printAsync({ html });
+      }
+    } catch (error) {
+      setPrintError(error instanceof Error ? error.message : 'Could not open the print dialog.');
+    } finally {
+      printLock.current = false;
+      setPrintBusy(false);
+    }
   }
 
   return (
@@ -115,7 +75,32 @@ export default function AboutScreen() {
           <Text testID="about-copyright" style={[styles.copyright, { color: colors.inkSoft }]}>
             Copyright Shreshth Bharat Tennis Trust - 2026 - Present
           </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={printBusy ? 'Preparing instructions to print' : 'Print all how-to instructions'}
+            accessibilityState={{ disabled: printBusy }}
+            testID="about-print-all"
+            disabled={printBusy}
+            onPress={() => void printAll()}
+            style={({ pressed }) => [
+              styles.printButton,
+              { backgroundColor: colors.primary },
+              pressed && !printBusy && styles.pressed,
+            ]}
+          >
+            {printBusy
+              ? <ActivityIndicator size="small" color={colors.primaryForeground} />
+              : <Ionicons name="print-outline" size={18} color={colors.primaryForeground} />}
+            <Text style={[styles.printButtonText, { color: colors.primaryForeground }]}>
+              {printBusy ? 'Preparing…' : 'Print all'}
+            </Text>
+          </Pressable>
         </View>
+        {printError ? (
+          <Text accessibilityRole="alert" testID="about-print-error" style={[styles.printError, { color: colors.destructive }]}>
+            {printError}
+          </Text>
+        ) : null}
 
         <View style={[styles.guideCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.guideTitle, { color: colors.foreground }]}>How to use the app</Text>
@@ -123,7 +108,7 @@ export default function AboutScreen() {
             Choose a topic to jump to its instructions.
           </Text>
           <View style={styles.topicList}>
-            {guideSections.map((section) => (
+            {aboutGuideSections.map((section) => (
               <Pressable
                 key={section.id}
                 accessibilityRole="button"
@@ -143,7 +128,7 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {guideSections.map((section) => (
+        {aboutGuideSections.map((section) => (
           <View
             key={section.id}
             onLayout={(event) => { sectionOffsets.current[section.id] = event.nativeEvent.layout.y; }}
@@ -175,6 +160,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 25, lineHeight: 32, fontWeight: '700', textAlign: 'center' },
   intro: { fontSize: 15, lineHeight: 22, textAlign: 'center', marginTop: 8, maxWidth: 340 },
   copyright: { fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 12 },
+  printButton: { minHeight: 44, borderRadius: 13, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16 },
+  printButtonText: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
+  printError: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginBottom: 12 },
   guideCard: { borderWidth: 1, borderRadius: 18, padding: 16, marginBottom: 14 },
   guideTitle: { fontSize: 19, lineHeight: 25, fontWeight: '700' },
   guideIntro: { fontSize: 14, lineHeight: 20, marginTop: 4 },
