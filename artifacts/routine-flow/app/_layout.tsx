@@ -63,7 +63,10 @@ function StartupLoading({ detail = 'Loading fonts' }: { detail?: string }) {
   return (
     <View testID="app-startup-loading" style={[styles.startup, { backgroundColor: colors.background }]}>
       <ActivityIndicator size="large" color={colors.primary} />
-      <Text style={[styles.startupTitle, { color: colors.foreground }]}>Starting Routine Flow…</Text>
+      <Text style={[styles.startupTitle, { color: colors.foreground }]}>Routine Flow</Text>
+      <Text testID="app-startup-copyright" style={[styles.startupCopyright, { color: colors.mutedForeground }]}>
+        Copyright Shreshth Bharat Tennis Trust - 2026 - Present
+      </Text>
       <Text style={[styles.startupDetail, { color: colors.mutedForeground }]}>{detail}</Text>
     </View>
   );
@@ -154,7 +157,8 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   startup: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  startupTitle: { fontSize: 18 },
+  startupTitle: { fontSize: 18, fontWeight: '600' },
+  startupCopyright: { fontSize: 11 },
   startupDetail: { fontSize: 14 },
   fontNotice: { position: 'absolute', left: 20, right: 20, borderRadius: 12, padding: 12 },
 });
