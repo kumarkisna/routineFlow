@@ -115,11 +115,12 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const existingCategories = listRoutineCategories(routines);
   const routineStepSources = useMemo(
     () => filterRoutinesByStepKeywords(routines, skills, stepSourceQuery)
+      .filter(routine => routine.id !== editingRoutine?.id)
       .filter(routine => !copyCategoryFilter || categoryKey(routine.category ?? '') === categoryKey(copyCategoryFilter))
       .filter(routine => !copySkillFilter
         || (routine.skillIds ?? []).includes(copySkillFilter)
         || routine.steps.some(step => (step.skillIds ?? []).includes(copySkillFilter))),
-    [routines, skills, stepSourceQuery, copyCategoryFilter, copySkillFilter],
+    [routines, skills, stepSourceQuery, copyCategoryFilter, copySkillFilter, editingRoutine?.id],
   );
 
   function addStepsFromRoutine(source: Routine, selectedStepIds?: string[]) {
@@ -447,8 +448,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           </View>
         ) : null}
 
-        {!editingRoutine ? (
-          <View style={[styles.copyStepsPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.copyStepsPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`${stepSourcePickerOpen ? 'Close' : 'Open'} copy steps from another routine`}
@@ -645,7 +645,9 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                   );
                 }) : (
                   <Text style={[styles.copyStepsEmpty, { color: colors.mutedForeground }]}>
-                    {routines.length ? 'No routines match that search.' : 'Create a routine first to copy its steps.'}
+                    {routines.some(routine => routine.id !== editingRoutine?.id)
+                      ? 'No routines match that search.'
+                      : editingRoutine ? 'Create another routine first to copy its steps.' : 'Create a routine first to copy its steps.'}
                   </Text>
                 )}
               </View>
@@ -655,8 +657,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                 {stepCopyMessage}
               </Text>
             ) : null}
-          </View>
-        ) : null}
+        </View>
 
         <View style={styles.stepsHeader}>
           <Text style={[styles.label, { color: colors.inkSoft, marginBottom: 0 }]}>Steps</Text>
