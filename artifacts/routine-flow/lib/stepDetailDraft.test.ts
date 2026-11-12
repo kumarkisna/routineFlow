@@ -125,6 +125,10 @@ test('step speech choices stay with their details when the routine is reordered 
       title: 'Breathing',
       description: 'Count each breath',
       additionalDetails: ['Notice the pause'],
+      detailHtml: [
+        '<p><a href="https://example.com/breathing">Count each breath</a></p>',
+        '<p><a href="mailto:coach@example.com">Notice the pause</a></p>',
+      ],
       detailSpeech: [true, false],
       skillIds: ['skill-breathing'],
       durationSeconds: 45,
@@ -134,6 +138,10 @@ test('step speech choices stay with their details when the routine is reordered 
       title: 'Planning',
       description: 'Choose a priority',
       additionalDetails: ['Write one next action'],
+      detailHtml: [
+        '<p><a href="https://example.com/priority">Choose a priority</a></p>',
+        '<p><a href="mailto:planner@example.com">Write one next action</a></p>',
+      ],
       detailSpeech: [false, true],
       skillIds: ['skill-planning'],
       durationSeconds: 60,
@@ -161,6 +169,19 @@ test('step speech choices stay with their details when the routine is reordered 
   assert.deepEqual(
     Object.fromEntries(reopenedSteps.map(step => [step.id, createStepDetailDraft(step).detailSpeech])),
     { planning: [false, true], breathing: [true, false] },
+  );
+  assert.deepEqual(
+    Object.fromEntries(reopenedSteps.map(step => [step.id, createStepDetailDraft(step).detailHtml])),
+    {
+      planning: [
+        '<p><a href="https://example.com/priority">Choose a priority</a></p>',
+        '<p><a href="mailto:planner@example.com">Write one next action</a></p>',
+      ],
+      breathing: [
+        '<p><a href="https://example.com/breathing">Count each breath</a></p>',
+        '<p><a href="mailto:coach@example.com">Notice the pause</a></p>',
+      ],
+    },
   );
   assert.deepEqual(getSpokenStepDetails(reopenedSteps[0]), ['Write one next action']);
   assert.deepEqual(getSpokenStepDetails(reopenedSteps[1]), ['Count each breath']);
