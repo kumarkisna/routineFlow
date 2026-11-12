@@ -1,4 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useMemo, useState } from 'react';
@@ -16,6 +17,7 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 import { useRoutines } from '@/context/RoutineContext';
 import { usePeople } from '@/context/PeopleContext';
 import { useSkills } from '@/context/SkillContext';
+import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
@@ -24,6 +26,7 @@ import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, category
 import { moveRoutineStep } from '@/lib/routineStepOrdering';
 import { copyRoutineSteps } from '@/lib/copyRoutine';
 import { filterRoutineStepsByKeywords, filterRoutinesByStepKeywords } from '@/lib/routineSearch';
+import { buildStepAnnouncement } from '@/lib/routineSpeech';
 import {
   addAdditionalStepDetail,
   buildStepDetailFields,
@@ -62,6 +65,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const { routines, createRoutine, updateRoutine } = useRoutines();
   const { activePerson } = usePeople();
   const { skills } = useSkills();
+  const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const [title, setTitle] = useState(editingRoutine?.title ?? '');
   const [subtitle, setSubtitle] = useState(editingRoutine?.subtitle ?? '');
   const [subtitleHtml, setSubtitleHtml] = useState(editingRoutine?.subtitleHtml ?? '');
@@ -99,6 +103,13 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [copySelectionByRoutine, setCopySelectionByRoutine] = useState<Record<string, string[]>>({});
   const [copyCategoryFilter, setCopyCategoryFilter] = useState('');
   const [copySkillFilter, setCopySkillFilter] = useState('');
+  const [expandedCopyStepIds, setExpandedCopyStepIds] = useState<Record<string, boolean>>({});
+  const stepPreviewToken = React.useRef(0);
+
+  React.useEffect(() => () => {
+    stepPreviewToken.current += 1;
+    void Speech.stop();
+  }, []);
 
   const canSave = useMemo(() => title.trim().length > 0 && steps.length > 0, [title, steps.length]);
   const existingCategories = listRoutineCategories(routines);
@@ -125,6 +136,19 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setExpandedCopySourceId(null);
     setError('');
     void Haptics.selectionAsync();
+  }
+
+  function speakCopiedStep(source: Routine, step: RoutineStep) {
+    const token = ++stepPreviewToken.current;
+    const previewRoutine = { ...source, steps: [step] };
+    void Speech.stop().finally(() => {
+      if (stepPreviewToken.current !== token) return;
+      Speech.speak(buildStepAnnouncement(previewRoutine, 0, skills), {
+        rate: 0.92,
+        pitch: 1,
+        voice: speechVoiceId,
+      });
+    });
   }
 
   function clearStepDraft() {
@@ -525,20 +549,52 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                           </View>
                           {visibleSteps.map(step => {
                             const checked = selectedIds.includes(step.id);
+                            const detailKey = `${source.id}:${step.id}`;
+                            const detailExpanded = expandedCopyStepIds[detailKey] ?? false;
+                            const details = getStepDetails(step);
                             return (
-                              <Pressable key={step.id} accessibilityRole="checkbox" accessibilityState={{ checked }}
-                                accessibilityLabel={`Select step ${step.title}`}
-                                testID={`select-copy-step-${source.id}-${step.id}`}
-                                onPress={() => setCopySelectionByRoutine(current => {
-                                  const previous = current[source.id] ?? [];
-                                  return { ...current, [source.id]: checked
-                                    ? previous.filter(id => id !== step.id)
-                                    : [...previous, step.id] };
-                                })}
-                                style={[styles.copyStepChoice, { borderColor: colors.border }]}>
-                                <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={19} color={checked ? colors.primary : colors.mutedForeground} />
-                                <Text style={[styles.copyStepChoiceText, { color: colors.foreground }]}>{step.title}</Text>
-                              </Pressable>
+                              <View key={step.id} style={[styles.copyStepChoice, { borderColor: colors.border }]}>
+                                <View style={styles.copyStepChoiceRow}>
+                                  <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }}
+                                    accessibilityLabel={`Select step ${step.title}`}
+                                    testID={`select-copy-step-${source.id}-${step.id}`}
+                                    onPress={() => setCopySelectionByRoutine(current => {
+                                      const previous = current[source.id] ?? [];
+                                      return { ...current, [source.id]: checked
+                                        ? previous.filter(id => id !== step.id)
+                                        : [...previous, step.id] };
+                                    })}
+                                    style={styles.copyStepSelector}>
+                                    <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={19} color={checked ? colors.primary : colors.mutedForeground} />
+                                    <Text style={[styles.copyStepChoiceText, { color: colors.foreground }]}>{step.title}</Text>
+                                  </Pressable>
+                                  {details.length ? (
+                                    <Pressable accessibilityRole="button" accessibilityLabel={`${detailExpanded ? 'Hide' : 'Show'} details for ${step.title}`}
+                                      accessibilityState={{ expanded: detailExpanded }}
+                                      testID={`toggle-copy-step-details-${source.id}-${step.id}`}
+                                      onPress={() => setExpandedCopyStepIds(current => ({ ...current, [detailKey]: !detailExpanded }))}
+                                      style={styles.copyStepDetailsToggle}>
+                                      <Text style={[styles.copyStepDetailAction, { color: colors.primary }]}>{detailExpanded ? 'Hide' : 'Details'}</Text>
+                                    </Pressable>
+                                  ) : null}
+                                  <Pressable accessibilityRole="button" accessibilityLabel={`Speak step ${step.title}`}
+                                    testID={`speak-copy-step-${source.id}-${step.id}`}
+                                    onPress={() => speakCopiedStep(source, step)}
+                                    style={styles.copyStepSpeechButton}>
+                                    <Ionicons name="volume-high-outline" size={18} color={colors.primary} />
+                                  </Pressable>
+                                </View>
+                                {detailExpanded && details.length ? (
+                                  <View style={[styles.copyStepDetails, { backgroundColor: colors.card }]}>
+                                    {details.map((detail, index) => (
+                                      <Text key={`${step.id}-detail-${index}`} style={[styles.copyStepDetailsText, { color: colors.inkSoft }]}>
+                                        {index === 0 ? detail : `• ${detail}`}
+                                      </Text>
+                                    ))}
+                                    {step.skillIds?.length ? <SkillTagList skillIds={step.skillIds} /> : null}
+                                  </View>
+                                ) : null}
+                              </View>
                             );
                           })}
                           <Pressable accessibilityRole="button" accessibilityLabel={`Add ${selectedIds.length} selected steps from ${source.title}`}
@@ -876,8 +932,15 @@ const styles = StyleSheet.create({
   copyStepChoices: { marginTop: 8 },
   copySelectionActions: { flexDirection: 'row', gap: 16, marginBottom: 4 },
   copyActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, paddingVertical: 5 },
-  copyStepChoice: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 9, borderBottomWidth: StyleSheet.hairlineWidth },
+  copyStepChoice: { borderBottomWidth: StyleSheet.hairlineWidth },
+  copyStepChoiceRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  copyStepSelector: { flex: 1, minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 9 },
   copyStepChoiceText: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 13, paddingVertical: 7 },
+  copyStepDetailsToggle: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 7 },
+  copyStepDetailAction: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  copyStepSpeechButton: { width: 36, minHeight: 36, alignItems: 'center', justifyContent: 'center' },
+  copyStepDetails: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 9, marginBottom: 8, gap: 4 },
+  copyStepDetailsText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18 },
   copySelectedButton: { marginTop: 8 },
   copyStepsEmpty: { fontFamily: 'Inter_400Regular', fontSize: 13, paddingVertical: 8 },
   copyStepsMessage: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8 },
