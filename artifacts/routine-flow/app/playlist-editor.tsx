@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
@@ -10,14 +11,17 @@ import { useRoutines } from '@/context/RoutineContext';
 import { useSchedules } from '@/context/ScheduleContext';
 import { useSkills } from '@/context/SkillContext';
 import { usePeople } from '@/context/PeopleContext';
-import { SkillPicker } from '@/components/SkillPicker';
+import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
+import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
 import { useColors } from '@/hooks/useColors';
+import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { createDefaultPlaylistStepSelections, resolvePlaylistReminderSettings, type PlaylistStepSelection } from '@/lib/playlists';
+import { buildStepAnnouncement } from '@/lib/routineSpeech';
 import { scheduledPlaylistSource } from '@/lib/schedules';
 import { formatLocalDateTime } from '@/lib/localDateTime';
 import { formatDuration, getStepSeconds } from '@/types/routines';
-import type { RoutineNotificationSettings } from '@/types/routines';
+import type { Routine, RoutineNotificationSettings } from '@/types/routines';
 import { detailHtmlToText } from '@/lib/stepDetailHtml';
 import { filterRoutinesByStepKeywords } from '@/lib/routineSearch';
 
@@ -71,6 +75,8 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const { savePlaylist } = usePlaylists();
   const { schedules, savePlaylistForSchedule, resetScheduledPlaylist } = useSchedules();
   const appointment = scheduleId ? schedules.find(item => item.id === scheduleId) : undefined;
+  const { activePerson } = usePeople();
+  const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const { routines } = useRoutines();
   const { skills } = useSkills();
   const [confirmReset, setConfirmReset] = React.useState(false);
@@ -81,6 +87,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const ids = entries.map(entry => entry.routineId);
   const [routineSearch, setRoutineSearch] = React.useState('');
   const [expandedEntry, setExpandedEntry] = React.useState<number | null>(null);
+  const [expandedStepDetails, setExpandedStepDetails] = React.useState<Record<string, boolean>>({});
   const [skillIds, setSkillIds] = React.useState<string[]>(initialSkillIds);
   const [rateSkillsAtPlaylistEnd, setRateSkillsAtPlaylistEnd] = React.useState(initialRateSkillsAtPlaylistEnd);
   const [reminderSettings, setReminderSettings] = React.useState<RoutineNotificationSettings>({ ...initialReminderSettings });
@@ -93,6 +100,11 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const lock = React.useRef(false);
+  const stepPreviewToken = React.useRef(0);
+  React.useEffect(() => () => {
+    stepPreviewToken.current += 1;
+    void Speech.stop();
+  }, []);
   const addable = filterRoutinesByStepKeywords(routines, skills, routineSearch)
     .filter(r => !r.hidden && r.steps.some(step => !step.hidden));
 
@@ -133,6 +145,17 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     setEntries(current => current.map((entry, index) => index === entryIndex
       ? { ...entry, steps: entry.steps.map(step => step.stepId === stepId ? { ...step, durationSeconds } : step) }
       : entry));
+  }
+  function speakStep(source: Routine, step: Routine['steps'][number]) {
+    const token = ++stepPreviewToken.current;
+    void Speech.stop().finally(() => {
+      if (stepPreviewToken.current !== token) return;
+      Speech.speak(buildStepAnnouncement({ ...source, steps: [step] }, 0, skills), {
+        rate: 0.92,
+        pitch: 1,
+        voice: speechVoiceId,
+      });
+    });
   }
   async function save() {
     if (lock.current) return;
@@ -322,20 +345,80 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
                   <Text style={[styles.count, { color: colors.mutedForeground }]}>Choose visible steps. Duration changes apply only to this playlist.</Text>
                   {source.steps.filter(step => !step.hidden).map(step => {
                     const selected = chosen.get(step.id);
+                    const detailKey = `${rid}:${i}:${step.id}`;
+                    const detailExpanded = expandedStepDetails[detailKey] ?? false;
+                    const detailCount = Math.max(
+                      1,
+                      step.detailHtml?.length ?? 0,
+                      step.detailAttachments?.length ?? 0,
+                      1 + (step.additionalDetails?.length ?? 0),
+                    );
+                    const details = Array.from({ length: detailCount }, (_, index) => {
+                      const plainText = index === 0 ? step.description : step.additionalDetails?.[index - 1];
+                      const htmlText = detailHtmlToText(step.detailHtml?.[index] ?? '').trim();
+                      const attachments = step.detailAttachments?.[index] ?? [];
+                      return {
+                        index,
+                        label: index === 0 ? 'Main detail' : `Additional detail ${index}`,
+                        text: htmlText || plainText?.trim() || '',
+                        attachments,
+                        speak: step.detailSpeech?.[index] ?? step.speakDetails !== false,
+                      };
+                    }).filter(detail => detail.text || detail.attachments.length > 0);
                     return (
-                      <View key={step.id} style={[styles.selectedStep, { borderColor: colors.border }]}>
-                        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: !!selected }} accessibilityLabel={`${selected ? 'Remove' : 'Select'} ${step.title}`}
-                          testID={`playlist-step-${i}-${step.id}`} disabled={busy} onPress={() => toggleStep(i, step.id)} style={styles.stepCheck}>
-                          <Ionicons name={selected ? 'checkbox' : 'square-outline'} size={19} color={selected ? colors.primary : colors.mutedForeground} />
-                        </Pressable>
-                        <Text style={[styles.selectedStepName, { color: colors.foreground }]} numberOfLines={2}>{step.title}</Text>
-                        {selected ? (
-                          <View style={styles.durationInputWrap}>
-                            <TextInput accessibilityLabel={`Duration in seconds for ${step.title}`} testID={`playlist-duration-${i}-${step.id}`}
-                              keyboardType="number-pad" selectTextOnFocus value={String(selected.durationSeconds)} editable={!busy}
-                              onChangeText={value => updateStepDuration(i, step.id, value)}
-                              style={[styles.durationInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
-                            <Text style={[styles.durationUnit, { color: colors.mutedForeground }]}>sec</Text>
+                      <View key={step.id} style={styles.playlistStepItem}>
+                        <View style={[styles.selectedStep, { borderColor: colors.border }]}>
+                          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: !!selected }} accessibilityLabel={`${selected ? 'Remove' : 'Select'} ${step.title}`}
+                            testID={`playlist-step-${i}-${step.id}`} disabled={busy} onPress={() => toggleStep(i, step.id)} style={styles.stepCheck}>
+                            <Ionicons name={selected ? 'checkbox' : 'square-outline'} size={19} color={selected ? colors.primary : colors.mutedForeground} />
+                          </Pressable>
+                          <Text style={[styles.selectedStepName, { color: colors.foreground }]} numberOfLines={2}>{step.title}</Text>
+                          {details.length ? (
+                            <Pressable accessibilityRole="button" accessibilityState={{ expanded: detailExpanded }}
+                              accessibilityLabel={`${detailExpanded ? 'Hide' : 'Show'} details for ${step.title}`}
+                              testID={`toggle-playlist-step-details-${i}-${step.id}`}
+                              onPress={() => setExpandedStepDetails(current => ({ ...current, [detailKey]: !detailExpanded }))}
+                              style={styles.stepPreviewDetailsToggle}>
+                              <Text style={[styles.stepPreviewAction, { color: colors.primary }]}>{detailExpanded ? 'Hide' : 'Details'}</Text>
+                            </Pressable>
+                          ) : null}
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Speak step ${step.title}`}
+                            testID={`speak-playlist-step-${i}-${step.id}`} disabled={busy}
+                            onPress={() => speakStep(source, step)} style={styles.stepPreviewSpeak}>
+                            <Ionicons name="volume-high-outline" size={18} color={colors.primary} />
+                          </Pressable>
+                          {selected ? (
+                            <View style={styles.durationInputWrap}>
+                              <TextInput accessibilityLabel={`Duration in seconds for ${step.title}`} testID={`playlist-duration-${i}-${step.id}`}
+                                keyboardType="number-pad" selectTextOnFocus value={String(selected.durationSeconds)} editable={!busy}
+                                onChangeText={value => updateStepDuration(i, step.id, value)}
+                                style={[styles.durationInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
+                              <Text style={[styles.durationUnit, { color: colors.mutedForeground }]}>sec</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        {detailExpanded && details.length ? (
+                          <View style={[styles.stepPreviewDetails, { backgroundColor: colors.background }]}>
+                            <Text style={[styles.count, { color: colors.mutedForeground }]}>
+                              Source duration: {formatDuration(getStepSeconds(step))}
+                            </Text>
+                            {step.skillIds?.length ? <SkillTagList skillIds={step.skillIds} /> : null}
+                            {details.map(detail => (
+                              <View key={`${step.id}-detail-${detail.index}`} style={styles.stepPreviewDetailBlock}>
+                                <Text style={[styles.stepPreviewDetailLabel, { color: colors.foreground }]}>{detail.label}</Text>
+                                {detail.text ? <Text style={[styles.stepPreviewDetailText, { color: colors.inkSoft }]}>{detail.text}</Text> : null}
+                                {detail.attachments.length ? (
+                                  <StepDetailAttachments
+                                    label={`${detail.label} files`}
+                                    testID={`playlist-step-files-${i}-${step.id}-${detail.index}`}
+                                    attachments={detail.attachments}
+                                  />
+                                ) : null}
+                                <Text style={[styles.stepPreviewSpeechHint, { color: colors.mutedForeground }]}>
+                                  {detail.speak ? 'Spoken during the routine' : 'Not spoken during the routine'}
+                                </Text>
+                              </View>
+                            ))}
                           </View>
                         ) : null}
                       </View>
@@ -426,9 +509,18 @@ const styles = StyleSheet.create({
   stepPickerToggle: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderWidth: 1, borderRadius: 11, alignSelf: 'flex-start', marginTop: -3, marginBottom: 10 },
   stepPickerToggleText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   stepSelection: { borderWidth: 1, borderRadius: 14, padding: 10, marginBottom: 10 },
+  playlistStepItem: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: 'transparent' },
   selectedStep: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 8 },
   stepCheck: { width: 36, minHeight: 42, alignItems: 'center', justifyContent: 'center' },
   selectedStepName: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 13 },
+  stepPreviewDetailsToggle: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 5 },
+  stepPreviewAction: { fontFamily: 'Inter_600SemiBold', fontSize: 11 },
+  stepPreviewSpeak: { width: 32, minHeight: 36, alignItems: 'center', justifyContent: 'center' },
+  stepPreviewDetails: { padding: 9, borderRadius: 9, marginBottom: 8, gap: 4 },
+  stepPreviewDetailBlock: { gap: 4, paddingTop: 6 },
+  stepPreviewDetailLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  stepPreviewDetailText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18 },
+  stepPreviewSpeechHint: { fontFamily: 'Inter_400Regular', fontSize: 10, marginTop: 2 },
   durationInputWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   durationInput: { width: 62, height: 38, borderWidth: 1, borderRadius: 9, textAlign: 'center', paddingHorizontal: 6, fontFamily: 'Inter_500Medium', fontSize: 13 },
   durationUnit: { fontFamily: 'Inter_400Regular', fontSize: 11 },
