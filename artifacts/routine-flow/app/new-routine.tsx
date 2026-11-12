@@ -588,15 +588,13 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                                     <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={19} color={checked ? colors.primary : colors.mutedForeground} />
                                     <Text style={[styles.copyStepChoiceText, { color: colors.foreground }]}>{step.title}</Text>
                                   </Pressable>
-                                  {details.length ? (
-                                    <Pressable accessibilityRole="button" accessibilityLabel={`${detailExpanded ? 'Hide' : 'Show'} details for ${step.title}`}
-                                      accessibilityState={{ expanded: detailExpanded }}
-                                      testID={`toggle-copy-step-details-${source.id}-${step.id}`}
-                                      onPress={() => setExpandedCopyStepIds(current => ({ ...current, [detailKey]: !detailExpanded }))}
-                                      style={styles.copyStepDetailsToggle}>
-                                      <Text style={[styles.copyStepDetailAction, { color: colors.primary }]}>{detailExpanded ? 'Hide' : 'Details'}</Text>
-                                    </Pressable>
-                                  ) : null}
+                                  <Pressable accessibilityRole="button" accessibilityLabel={`${detailExpanded ? 'Hide' : 'Show'} details for ${step.title}`}
+                                    accessibilityState={{ expanded: detailExpanded }}
+                                    testID={`toggle-copy-step-details-${source.id}-${step.id}`}
+                                    onPress={() => setExpandedCopyStepIds(current => ({ ...current, [detailKey]: !detailExpanded }))}
+                                    style={styles.copyStepDetailsToggle}>
+                                    <Text style={[styles.copyStepDetailAction, { color: colors.primary }]}>{detailExpanded ? 'Hide' : 'Details'}</Text>
+                                  </Pressable>
                                   <Pressable accessibilityRole="button" accessibilityLabel={`Speak step ${step.title}`}
                                     testID={`speak-copy-step-${source.id}-${step.id}`}
                                     onPress={() => speakCopiedStep(source, step)}
@@ -604,18 +602,16 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                                     <Ionicons name="volume-high-outline" size={18} color={colors.primary} />
                                   </Pressable>
                                 </View>
-                                {detailExpanded && details.length ? (
+                                {detailExpanded ? (
                                   <View style={[styles.copyStepDetails, { backgroundColor: colors.card }]}>
                                     <Text style={[styles.copyStepDetailsText, { color: colors.mutedForeground }]}>
                                       {formatDuration(getStepSeconds(step))}{step.hidden ? ' · Hidden in source' : ''}
                                     </Text>
                                     {step.skillIds?.length ? <SkillTagList skillIds={step.skillIds} /> : null}
-                                    {details.map(detail => (
+                                    {details.length ? details.map(detail => (
                                       <View key={`${step.id}-detail-${detail.index}`} style={styles.copyStepDetailBlock}>
                                         <Text style={[styles.copyStepDetailLabel, { color: colors.foreground }]}>{detail.label}</Text>
-                                        {detail.text ? (
-                                          <Text style={[styles.copyStepDetailsText, { color: colors.inkSoft }]}>{detail.text}</Text>
-                                        ) : null}
+                                        {detail.text ? <Text style={[styles.copyStepDetailsText, { color: colors.inkSoft }]}>{detail.text}</Text> : null}
                                         {detail.attachments.length ? (
                                           <StepDetailAttachments
                                             label={`${detail.label} files`}
@@ -627,7 +623,11 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                                           {detail.speak ? 'Spoken during the routine' : 'Not spoken during the routine'}
                                         </Text>
                                       </View>
-                                    ))}
+                                    )) : (
+                                      <Text style={[styles.copyStepDetailsText, { color: colors.mutedForeground }]}>
+                                        No additional details saved for this step.
+                                      </Text>
+                                    )}
                                   </View>
                                 ) : null}
                               </View>

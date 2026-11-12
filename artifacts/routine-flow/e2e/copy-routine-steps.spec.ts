@@ -224,6 +224,10 @@ test('editing a routine can copy and inspect steps from another routine', async 
   await expect(page.getByText('Edit routine', { exact: true })).toBeVisible();
   await page.getByTestId('toggle-copy-routine-steps').click();
   await expect(page.getByTestId('choose-steps-from-garden-flow')).toHaveCount(0);
+  await page.getByTestId('choose-steps-from-watering-outside-category').click();
+  await expect(page.getByTestId('toggle-copy-step-details-watering-outside-category-water-office')).toBeVisible();
+  await page.getByTestId('toggle-copy-step-details-watering-outside-category-water-office').click();
+  await expect(page.getByText('No additional details saved for this step.', { exact: true })).toBeVisible();
   await page.getByTestId('choose-steps-from-step-linked-garden').click();
   await page.getByTestId('select-copy-step-step-linked-garden-prune-herbs').click();
   await expect(page.getByText('Morning check', { exact: true })).toBeVisible();
