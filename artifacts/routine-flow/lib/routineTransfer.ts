@@ -141,7 +141,8 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     ...(value.detailSpeech !== undefined ? { detailSpeech: [...(value.detailSpeech as boolean[])] } : {}),
     ...(value.detailAttachments !== undefined
       ? { detailAttachments: (value.detailAttachments as RoutineStep['detailAttachments'])!.map(group => [...group]) } : {}),
-    ...(value.detailHtml !== undefined ? { detailHtml: [...(value.detailHtml as string[])] } : {}),
+    ...(value.detailHtml !== undefined
+      ? { detailHtml: (value.detailHtml as string[]).map(sanitizeStepDetailHtml) } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden as boolean } : {}),
     ...(value.speakDetails !== undefined ? { speakDetails: value.speakDetails as boolean } : {}),
     ...(skillIds !== undefined ? { skillIds } : {}),

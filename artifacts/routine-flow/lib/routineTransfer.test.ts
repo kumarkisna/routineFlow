@@ -19,6 +19,7 @@ import type { CompletionMap, Routine } from '@/types/routines';
 import { getSpokenStepDetails, getStepDetails } from '@/types/routines';
 import { getHistoryForDay } from './progressHistory';
 import { buildStepAnnouncement } from './routineSpeech';
+import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
 
 const day = '2026-09-28';
 const secondDay = '2026-09-29';
@@ -356,6 +357,34 @@ test('routine backups retain rich step details and attachment bytes', () => {
   const restoredAnnouncement = buildStepAnnouncement(restored, 0, []);
   assert.ok(restoredAnnouncement.includes('Drink water slowly.'));
   assert.doesNotMatch(restoredAnnouncement, /<\/?(?:h2|p|a)[^>]*>/i);
+});
+
+test('routine backup import preserves safe formatted links and removes unsafe targets', () => {
+  const source = routine('backup-garden');
+  source.steps[0].description = 'Read the guide or email the team.';
+  source.steps[0].detailHtml = [
+    '<p><a href="https://example.com/guide">Read the guide</a> · <a href="mailto:team@example.com">Email the team</a> · <a href="javascript:run()">Unsafe link</a></p>',
+  ];
+  const exported = serializeRoutines([source]);
+  const imported = parseRoutinesFile(exported);
+  const local = { ...routine('backup-garden'), title: 'Local garden routine' };
+  const merged = mergeImportedRoutines([local], imported.routines, () => 'restored-garden');
+  const restored = merged.routines.find(item => item.id === 'restored-garden');
+  if (!restored) throw new Error('Expected imported routine to be remapped into the receiving profile.');
+  const reopenedHtml = sanitizeStepDetailHtml(restored.steps[0].detailHtml?.[0] ?? '');
+
+  assert.equal(merged.idMap['backup-garden'], 'restored-garden');
+  assert.equal(
+    reopenedHtml,
+    '<p><a href="https://example.com/guide">Read the guide</a> · <a href="mailto:team@example.com">Email the team</a> · <a>Unsafe link</a></p>',
+  );
+  assert.equal(detailHtmlToText(reopenedHtml), 'Read the guide · Email the team · Unsafe link');
+  assert.match(reopenedHtml, /href="https:\/\/example\.com\/guide"/);
+  assert.match(reopenedHtml, /href="mailto:team@example\.com"/);
+  assert.doesNotMatch(reopenedHtml, /javascript:/i);
+  assert.deepEqual(source.steps[0].detailHtml, [
+    '<p><a href="https://example.com/guide">Read the guide</a> · <a href="mailto:team@example.com">Email the team</a> · <a href="javascript:run()">Unsafe link</a></p>',
+  ]);
 });
 
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
