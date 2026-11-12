@@ -290,4 +290,18 @@ test('playlist summary shows and speaks selected steps out of each routine total
   await expect.poll(() => page.evaluate(() =>
     (window as unknown as { __routineSpeechTexts: string[] }).__routineSpeechTexts,
   )).toEqual(expect.arrayContaining([expect.stringContaining('Garden flow, 1 of 3 steps selected')]));
+
+  await page.getByTestId('edit-playlist-partial-morning').click();
+  await page.getByTestId('toggle-playlist-steps-0').click();
+  await expect(page.getByTestId('playlist-duration-0-water-herbs-hours')).toHaveValue('0');
+  await expect(page.getByTestId('playlist-duration-0-water-herbs-minutes')).toHaveValue('1');
+  await expect(page.getByTestId('playlist-duration-0-water-herbs-seconds')).toHaveValue('0');
+  await page.getByTestId('playlist-duration-0-water-herbs-minutes').fill('2');
+  await page.getByTestId('playlist-duration-0-water-herbs-seconds').fill('30');
+  await page.getByTestId('save-playlist').click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('@routine-flow/playlists') ?? '[]')
+    .find((playlist: { id: string }) => playlist.id === 'partial-morning')
+    ?.stepSelections?.[0]?.steps?.[0]?.durationSeconds)).toBe(150);
+  const savedRoutines = await page.evaluate(() => JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]') as Routine[]);
+  expect(savedRoutines.find(routine => routine.id === 'garden-flow')?.steps.find(step => step.id === 'water-herbs')?.durationSeconds).toBe(60);
 });

@@ -25,6 +25,23 @@ import type { Routine, RoutineNotificationSettings } from '@/types/routines';
 import { detailHtmlToText } from '@/lib/stepDetailHtml';
 import { filterRoutinesByStepKeywords } from '@/lib/routineSearch';
 
+type PlaylistTimeDraft = { hours: string; minutes: string; seconds: string };
+
+function durationToTimeDraft(durationSeconds: number): PlaylistTimeDraft {
+  return {
+    hours: String(Math.floor(durationSeconds / 3600)),
+    minutes: String(Math.floor((durationSeconds % 3600) / 60)),
+    seconds: String(durationSeconds % 60),
+  };
+}
+
+function timeDraftToDuration(draft: PlaylistTimeDraft): number {
+  const hours = Math.max(0, Number.parseInt(draft.hours, 10) || 0);
+  const minutes = Math.min(59, Math.max(0, Number.parseInt(draft.minutes, 10) || 0));
+  const seconds = Math.min(59, Math.max(0, Number.parseInt(draft.seconds, 10) || 0));
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
 export default function PlaylistEditor() {
   const { id, scheduleId } = useLocalSearchParams<{ id?: string; scheduleId?: string }>();
   const colors = useColors();
@@ -88,6 +105,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const [routineSearch, setRoutineSearch] = React.useState('');
   const [expandedEntry, setExpandedEntry] = React.useState<number | null>(null);
   const [expandedStepDetails, setExpandedStepDetails] = React.useState<Record<string, boolean>>({});
+  const [durationDrafts, setDurationDrafts] = React.useState<Record<string, PlaylistTimeDraft>>({});
   const [skillIds, setSkillIds] = React.useState<string[]>(initialSkillIds);
   const [rateSkillsAtPlaylistEnd, setRateSkillsAtPlaylistEnd] = React.useState(initialRateSkillsAtPlaylistEnd);
   const [reminderSettings, setReminderSettings] = React.useState<RoutineNotificationSettings>({ ...initialReminderSettings });
@@ -140,12 +158,20 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     }));
     setError('');
   }
-  function updateStepDuration(entryIndex: number, stepId: string, value: string) {
-    const durationSeconds = Number.parseInt(value, 10);
-    if (!Number.isSafeInteger(durationSeconds) || durationSeconds <= 0) return;
-    setEntries(current => current.map((entry, index) => index === entryIndex
-      ? { ...entry, steps: entry.steps.map(step => step.stepId === stepId ? { ...step, durationSeconds } : step) }
-      : entry));
+  function updateDurationPart(entryIndex: number, stepId: string, part: keyof PlaylistTimeDraft, value: string) {
+    const entry = entries[entryIndex];
+    const selected = entry?.steps.find(step => step.stepId === stepId);
+    if (!entry || !selected) return;
+    const key = `${entry.routineId}:${stepId}`;
+    const current = durationDrafts[key] ?? durationToTimeDraft(selected.durationSeconds);
+    const next = { ...current, [part]: value };
+    setDurationDrafts(currentDrafts => ({ ...currentDrafts, [key]: next }));
+    const durationSeconds = timeDraftToDuration(next);
+    if (durationSeconds > 0) {
+      setEntries(currentEntries => currentEntries.map((item, index) => index === entryIndex
+        ? { ...item, steps: item.steps.map(step => step.stepId === stepId ? { ...step, durationSeconds } : step) }
+        : item));
+    }
   }
   function speakStep(source: Routine, step: Routine['steps'][number]) {
     const token = ++stepPreviewToken.current;
@@ -162,6 +188,18 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     if (lock.current) return;
     if (!title.trim()) return setError('Give your playlist a name.');
     if (!entries.length || !entries.some(entry => entry.steps.length)) return setError('Add at least one selected step.');
+    let invalidDuration = false;
+    const entriesWithDurations = entries.map(entry => ({
+      ...entry,
+      steps: entry.steps.map(step => {
+        const draft = durationDrafts[`${entry.routineId}:${step.stepId}`];
+        if (!draft) return step;
+        const durationSeconds = timeDraftToDuration(draft);
+        if (durationSeconds <= 0) invalidDuration = true;
+        return { ...step, durationSeconds };
+      }),
+    }));
+    if (invalidDuration) return setError('Give each selected step a duration before saving.');
     lock.current = true;
     setBusy(true);
     setError('');
@@ -169,8 +207,8 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     try {
       const availableSkills = new Set(skills.map(skill => skill.id));
       const savedSkillIds = skillIds.filter(id => availableSkills.has(id));
-      if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds, reminderSettings, entries);
-      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd, reminderSettings, reflectionTemplateText, reflectionTemplateHtml, entries);
+      if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds, reminderSettings, entriesWithDurations);
+      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd, reminderSettings, reflectionTemplateText, reflectionTemplateHtml, entriesWithDurations);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e) {
@@ -388,16 +426,32 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
                             onPress={() => speakStep(source, step)} style={styles.stepPreviewSpeak}>
                             <Ionicons name="volume-high-outline" size={18} color={colors.primary} />
                           </Pressable>
-                          {selected ? (
-                            <View style={styles.durationInputWrap}>
-                              <TextInput accessibilityLabel={`Duration in seconds for ${step.title}`} testID={`playlist-duration-${i}-${step.id}`}
-                                keyboardType="number-pad" selectTextOnFocus value={String(selected.durationSeconds)} editable={!busy}
-                                onChangeText={value => updateStepDuration(i, step.id, value)}
-                                style={[styles.durationInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
-                              <Text style={[styles.durationUnit, { color: colors.mutedForeground }]}>sec</Text>
-                            </View>
-                          ) : null}
                         </View>
+                        {selected ? (() => {
+                          const draft = durationDrafts[`${entry.routineId}:${step.id}`] ?? durationToTimeDraft(selected.durationSeconds);
+                          return (
+                            <View style={styles.durationComposer}>
+                              <Text style={[styles.durationLabel, { color: colors.mutedForeground }]}>Timer</Text>
+                              <View style={styles.timeInputs}>
+                                <TextInput accessibilityLabel={`Playlist step hours for ${step.title}`}
+                                  testID={`playlist-duration-${i}-${step.id}-hours`} keyboardType="number-pad" maxLength={2}
+                                  value={draft.hours} editable={!busy} onChangeText={value => updateDurationPart(i, step.id, 'hours', value)}
+                                  style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
+                                <Text style={[styles.timeColon, { color: colors.mutedForeground }]}>:</Text>
+                                <TextInput accessibilityLabel={`Playlist step minutes for ${step.title}`}
+                                  testID={`playlist-duration-${i}-${step.id}-minutes`} keyboardType="number-pad" maxLength={2}
+                                  value={draft.minutes} editable={!busy} onChangeText={value => updateDurationPart(i, step.id, 'minutes', value)}
+                                  style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
+                                <Text style={[styles.timeColon, { color: colors.mutedForeground }]}>:</Text>
+                                <TextInput accessibilityLabel={`Playlist step seconds for ${step.title}`}
+                                  testID={`playlist-duration-${i}-${step.id}-seconds`} keyboardType="number-pad" maxLength={2}
+                                  value={draft.seconds} editable={!busy} onChangeText={value => updateDurationPart(i, step.id, 'seconds', value)}
+                                  style={[styles.timeInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
+                                <Text style={[styles.timeHint, { color: colors.mutedForeground }]}>h&nbsp;&nbsp; m&nbsp;&nbsp; s</Text>
+                              </View>
+                            </View>
+                          );
+                        })() : null}
                         {detailExpanded && details.length ? (
                           <View style={[styles.stepPreviewDetails, { backgroundColor: colors.background }]}>
                             <Text style={[styles.count, { color: colors.mutedForeground }]}>
@@ -522,8 +576,11 @@ const styles = StyleSheet.create({
   stepPreviewDetailLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
   stepPreviewDetailText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18 },
   stepPreviewSpeechHint: { fontFamily: 'Inter_400Regular', fontSize: 10, marginTop: 2 },
-  durationInputWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  durationInput: { width: 62, height: 38, borderWidth: 1, borderRadius: 9, textAlign: 'center', paddingHorizontal: 6, fontFamily: 'Inter_500Medium', fontSize: 13 },
-  durationUnit: { fontFamily: 'Inter_400Regular', fontSize: 11 },
+  durationComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingVertical: 6 },
+  durationLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  timeInputs: { flexDirection: 'row', alignItems: 'center' },
+  timeInput: { width: 35, height: 30, borderWidth: 1, borderRadius: 8, textAlign: 'center', fontFamily: 'Inter_600SemiBold', fontSize: 12, padding: 0 },
+  timeColon: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginHorizontal: 3 },
+  timeHint: { fontFamily: 'Inter_400Regular', fontSize: 9, marginLeft: 6 },
   error: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 10 },
 });
