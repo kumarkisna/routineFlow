@@ -797,17 +797,19 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
               </View>
             </View>
           ))}
-          {stepDetailDraft.removedAdditionalDetail ? (
+          {stepDetailDraft.removedAdditionalDetails?.length ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Undo removing the last additional detail"
+              accessibilityLabel={`Undo the most recent removal. ${stepDetailDraft.removedAdditionalDetails.length} ${stepDetailDraft.removedAdditionalDetails.length === 1 ? 'removal' : 'removals'} available`}
               testID="undo-remove-step-detail"
               disabled={saving}
               onPress={() => setStepDetailDraft((current) => undoRemoveAdditionalStepDetail(current))}
               style={({ pressed }) => [styles.undoDetailButton, pressed && styles.pressed]}
             >
               <Ionicons name="arrow-undo-outline" size={17} color={colors.primary} />
-              <Text style={[styles.addDetailText, { color: colors.primary }]}>Undo removed detail</Text>
+              <Text style={[styles.addDetailText, { color: colors.primary }]}>
+                {`Undo removed detail${stepDetailDraft.removedAdditionalDetails.length > 1 ? ` (${stepDetailDraft.removedAdditionalDetails.length})` : ''}`}
+              </Text>
             </Pressable>
           ) : null}
           <Pressable

@@ -176,6 +176,47 @@ test('copy routine empty states distinguish search from filters and let filters 
   await expect(page.getByTestId('choose-steps-from-garden-flow')).toBeVisible();
 });
 
+test('multiple removed step details can be undone in reverse order before saving', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('@routine-flow/routines', '[]');
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/skills', '[]');
+    localStorage.setItem('@routine-flow/playlists', '[]');
+  });
+
+  await page.goto('/new-routine');
+  await page.getByLabel('Routine name').fill('Undo multiple notes');
+  await page.getByLabel('New routine step').fill('Practice');
+  await page.getByTestId('step-description-input').fill('Main instruction');
+  await page.getByTestId('add-step-detail').click();
+  await page.getByTestId('additional-step-detail-0').fill('First note');
+  await page.getByTestId('add-step-detail').click();
+  await page.getByTestId('additional-step-detail-1').fill('Middle note');
+  await page.getByTestId('add-step-detail').click();
+  await page.getByTestId('additional-step-detail-2').fill('Last note');
+
+  await page.getByTestId('remove-step-detail-0').click();
+  await page.getByTestId('remove-step-detail-1').click();
+  await expect(page.getByTestId('undo-remove-step-detail')).toContainText('(2)');
+  await page.getByTestId('undo-remove-step-detail').click();
+  await expect(page.getByTestId('additional-step-detail-1')).toHaveValue('Last note');
+  await expect(page.getByTestId('undo-remove-step-detail')).toBeVisible();
+  await page.getByTestId('undo-remove-step-detail').click();
+  await expect(page.getByTestId('additional-step-detail-0')).toHaveValue('First note');
+  await expect(page.getByTestId('additional-step-detail-1')).toHaveValue('Middle note');
+  await expect(page.getByTestId('additional-step-detail-2')).toHaveValue('Last note');
+
+  await page.getByLabel('Add step').click();
+  await page.getByLabel('Save routine').click();
+  await expect.poll(() => page.evaluate(() => {
+    const routines = JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]') as Array<{
+      title: string;
+      steps: Array<{ additionalDetails?: string[] }>;
+    }>;
+    return routines.find(routine => routine.title === 'Undo multiple notes')?.steps[0]?.additionalDetails;
+  })).toEqual(['First note', 'Middle note', 'Last note']);
+});
+
 test('copy step filters, search, selection, details, and speech preview stay scoped', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
 

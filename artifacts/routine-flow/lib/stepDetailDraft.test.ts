@@ -201,6 +201,54 @@ test('undoing removal restores a formatted detail with speech choice and attachm
   assert.equal(undoRemoveAdditionalStepDetail(originalDraft), originalDraft);
 });
 
+test('several removed details can be restored in reverse order and saved', () => {
+  const firstAttachment = {
+    id: 'first-file', name: 'first.pdf', uri: 'file:///first.pdf',
+    mimeType: 'application/pdf', kind: 'document' as const, contentBase64: 'Zmlyc3Q=',
+  };
+  const lastAttachment = {
+    id: 'last-file', name: 'last.pdf', uri: 'file:///last.pdf',
+    mimeType: 'application/pdf', kind: 'document' as const, contentBase64: 'bGFzdA==',
+  };
+  const originalStep: RoutineStep = {
+    id: 'practice',
+    title: 'Practice',
+    description: 'Main guide',
+    additionalDetails: ['First note', 'Middle note', 'Last note'],
+    detailSpeech: [true, false, true, false],
+    detailAttachments: [[], [firstAttachment], [], [lastAttachment]],
+    detailHtml: [
+      '<p>Main guide</p>',
+      '<p><a href="https://example.com/first">First note</a></p>',
+      '<p><strong>Middle note</strong></p>',
+      '<p><a href="mailto:team@example.com">Last note</a></p>',
+    ],
+    durationSeconds: 60,
+  };
+  const originalDraft = createStepDetailDraft(originalStep);
+  let draft = removeAdditionalStepDetail(originalDraft, 0);
+  draft = removeAdditionalStepDetail(draft, 1);
+  assert.equal(draft.removedAdditionalDetails?.length, 2);
+  draft = undoRemoveAdditionalStepDetail(draft);
+  assert.deepEqual(draft.additionalDetails, ['Middle note', 'Last note']);
+  assert.equal(draft.removedAdditionalDetails?.length, 1);
+  draft = undoRemoveAdditionalStepDetail(draft);
+  assert.equal(draft.removedAdditionalDetails, undefined);
+
+  const savedStep = JSON.parse(JSON.stringify({
+    ...originalStep,
+    ...buildStepDetailFields(draft),
+  })) as RoutineStep;
+  const reopened = createStepDetailDraft(savedStep);
+
+  assert.deepEqual(reopened.additionalDetails, originalDraft.additionalDetails);
+  assert.deepEqual(reopened.detailHtml, originalDraft.detailHtml);
+  assert.deepEqual(reopened.detailSpeech, originalDraft.detailSpeech);
+  assert.deepEqual(reopened.detailAttachments, originalDraft.detailAttachments);
+  assert.equal(reopened.detailAttachments[1][0].id, 'first-file');
+  assert.equal(reopened.detailAttachments[3][0].id, 'last-file');
+});
+
 test('editing a step appends files to the selected detail and preserves them after save and reopen', () => {
   const photo = {
     id: 'photo-1', name: 'before.png', uri: 'file:///old/before.png',
