@@ -22,6 +22,7 @@ import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEdi
 import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
 import { moveRoutineStep } from '@/lib/routineStepOrdering';
+import { copyRoutineSteps, filterRoutineSourcesForStepCopy } from '@/lib/copyRoutine';
 import {
   addAdditionalStepDetail,
   buildStepDetailFields,
@@ -90,9 +91,28 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [stepSourcePickerOpen, setStepSourcePickerOpen] = useState(false);
+  const [stepSourceQuery, setStepSourceQuery] = useState('');
+  const [stepCopyMessage, setStepCopyMessage] = useState('');
 
   const canSave = useMemo(() => title.trim().length > 0 && steps.length > 0, [title, steps.length]);
   const existingCategories = listRoutineCategories(routines);
+  const routineStepSources = useMemo(
+    () => filterRoutineSourcesForStepCopy(routines, skills, stepSourceQuery),
+    [routines, skills, stepSourceQuery],
+  );
+
+  function addStepsFromRoutine(source: Routine) {
+    const copiedSteps = copyRoutineSteps(source, steps, () =>
+      `${Date.now().toString()}-${Math.random().toString(36).slice(2, 9)}`,
+    );
+    setSteps(current => [...current, ...copiedSteps]);
+    setStepCopyMessage(
+      `${copiedSteps.length} ${copiedSteps.length === 1 ? 'step' : 'steps'} from ${source.title} added. You can edit or remove them below.`,
+    );
+    setError('');
+    void Haptics.selectionAsync();
+  }
 
   function clearStepDraft() {
     setEditingStepId(null);
@@ -390,6 +410,75 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           </View>
         ) : null}
 
+        {!editingRoutine ? (
+          <View style={[styles.copyStepsPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${stepSourcePickerOpen ? 'Close' : 'Open'} copy steps from another routine`}
+              accessibilityState={{ expanded: stepSourcePickerOpen }}
+              testID="toggle-copy-routine-steps"
+              disabled={saving}
+              onPress={() => setStepSourcePickerOpen(open => !open)}
+              style={({ pressed }) => [styles.copyStepsToggle, pressed && styles.pressed]}
+            >
+              <Ionicons name="copy-outline" size={18} color={colors.primary} />
+              <Text style={[styles.copyStepsTitle, { color: colors.foreground }]}>
+                Copy steps from another routine
+              </Text>
+              <Ionicons name={stepSourcePickerOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
+            </Pressable>
+            {stepSourcePickerOpen ? (
+              <View style={styles.copyStepsContent}>
+                <Text style={[styles.copyStepsHint, { color: colors.mutedForeground }]}>
+                  Search routine names, categories, steps, descriptions, or skills.
+                </Text>
+                <TextInput
+                  accessibilityLabel="Search routines and steps"
+                  testID="copy-routine-steps-search"
+                  value={stepSourceQuery}
+                  onChangeText={setStepSourceQuery}
+                  placeholder="Search routines and steps"
+                  placeholderTextColor={colors.mutedForeground}
+                  returnKeyType="search"
+                  style={[styles.copyStepsSearch, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]}
+                />
+                {routineStepSources.length ? routineStepSources.map(source => (
+                  <View key={source.id} style={[styles.copySource, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                    <View style={styles.copySourceInfo}>
+                      <Text style={[styles.copySourceName, { color: colors.foreground }]}>{source.title}</Text>
+                      <Text style={[styles.copySourceMeta, { color: colors.mutedForeground }]}>
+                        {source.category ? `${source.category} · ` : ''}{source.steps.length} {source.steps.length === 1 ? 'step' : 'steps'}{source.hidden ? ' · Hidden' : ''}
+                      </Text>
+                      <Text style={[styles.copySourcePreview, { color: colors.mutedForeground }]} numberOfLines={2}>
+                        {source.steps.map(step => step.title).join(' · ')}
+                      </Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add all ${source.steps.length} steps from ${source.title}`}
+                      testID={`copy-steps-from-${source.id}`}
+                      disabled={saving}
+                      onPress={() => addStepsFromRoutine(source)}
+                      style={({ pressed }) => [styles.copySourceButton, { backgroundColor: colors.primary }, pressed && styles.pressed]}
+                    >
+                      <Text style={[styles.copySourceButtonText, { color: colors.primaryForeground }]}>Add steps</Text>
+                    </Pressable>
+                  </View>
+                )) : (
+                  <Text style={[styles.copyStepsEmpty, { color: colors.mutedForeground }]}>
+                    {routines.length ? 'No routines match that search.' : 'Create a routine first to copy its steps.'}
+                  </Text>
+                )}
+              </View>
+            ) : null}
+            {stepCopyMessage ? (
+              <Text accessibilityLiveRegion="polite" testID="copied-routine-steps-message" style={[styles.copyStepsMessage, { color: colors.success }]}>
+                {stepCopyMessage}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
         <View style={styles.stepsHeader}>
           <Text style={[styles.label, { color: colors.inkSoft, marginBottom: 0 }]}>Steps</Text>
           <Text style={[styles.stepCount, { color: colors.mutedForeground }]}>{steps.length} added</Text>
@@ -677,6 +766,21 @@ const styles = StyleSheet.create({
   categorySuggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 3 },
   categorySuggestion: { borderRadius: 16, paddingHorizontal: 12, minHeight: 32, justifyContent: 'center' },
   categorySuggestionText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  copyStepsPanel: { borderWidth: 1, borderRadius: 15, marginTop: 14, padding: 12 },
+  copyStepsToggle: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  copyStepsTitle: { flex: 1, fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  copyStepsContent: { paddingTop: 8 },
+  copyStepsHint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  copyStepsSearch: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontFamily: 'Inter_400Regular', fontSize: 14, marginBottom: 9 },
+  copySource: { borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 8 },
+  copySourceInfo: { marginBottom: 7 },
+  copySourceName: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  copySourceMeta: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 2 },
+  copySourcePreview: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15, marginTop: 3 },
+  copySourceButton: { minHeight: 36, alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  copySourceButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  copyStepsEmpty: { fontFamily: 'Inter_400Regular', fontSize: 13, paddingVertical: 8 },
+  copyStepsMessage: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8 },
   stepsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 9 },
   stepCount: { fontFamily: 'Inter_400Regular', fontSize: 13 },
   stepComposer: { borderWidth: 1, borderRadius: 15, padding: 8, marginBottom: 10 },
