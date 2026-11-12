@@ -33,6 +33,7 @@ import {
   createEmptyStepDetailDraft,
   createStepDetailDraft,
   removeAdditionalStepDetail,
+  undoRemoveAdditionalStepDetail,
   setStepDetailSpeech as setDraftDetailSpeech,
   addStepDetailAttachment,
   removeStepDetailAttachment,
@@ -796,6 +797,19 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
               </View>
             </View>
           ))}
+          {stepDetailDraft.removedAdditionalDetail ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Undo removing the last additional detail"
+              testID="undo-remove-step-detail"
+              disabled={saving}
+              onPress={() => setStepDetailDraft((current) => undoRemoveAdditionalStepDetail(current))}
+              style={({ pressed }) => [styles.undoDetailButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="arrow-undo-outline" size={17} color={colors.primary} />
+              <Text style={[styles.addDetailText, { color: colors.primary }]}>Undo removed detail</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Add another step detail"
@@ -1021,6 +1035,7 @@ const styles = StyleSheet.create({
   additionalDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 7 },
   additionalDetailInput: { flex: 1, marginHorizontal: 6 },
   removeDetailButton: { width: 34, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  undoDetailButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 4, marginLeft: 8, paddingHorizontal: 4 },
   addDetailButton: { minHeight: 38, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginTop: 4, marginLeft: 8, paddingHorizontal: 4 },
   addDetailText: { fontFamily: 'Inter_500Medium', fontSize: 13 },
   durationComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, paddingBottom: 4, paddingTop: 5 },

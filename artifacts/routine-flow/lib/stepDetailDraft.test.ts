@@ -11,6 +11,7 @@ import {
   setStepDetailHtml,
   setStepDetailSpeech,
   updateAdditionalStepDetail,
+  undoRemoveAdditionalStepDetail,
 } from './stepDetailDraft';
 import { moveRoutineStep } from './routineStepOrdering';
 import { getSkillAssociations } from './skills';
@@ -160,6 +161,44 @@ test('reordering additional notes keeps each formatted link with its note after 
   assert.deepEqual(reopened.detailSpeech, [true, true, true, false]);
   assert.equal(moveAdditionalStepDetail(draft, 0, -1), draft);
   assert.deepEqual(originalStep.additionalDetails, ['First note', 'Second note', 'Third note']);
+});
+
+test('undoing removal restores a formatted detail with speech choice and attachments', () => {
+  const attachment = {
+    id: 'removed-file',
+    name: 'instructions.pdf',
+    uri: 'file:///instructions.pdf',
+    mimeType: 'application/pdf',
+    kind: 'document' as const,
+    contentBase64: 'JVBERi0=',
+  };
+  const originalStep: RoutineStep = {
+    id: 'practice',
+    title: 'Practice',
+    description: 'Main guide',
+    additionalDetails: ['First note', 'Open the linked instructions', 'Last note'],
+    detailSpeech: [true, false, false, true],
+    detailAttachments: [[], [], [attachment], []],
+    detailHtml: [
+      '',
+      '<p>First note</p>',
+      '<p><a href="https://example.com/instructions">Open the linked instructions</a></p>',
+      '',
+    ],
+    durationSeconds: 60,
+  };
+  const originalDraft = createStepDetailDraft(originalStep);
+  const removedDraft = removeAdditionalStepDetail(originalDraft, 1);
+  const restoredDraft = undoRemoveAdditionalStepDetail(removedDraft);
+  const saved = buildStepDetailFields(restoredDraft);
+
+  assert.deepEqual(restoredDraft, originalDraft);
+  assert.deepEqual(saved.additionalDetails, originalStep.additionalDetails);
+  assert.deepEqual(saved.detailSpeech, originalStep.detailSpeech);
+  assert.deepEqual(saved.detailAttachments, originalStep.detailAttachments);
+  assert.deepEqual(saved.detailHtml, originalStep.detailHtml);
+  assert.equal(removedDraft.additionalDetails.length, 2);
+  assert.equal(undoRemoveAdditionalStepDetail(originalDraft), originalDraft);
 });
 
 test('editing a step appends files to the selected detail and preserves them after save and reopen', () => {

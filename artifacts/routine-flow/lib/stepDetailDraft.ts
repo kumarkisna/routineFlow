@@ -7,6 +7,13 @@ export type StepDetailDraft = {
   detailSpeech: boolean[];
   detailAttachments: StepDetailAttachment[][];
   detailHtml: string[];
+  removedAdditionalDetail?: {
+    index: number;
+    text: string;
+    speak: boolean;
+    attachments: StepDetailAttachment[];
+    html: string;
+  };
 };
 
 export function createEmptyStepDetailDraft(): StepDetailDraft {
@@ -86,11 +93,36 @@ export function removeAdditionalStepDetail(draft: StepDetailDraft, index: number
   if (!Number.isInteger(index) || index < 0 || index >= draft.additionalDetails.length) return draft;
   return {
     ...draft,
+    removedAdditionalDetail: {
+      index,
+      text: draft.additionalDetails[index],
+      speak: draft.detailSpeech[index + 1] ?? true,
+      attachments: [...(draft.detailAttachments[index + 1] ?? [])],
+      html: draft.detailHtml[index + 1] ?? '',
+    },
     additionalDetails: draft.additionalDetails.filter((_, detailIndex) => detailIndex !== index),
     detailSpeech: draft.detailSpeech.filter((_, speechIndex) => speechIndex !== index + 1),
     detailAttachments: draft.detailAttachments.filter((_, detailIndex) => detailIndex !== index + 1),
     detailHtml: draft.detailHtml.filter((_, detailIndex) => detailIndex !== index + 1),
   };
+}
+
+export function undoRemoveAdditionalStepDetail(draft: StepDetailDraft): StepDetailDraft {
+  const removed = draft.removedAdditionalDetail;
+  if (!removed) return draft;
+
+  const index = Math.max(0, Math.min(removed.index, draft.additionalDetails.length));
+  const additionalDetails = [...draft.additionalDetails];
+  const detailSpeech = [...draft.detailSpeech];
+  const detailAttachments = [...draft.detailAttachments];
+  const detailHtml = [...draft.detailHtml];
+  additionalDetails.splice(index, 0, removed.text);
+  detailSpeech.splice(index + 1, 0, removed.speak);
+  detailAttachments.splice(index + 1, 0, [...removed.attachments]);
+  detailHtml.splice(index + 1, 0, removed.html);
+
+  const { removedAdditionalDetail: _removedAdditionalDetail, ...rest } = draft;
+  return { ...rest, additionalDetails, detailSpeech, detailAttachments, detailHtml };
 }
 
 export function buildStepDetailFields(draft: StepDetailDraft) {
