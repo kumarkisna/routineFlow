@@ -90,6 +90,33 @@ const skills = [
   { id: 'care', name: 'Care' },
 ];
 
+test('copy routine empty states distinguish search from filters and let filters be cleared', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+
+  await page.addInitScript(({ routines, skills }) => {
+    localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/skills', JSON.stringify(skills));
+    localStorage.setItem('@routine-flow/playlists', '[]');
+  }, { routines: sourceRoutines, skills });
+
+  await page.goto('/new-routine');
+  await page.getByLabel('Routine name').fill('My garden routine');
+  await page.getByTestId('toggle-copy-routine-steps').click();
+
+  await page.getByTestId('copy-routine-steps-search').fill('nothing matches');
+  await expect(page.getByText('No routines match that search.', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('clear-copy-routine-filters')).toHaveCount(0);
+
+  await page.getByTestId('copy-routine-steps-search').fill('');
+  await page.getByTestId('copy-category-filter-work').click();
+  await page.getByTestId('copy-skill-filter-care').click();
+  await expect(page.getByText('No routines match category “Work” and skill “Care”.', { exact: true })).toBeVisible();
+  await page.getByTestId('clear-copy-routine-filters').click();
+  await expect(page.getByTestId('choose-steps-from-watering-outside-category')).toBeVisible();
+  await expect(page.getByTestId('choose-steps-from-garden-flow')).toBeVisible();
+});
+
 test('copy step filters, search, selection, details, and speech preview stay scoped', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
 

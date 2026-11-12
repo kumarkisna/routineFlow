@@ -122,6 +122,16 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
         || routine.steps.some(step => (step.skillIds ?? []).includes(copySkillFilter))),
     [routines, skills, stepSourceQuery, copyCategoryFilter, copySkillFilter, editingRoutine?.id],
   );
+  const hasOtherRoutines = routines.some(routine => routine.id !== editingRoutine?.id);
+  const activeCopyFilters = [
+    copyCategoryFilter ? `category “${copyCategoryFilter}”` : '',
+    copySkillFilter ? `skill “${skills.find(skill => skill.id === copySkillFilter)?.name ?? 'selected skill'}”` : '',
+  ].filter(Boolean);
+  const copyStepsEmptyMessage = !hasOtherRoutines
+    ? editingRoutine ? 'Create another routine first to copy its steps.' : 'Create a routine first to copy its steps.'
+    : activeCopyFilters.length
+      ? `No routines match ${stepSourceQuery.trim() ? `“${stepSourceQuery.trim()}” with ` : ''}${activeCopyFilters.join(' and ')}.`
+      : 'No routines match that search.';
 
   function addStepsFromRoutine(source: Routine, selectedStepIds?: string[]) {
     const copiedSteps = copyRoutineSteps(source, steps, () =>
@@ -647,11 +657,25 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                     </View>
                   );
                 }) : (
-                  <Text style={[styles.copyStepsEmpty, { color: colors.mutedForeground }]}>
-                    {routines.some(routine => routine.id !== editingRoutine?.id)
-                      ? 'No routines match that search.'
-                      : editingRoutine ? 'Create another routine first to copy its steps.' : 'Create a routine first to copy its steps.'}
-                  </Text>
+                  <View>
+                    <Text style={[styles.copyStepsEmpty, { color: colors.mutedForeground }]}>
+                      {copyStepsEmptyMessage}
+                    </Text>
+                    {hasOtherRoutines && activeCopyFilters.length ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Clear category and skill filters"
+                        testID="clear-copy-routine-filters"
+                        onPress={() => {
+                          setCopyCategoryFilter('');
+                          setCopySkillFilter('');
+                        }}
+                        style={({ pressed }) => [pressed && styles.pressed]}
+                      >
+                        <Text style={[styles.copyActionText, { color: colors.primary }]}>Clear filters</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 )}
               </View>
             ) : null}
