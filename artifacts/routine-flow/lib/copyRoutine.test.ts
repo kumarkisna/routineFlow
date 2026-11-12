@@ -70,3 +70,12 @@ test('copies only selected source steps while preserving their order and data', 
   assert.notEqual(copied[0].id, 'stretch');
   assert.equal(routine.steps.length, 2);
 });
+
+test('copies exactly the selected visible step IDs in source order', () => {
+  const ids = ['copy-1', 'copy-2'];
+  const copied = copyRoutineSteps(routine, [], () => ids.shift()!, ['stretch', 'breathe']);
+
+  assert.deepEqual(copied.map(step => step.title), ['Breathe slowly', 'Stretch gently']);
+  assert.deepEqual(copied.map(step => step.id), ['copy-1', 'copy-2']);
+  assert.deepEqual(routine.steps.map(step => step.id), ['breathe', 'stretch']);
+});
