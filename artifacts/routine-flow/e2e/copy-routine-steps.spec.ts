@@ -362,6 +362,61 @@ test('copied steps can be edited and reopened without changing their source', as
   await expect(page.getByTestId('rich-detail-web-input')).toHaveValue(sourceStep.description ?? '');
 });
 
+test('two copies of the same step remain independent after editing and reopening', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+
+  const originalStep = sourceRoutines[0].steps[0];
+  await page.addInitScript(({ routines, skills }) => {
+    localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/skills', JSON.stringify(skills));
+    localStorage.setItem('@routine-flow/playlists', '[]');
+  }, { routines: sourceRoutines, skills });
+
+  await page.goto('/new-routine');
+  await page.getByLabel('Routine name').fill('Two independent herb steps');
+  await page.getByTestId('toggle-copy-routine-steps').click();
+
+  for (let copy = 0; copy < 2; copy += 1) {
+    await page.getByTestId('choose-steps-from-garden-flow').click();
+    await page.getByTestId('select-copy-step-garden-flow-water-herbs').click();
+    await page.getByTestId('copy-selected-steps-garden-flow').click();
+  }
+
+  await expect(page.getByText('Water the herbs', { exact: true })).toHaveCount(2);
+  await page.getByLabel('Edit Water the herbs').first().click();
+  await page.getByLabel('Edit routine step').fill('Water the raised beds');
+  await page.getByLabel('Step details').fill('Instructions for the raised beds');
+  await page.getByLabel('Update step').click();
+  await page.getByLabel('Save routine').click();
+  await expect(page.getByText('Water the raised beds', { exact: true })).toBeVisible();
+
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]') as Routine[]);
+  const source = saved.find(routine => routine.id === 'garden-flow')!;
+  const destination = saved.find(routine => routine.title === 'Two independent herb steps')!;
+  const editedCopy = destination.steps.find(step => step.title === 'Water the raised beds')!;
+  const unchangedCopy = destination.steps.find(step => step.id !== editedCopy.id)!;
+  const { id: _sourceStepId, ...originalContent } = originalStep;
+  expect(destination.steps).toHaveLength(2);
+  expect(new Set(destination.steps.map(step => step.id)).size).toBe(2);
+  expect(editedCopy.id).not.toBe(originalStep.id);
+  expect(unchangedCopy).toMatchObject(originalContent);
+  expect(source.steps[0]).toMatchObject(originalStep);
+
+  await page.getByTestId('edit-routine').click();
+  await expect(page.getByText('Edit routine', { exact: true })).toBeVisible();
+  await page.getByLabel('Edit Water the herbs').click();
+  await expect(page.getByLabel('Edit routine step')).toHaveValue(originalStep.title);
+  await expect(page.getByLabel('Step details')).toHaveValue(originalStep.description ?? '');
+
+  await page.goto('/routine/garden-flow');
+  await page.getByTestId('edit-routine').click();
+  await expect(page.getByText('Edit routine', { exact: true })).toBeVisible();
+  await page.getByLabel('Edit Water the herbs').click();
+  await expect(page.getByLabel('Edit routine step')).toHaveValue(originalStep.title);
+  await expect(page.getByLabel('Step details')).toHaveValue(originalStep.description ?? '');
+});
+
 test('playlist summary shows and speaks selected steps out of each routine total', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
 
