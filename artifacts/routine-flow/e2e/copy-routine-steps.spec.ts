@@ -248,3 +248,46 @@ test('editing a routine can copy and inspect steps from another routine', async 
   expect(destination.steps[3].id).not.toBe('prune-herbs');
   expect(saved.filter(routine => routine.id !== 'garden-flow')).toEqual(sourceRoutines.filter(routine => routine.id !== 'garden-flow'));
 });
+
+test('playlist summary shows and speaks selected steps out of each routine total', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+
+  await page.addInitScript(({ routines, skills }) => {
+    localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/skills', JSON.stringify(skills));
+    localStorage.setItem('@routine-flow/playlists', JSON.stringify([{
+      id: 'partial-morning',
+      title: 'Partial morning',
+      routineIds: ['garden-flow'],
+      stepSelections: [{
+        routineId: 'garden-flow',
+        steps: [{ stepId: 'water-herbs', durationSeconds: 60 }],
+      }],
+    }]));
+
+    const testWindow = window as unknown as { __routineSpeechTexts: string[] };
+    testWindow.__routineSpeechTexts = [];
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        getVoices: () => [],
+        speak: (utterance: SpeechSynthesisUtterance) => testWindow.__routineSpeechTexts.push(utterance.text),
+        cancel: () => undefined,
+        pause: () => undefined,
+        resume: () => undefined,
+        get speaking() { return false; },
+        get pending() { return false; },
+        get paused() { return false; },
+        onvoiceschanged: null,
+      },
+    });
+  }, { routines: sourceRoutines, skills });
+
+  await page.goto('/playlists');
+  await expect(page.getByText('1. Garden flow · 1 of 3 steps selected', { exact: true })).toBeVisible();
+  await page.getByTestId('speak-playlist-partial-morning').click();
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { __routineSpeechTexts: string[] }).__routineSpeechTexts,
+  )).toEqual(expect.arrayContaining([expect.stringContaining('Garden flow, 1 of 3 steps selected')]));
+});

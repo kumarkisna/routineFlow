@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createPlaylistRunLaunch, getPlaylistDurationSeconds, getPlaylistRunEntries, getPlaylistSpeechSteps, mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylistStepQueue, parsePlaylists, playablePlaylistIds,
+import { createPlaylistRunLaunch, getPlaylistDurationSeconds, getPlaylistRoutineStepCounts, getPlaylistRunEntries, getPlaylistSpeechSteps, mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylistStepQueue, parsePlaylists, playablePlaylistIds,
   remapPlaylistReferences, resolvePlaylistReminderSettings, validatePlaylist } from './playlists';
 import type { Routine } from '../types/routines';
 import { getNextRoutineStepIndex, getPlayableRoutine, getRoutinePlaybackStep, getRoutinePlaybackStepSeconds } from './routinePlayback';
@@ -11,6 +11,28 @@ const routine = (id: string, hidden = false, hiddenStep = false): Routine => ({
   id, title: id, subtitle: '', icon: 'sunny-outline', tone: 'coral',
   createdAt: '', hidden, steps: [{ id: `${id}-step`, title: 'Step', durationSeconds: 1, hidden: hiddenStep }],
 });
+test('playlist step summaries count selected visible steps against all visible routine steps', () => {
+  const source: Routine = {
+    ...routine('source'),
+    steps: [
+      { id: 'first', title: 'First', durationSeconds: 1 },
+      { id: 'hidden', title: 'Hidden', durationSeconds: 1, hidden: true },
+      { id: 'last', title: 'Last', durationSeconds: 1 },
+    ],
+  };
+  assert.deepEqual(
+    getPlaylistRoutineStepCounts({
+      routineIds: ['source'],
+      stepSelections: [{ routineId: 'source', steps: [{ stepId: 'last', durationSeconds: 1 }] }],
+    }, [source]),
+    [{ routineId: 'source', selectedSteps: 1, totalSteps: 2 }],
+  );
+  assert.deepEqual(
+    getPlaylistRoutineStepCounts({ routineIds: ['source'] }, [source]),
+    [{ routineId: 'source', selectedSteps: 2, totalSteps: 2 }],
+  );
+});
+
 test('playlist runs retain order and repeats, excluding missing or inactive routines', () => {
   assert.deepEqual(playablePlaylistIds(['b', 'gone', 'a', 'hidden', 'empty', 'b'],
     [routine('a'), routine('b'), routine('hidden', true), routine('empty', false, true)]),

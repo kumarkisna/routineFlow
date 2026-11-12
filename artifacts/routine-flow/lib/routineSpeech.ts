@@ -3,7 +3,7 @@ import { getSpokenStepDetails, getStepSeconds } from '../types/routines';
 import type { RoutineSkill } from './skills';
 import { getRoutinePlaybackStep } from './routinePlayback';
 import { detailHtmlToText } from './stepDetailHtml';
-import { getPlaylistRunEntries, type RoutinePlaylist } from './playlists';
+import { getPlaylistRoutineStepCounts, getPlaylistRunEntries, type RoutinePlaylist } from './playlists';
 
 export type RoutineSpeechResult = 'finished' | 'cancelled' | 'error';
 
@@ -125,9 +125,11 @@ export function buildPlaylistAnnouncement(
 ) {
   const entries = getPlaylistRunEntries(playlist, routines);
   const names = skillNames(playlist.skillIds, skills);
-  const routineNames = entries.flatMap(entry => {
-    const routine = routines.find(item => item.id === entry.routineId);
-    return routine ? [routine.title] : [];
+  const routineSummaries = getPlaylistRoutineStepCounts(playlist, routines).flatMap(count => {
+    if (count.selectedSteps === 0 || count.totalSteps === 0) return [];
+    const routine = routines.find(item => item.id === count.routineId);
+    if (!routine || routine.hidden) return [];
+    return [`${routine.title}, ${count.selectedSteps} of ${count.totalSteps} ${count.totalSteps === 1 ? 'step' : 'steps'} selected`];
   });
   const totalSeconds = entries.reduce(
     (total, entry) => total + entry.steps.reduce((sum, step) => sum + getStepSeconds(step), 0),
@@ -135,7 +137,7 @@ export function buildPlaylistAnnouncement(
   );
   const summary = [`Playlist ${playlist.title}.`];
   if (names.length) summary.push(`Skills: ${names.join(', ')}.`);
-  if (routineNames.length) summary.push(`Routines: ${routineNames.join(', ')}.`);
+  if (routineSummaries.length) summary.push(`Routines: ${routineSummaries.join('; ')}.`);
   summary.push(`Estimated duration: ${describeDuration(totalSeconds)}.`);
   return summary.join(' ');
 }

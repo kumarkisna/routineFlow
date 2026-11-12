@@ -70,6 +70,29 @@ export function getPlaylistRunEntries(playlist: Pick<RoutinePlaylist, 'routineId
   });
 }
 
+export function getPlaylistRoutineStepCounts(
+  playlist: Pick<RoutinePlaylist, 'routineIds' | 'stepSelections'>,
+  routines: Routine[],
+): { routineId: string; selectedSteps: number; totalSteps: number }[] {
+  return playlist.routineIds.map((routineId, index) => {
+    const routine = routines.find(item => item.id === routineId);
+    const visibleIds = new Set(routine && !routine.hidden
+      ? routine.steps.filter(step => !step.hidden).map(step => step.id)
+      : []);
+    const selection = playlist.stepSelections?.[index];
+    const selectedIds = playlist.stepSelections === undefined
+      ? [...visibleIds]
+      : selection?.routineId === routineId
+        ? selection.steps.map(step => step.stepId)
+        : [];
+    return {
+      routineId,
+      selectedSteps: new Set(selectedIds.filter(stepId => visibleIds.has(stepId))).size,
+      totalSteps: visibleIds.size,
+    };
+  });
+}
+
 export function getPlaylistDurationSeconds(playlist: Pick<RoutinePlaylist, 'routineIds' | 'stepSelections'>, routines: Routine[]): number {
   return getPlaylistRunEntries(playlist, routines).reduce(
     (total, entry) => total + entry.steps.reduce((sum, step) => sum + getStepSeconds(step), 0),

@@ -112,10 +112,11 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     const r = routines.find((x) => x.id === rid);
     if (!r || r.hidden) return null;
     const visible = new Set(r.steps.filter(step => !step.hidden).map(step => step.id));
-    const secs = (selection?.steps ?? r.steps.filter(step => !step.hidden).map(step => ({ stepId: step.id, durationSeconds: getStepSeconds(step) })))
-      .filter(step => visible.has(step.stepId))
+    const selected = (selection?.steps ?? r.steps.filter(step => !step.hidden).map(step => ({ stepId: step.id, durationSeconds: getStepSeconds(step) })))
+      .filter(step => visible.has(step.stepId));
+    const secs = selected
       .reduce((sum, step) => sum + step.durationSeconds, 0);
-    return { title: r.title, secs };
+    return { title: r.title, secs, selectedSteps: selected.length, totalSteps: visible.size };
   }
   function move(i: number, d: -1 | 1) {
     setEntries((cur) => {
@@ -316,7 +317,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.entryTitle, { color: r ? colors.foreground : colors.mutedForeground }]} numberOfLines={2}>{name}</Text>
                   <Text style={[styles.count, { color: colors.mutedForeground }]}>
-                    {r ? `${entry.steps.filter(step => source?.steps.some(item => item.id === step.stepId && !item.hidden)).length} steps · ${formatDuration(r.secs)}` : 'Hidden or missing · skipped when run'}
+                    {r ? `${r.selectedSteps} of ${r.totalSteps} ${r.totalSteps === 1 ? 'step' : 'steps'} · ${formatDuration(r.secs)}` : 'Hidden or missing · skipped when run'}
                   </Text>
                 </View>
                 <Pressable accessibilityRole="button" accessibilityLabel={`Move ${name} up`} testID={`move-playlist-up-${i}`} disabled={i === 0 || busy} onPress={() => move(i, -1)} style={styles.act}>

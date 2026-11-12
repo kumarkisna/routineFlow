@@ -136,7 +136,7 @@ test('playlist overview speaks linked skills, playable routine order, and select
   const playlistBefore = structuredClone(savedPlaylist);
   assert.equal(
     buildPlaylistAnnouncement(savedPlaylist, [routine], renamedSkills),
-    'Playlist Start the day. Skills: Sustained focus. Routines: Morning reset. Estimated duration: 2 minutes.',
+    'Playlist Start the day. Skills: Sustained focus. Routines: Morning reset, 1 of 2 steps selected. Estimated duration: 2 minutes.',
   );
   assert.deepEqual(routine, savedRoutine);
   assert.deepEqual(savedPlaylist, playlistBefore);

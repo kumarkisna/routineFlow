@@ -14,7 +14,7 @@ import { SkillTagList } from '@/components/SkillPicker';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { useSkills } from '@/context/SkillContext';
 import { buildPlaylistAnnouncement, buildStepAnnouncement, getSpeechResumeMode } from '@/lib/routineSpeech';
-import { createPlaylistRunLaunch, getPlaylistDurationSeconds, getPlaylistRunEntries, getPlaylistSpeechSteps, type RoutinePlaylist } from '@/lib/playlists';
+import { createPlaylistRunLaunch, getPlaylistDurationSeconds, getPlaylistRoutineStepCounts, getPlaylistRunEntries, getPlaylistSpeechSteps, type RoutinePlaylist } from '@/lib/playlists';
 import { formatDuration } from '@/types/routines';
 
 export default function PlaylistsScreen() {
@@ -252,6 +252,7 @@ export default function PlaylistsScreen() {
         }
         renderItem={({ item }) => {
           const playable = getPlaylistRunEntries(item, routines);
+          const stepCounts = getPlaylistRoutineStepCounts(item, routines);
           const confirming = pendingDelete === item.id;
           const expanded = disclosure.isExpanded(item.id);
           return (
@@ -274,9 +275,17 @@ export default function PlaylistsScreen() {
                   {playable.length < item.routineIds.length ? ` · ${item.routineIds.length - playable.length} unavailable` : ''}
                 </Text>
                 <View style={{ marginTop: 8 }}>
-                  {item.routineIds.slice(0, 4).map((id, i) => (
-                    <Text key={`${id}-${i}`} style={[styles.preview, { color: colors.mutedForeground }]} numberOfLines={1}>{i + 1}. {title(id)}</Text>
-                  ))}
+                  {item.routineIds.slice(0, 4).map((id, i) => {
+                    const count = stepCounts[i];
+                    const selectedSteps = count && count.totalSteps > 0
+                      ? ` · ${count.selectedSteps} of ${count.totalSteps} ${count.totalSteps === 1 ? 'step' : 'steps'} selected`
+                      : '';
+                    return (
+                      <Text key={`${id}-${i}`} style={[styles.preview, { color: colors.mutedForeground }]} numberOfLines={2}>
+                        {i + 1}. {title(id)}{selectedSteps}
+                      </Text>
+                    );
+                  })}
                   {item.routineIds.length > 4 ? <Text style={[styles.preview, { color: colors.mutedForeground }]}>+{item.routineIds.length - 4} more</Text> : null}
                 </View>
               </> : null}
