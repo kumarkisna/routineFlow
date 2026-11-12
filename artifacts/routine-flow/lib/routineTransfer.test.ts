@@ -10,6 +10,7 @@ import {
   parseRoutinesFile,
   persistImportedBackup,
   repairStoredRoutineDurations,
+  ROUTINE_BACKUP_VERSION,
   serializeAllPeopleBackup,
   serializePersonBackup,
   serializeRoutines,
@@ -385,6 +386,25 @@ test('routine backup import preserves safe formatted links and removes unsafe ta
   assert.deepEqual(source.steps[0].detailHtml, [
     '<p><a href="https://example.com/guide">Read the guide</a> · <a href="mailto:team@example.com">Email the team</a> · <a href="javascript:run()">Unsafe link</a></p>',
   ]);
+});
+
+test('older routine backup versions sanitize formatted step links consistently', () => {
+  const source = routine('older-link-backup');
+  source.steps[0].description = 'Read the guide or email the team.';
+  source.steps[0].detailHtml = [
+    '<p><a href="https://example.com/guide">Read the guide</a> <a href="mailto:team@example.com">Email the team</a> <a href="javascript:run()">Unsafe link</a></p>',
+  ];
+  const expectedHtml =
+    '<p><a href="https://example.com/guide">Read the guide</a> <a href="mailto:team@example.com">Email the team</a> <a>Unsafe link</a></p>';
+
+  for (let version = 1; version < ROUTINE_BACKUP_VERSION; version += 1) {
+    const imported = parseRoutinesFile(backup(version, [source]));
+    const detailHtml = imported.routines[0].steps[0].detailHtml?.[0] ?? '';
+    assert.equal(detailHtml, expectedHtml, `backup version ${version}`);
+    assert.match(detailHtml, /href="https:\/\/example\.com\/guide"/, `backup version ${version}`);
+    assert.match(detailHtml, /href="mailto:team@example\.com"/, `backup version ${version}`);
+    assert.doesNotMatch(detailHtml, /javascript:/i, `backup version ${version}`);
+  }
 });
 
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
