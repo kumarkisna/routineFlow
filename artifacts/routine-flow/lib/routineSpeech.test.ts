@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { Routine } from '../types/routines';
 import {
   buildStepAnnouncement,
+  buildPlaylistAnnouncement,
   getSpeechResumeMode,
   RoutineSpeechQueue,
   type RoutineSpeechOptions,
@@ -119,6 +120,26 @@ test('playlist-start speech uses the current renamed playlist, routine, and step
     'Playlist Start the day. Skills: Sustained focus. Routine Morning reset. Skills: Sustained focus. Step 1. Drink a glass of water. Skills: Sustained focus. You have 1 minute.',
   );
   assert.deepEqual(playlist.skillIds, ['skill-focus']);
+});
+
+test('playlist overview speaks linked skills, playable routine order, and selected-step duration without mutation', () => {
+  const savedRoutine = structuredClone(routine);
+  const savedPlaylist = {
+    title: 'Start the day',
+    skillIds: ['skill-focus'],
+    routineIds: ['morning-reset', 'missing'],
+    stepSelections: [
+      { routineId: 'morning-reset', steps: [{ stepId: 'water', durationSeconds: 120 }] },
+      { routineId: 'missing', steps: [{ stepId: 'gone', durationSeconds: 45 }] },
+    ],
+  };
+  const playlistBefore = structuredClone(savedPlaylist);
+  assert.equal(
+    buildPlaylistAnnouncement(savedPlaylist, [routine], renamedSkills),
+    'Playlist Start the day. Skills: Sustained focus. Routines: Morning reset. Estimated duration: 2 minutes.',
+  );
+  assert.deepEqual(routine, savedRoutine);
+  assert.deepEqual(savedPlaylist, playlistBefore);
 });
 
 test('multi-skill announcements use renamed names in assignment order without repeating IDs', () => {

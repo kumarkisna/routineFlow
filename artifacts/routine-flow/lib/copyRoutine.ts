@@ -37,12 +37,15 @@ export function copyRoutineSteps(
   source: Routine,
   existingSteps: RoutineStep[],
   createId: () => string,
+  selectedStepIds?: string[],
 ): RoutineStep[] {
   const usedIds = new Set([
     ...source.steps.map(step => step.id),
     ...existingSteps.map(step => step.id),
   ]);
-  return copyRoutineStepsWithUsedIds(source, usedIds, createId);
+  const selected = selectedStepIds ? new Set(selectedStepIds) : null;
+  const steps = selected ? source.steps.filter(step => selected.has(step.id)) : source.steps;
+  return steps.map(step => cloneStep(step, createUniqueId(createId, usedIds)));
 }
 
 function copyRoutineStepsWithUsedIds(source: Routine, usedIds: Set<string>, createId: () => string): RoutineStep[] {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { filterRoutinesByStepKeywords } from './routineSearch';
+import { filterRoutineStepsByKeywords, filterRoutinesByStepKeywords } from './routineSearch';
 import type { Routine } from '../types/routines';
 
 const morning: Routine = {
@@ -45,4 +45,7 @@ test('routine search matches titles, categories, descriptions, rich text, and sk
   assert.deepEqual(filterRoutinesByStepKeywords(routines, skills, 'mindful focus'), [morning]);
   assert.deepEqual(filterRoutinesByStepKeywords(routines, skills, 'nothing matches'), []);
   assert.deepEqual(filterRoutinesByStepKeywords(routines, skills, '   '), routines);
+  assert.deepEqual(filterRoutineStepsByKeywords(morning, skills, 'shoulders').map(step => step.id), ['breathe']);
+  assert.deepEqual(filterRoutineStepsByKeywords(morning, skills, 'wellness breathwork').map(step => step.id), ['breathe']);
+  assert.deepEqual(filterRoutineStepsByKeywords(morning, skills, 'unmatched'), []);
 });

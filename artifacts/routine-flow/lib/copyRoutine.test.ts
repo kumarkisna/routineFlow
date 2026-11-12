@@ -61,3 +61,12 @@ test('copies ordered steps with fresh IDs and independent nested data', () => {
   assert.deepEqual(routine.steps[0].additionalDetails, ['Relax your shoulders']);
   assert.equal(routine.steps[0].detailAttachments?.[0]?.[0]?.name, 'breathing.png');
 });
+
+test('copies only selected source steps while preserving their order and data', () => {
+  const copied = copyRoutineSteps(routine, [], () => 'selected-copy', ['stretch']);
+  assert.equal(copied.length, 1);
+  assert.equal(copied[0].title, 'Stretch gently');
+  assert.equal(copied[0].durationSeconds, 120);
+  assert.notEqual(copied[0].id, 'stretch');
+  assert.equal(routine.steps.length, 2);
+});

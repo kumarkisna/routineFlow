@@ -7,6 +7,8 @@ A copied routine should preserve its step content, order, durations, and visibil
 
 Copied steps must remain independently editable in the new routine, without changing the source routine.
 
-**Why:** Reusing the original routine's completion identity would make a new routine appear partly finished. Independent edits let users adapt a copy without changing the source.
+When adding steps from another routine during creation, users can select individual steps or all visible choices. Category and skill filters narrow the sources, and keyword search applies within the currently filtered results; copied steps retain their existing details and settings.
 
-**How to apply:** Changes to copying, history transfer, or progress accounting should preserve step settings and order, keep each copy editable, and not carry completed steps onto a new copy unless the user explicitly requests that behavior.
+**Why:** Reusing the original routine's completion identity would make a new routine appear partly finished. Independent edits let users adapt a copy without changing the source. The user also requested selective step copying with category/skill filters and keyword search in the filtered results.
+
+**How to apply:** Changes to copying, history transfer, or progress accounting should preserve step settings and order, keep each copy editable, and not carry completed steps onto a new copy unless the user explicitly requests that behavior. For step-copy selection, retain source step order and deep-copy nested step data.

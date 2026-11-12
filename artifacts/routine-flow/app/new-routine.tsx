@@ -23,7 +23,7 @@ import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
 import { moveRoutineStep } from '@/lib/routineStepOrdering';
 import { copyRoutineSteps } from '@/lib/copyRoutine';
-import { filterRoutinesByStepKeywords } from '@/lib/routineSearch';
+import { filterRoutineStepsByKeywords, filterRoutinesByStepKeywords } from '@/lib/routineSearch';
 import {
   addAdditionalStepDetail,
   buildStepDetailFields,
@@ -95,22 +95,34 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [stepSourcePickerOpen, setStepSourcePickerOpen] = useState(false);
   const [stepSourceQuery, setStepSourceQuery] = useState('');
   const [stepCopyMessage, setStepCopyMessage] = useState('');
+  const [expandedCopySourceId, setExpandedCopySourceId] = useState<string | null>(null);
+  const [copySelectionByRoutine, setCopySelectionByRoutine] = useState<Record<string, string[]>>({});
+  const [copyCategoryFilter, setCopyCategoryFilter] = useState('');
+  const [copySkillFilter, setCopySkillFilter] = useState('');
 
   const canSave = useMemo(() => title.trim().length > 0 && steps.length > 0, [title, steps.length]);
   const existingCategories = listRoutineCategories(routines);
   const routineStepSources = useMemo(
-    () => filterRoutinesByStepKeywords(routines, skills, stepSourceQuery),
-    [routines, skills, stepSourceQuery],
+    () => filterRoutinesByStepKeywords(routines, skills, stepSourceQuery)
+      .filter(routine => !copyCategoryFilter || categoryKey(routine.category ?? '') === categoryKey(copyCategoryFilter))
+      .filter(routine => !copySkillFilter
+        || (routine.skillIds ?? []).includes(copySkillFilter)
+        || routine.steps.some(step => (step.skillIds ?? []).includes(copySkillFilter))),
+    [routines, skills, stepSourceQuery, copyCategoryFilter, copySkillFilter],
   );
 
-  function addStepsFromRoutine(source: Routine) {
+  function addStepsFromRoutine(source: Routine, selectedStepIds?: string[]) {
     const copiedSteps = copyRoutineSteps(source, steps, () =>
       `${Date.now().toString()}-${Math.random().toString(36).slice(2, 9)}`,
+      selectedStepIds,
     );
+    if (!copiedSteps.length) return;
     setSteps(current => [...current, ...copiedSteps]);
     setStepCopyMessage(
       `${copiedSteps.length} ${copiedSteps.length === 1 ? 'step' : 'steps'} from ${source.title} added. You can edit or remove them below.`,
     );
+    setCopySelectionByRoutine(current => ({ ...current, [source.id]: [] }));
+    setExpandedCopySourceId(null);
     setError('');
     void Haptics.selectionAsync();
   }
@@ -443,29 +455,106 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                   returnKeyType="search"
                   style={[styles.copyStepsSearch, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]}
                 />
-                {routineStepSources.length ? routineStepSources.map(source => (
-                  <View key={source.id} style={[styles.copySource, { borderColor: colors.border, backgroundColor: colors.background }]}>
-                    <View style={styles.copySourceInfo}>
-                      <Text style={[styles.copySourceName, { color: colors.foreground }]}>{source.title}</Text>
-                      <Text style={[styles.copySourceMeta, { color: colors.mutedForeground }]}>
-                        {source.category ? `${source.category} · ` : ''}{source.steps.length} {source.steps.length === 1 ? 'step' : 'steps'}{source.hidden ? ' · Hidden' : ''}
+                <Text style={[styles.copyFilterLabel, { color: colors.inkSoft }]}>Category</Text>
+                <View style={styles.copyFilterTabs}>
+                  {['', ...existingCategories].map(name => (
+                    <Pressable key={`category-${name || 'all'}`} accessibilityRole="button"
+                      accessibilityState={{ selected: copyCategoryFilter === name }}
+                      testID={`copy-category-filter-${name ? categoryKey(name) : 'all'}`}
+                      onPress={() => setCopyCategoryFilter(name)}
+                      style={[styles.copyFilterTab, { backgroundColor: copyCategoryFilter === name ? colors.primary : colors.secondary }]}>
+                      <Text style={[styles.copyFilterTabText, { color: copyCategoryFilter === name ? colors.primaryForeground : colors.foreground }]}>
+                        {name || 'All categories'}
                       </Text>
-                      <Text style={[styles.copySourcePreview, { color: colors.mutedForeground }]} numberOfLines={2}>
-                        {source.steps.map(step => step.title).join(' · ')}
-                      </Text>
-                    </View>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Add all ${source.steps.length} steps from ${source.title}`}
-                      testID={`copy-steps-from-${source.id}`}
-                      disabled={saving}
-                      onPress={() => addStepsFromRoutine(source)}
-                      style={({ pressed }) => [styles.copySourceButton, { backgroundColor: colors.primary }, pressed && styles.pressed]}
-                    >
-                      <Text style={[styles.copySourceButtonText, { color: colors.primaryForeground }]}>Add steps</Text>
                     </Pressable>
-                  </View>
-                )) : (
+                  ))}
+                </View>
+                {skills.length ? (
+                  <>
+                    <Text style={[styles.copyFilterLabel, { color: colors.inkSoft }]}>Skill</Text>
+                    <View style={styles.copyFilterTabs}>
+                      {[{ id: '', name: 'All skills' }, ...skills].map(skill => (
+                        <Pressable key={`skill-${skill.id || 'all'}`} accessibilityRole="button"
+                          accessibilityState={{ selected: copySkillFilter === skill.id }}
+                          testID={`copy-skill-filter-${skill.id || 'all'}`}
+                          onPress={() => setCopySkillFilter(skill.id)}
+                          style={[styles.copyFilterTab, { backgroundColor: copySkillFilter === skill.id ? colors.primary : colors.secondary }]}>
+                          <Text style={[styles.copyFilterTabText, { color: copySkillFilter === skill.id ? colors.primaryForeground : colors.foreground }]}>
+                            {skill.name}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </>
+                ) : null}
+                {routineStepSources.length ? routineStepSources.map(source => {
+                  const visibleSteps = filterRoutineStepsByKeywords(source, skills, stepSourceQuery).filter(step => !copySkillFilter
+                    || (source.skillIds ?? []).includes(copySkillFilter)
+                    || (step.skillIds ?? []).includes(copySkillFilter));
+                  const selectedIds = copySelectionByRoutine[source.id] ?? [];
+                  const expanded = expandedCopySourceId === source.id;
+                  return (
+                    <View key={source.id} style={[styles.copySource, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                      <View style={styles.copySourceInfo}>
+                        <Text style={[styles.copySourceName, { color: colors.foreground }]}>{source.title}</Text>
+                        <Text style={[styles.copySourceMeta, { color: colors.mutedForeground }]}>
+                          {source.category ? `${source.category} · ` : ''}{visibleSteps.length} matching {visibleSteps.length === 1 ? 'step' : 'steps'}{source.hidden ? ' · Hidden' : ''}
+                        </Text>
+                        <Text style={[styles.copySourcePreview, { color: colors.mutedForeground }]} numberOfLines={2}>
+                          {visibleSteps.map(step => step.title).join(' · ')}
+                        </Text>
+                      </View>
+                      <Pressable accessibilityRole="button" accessibilityState={{ expanded }}
+                        accessibilityLabel={`${expanded ? 'Close' : 'Choose'} steps from ${source.title}`}
+                        testID={`choose-steps-from-${source.id}`} disabled={saving}
+                        onPress={() => setExpandedCopySourceId(expanded ? null : source.id)}
+                        style={({ pressed }) => [styles.copySourceButton, { backgroundColor: colors.primary }, pressed && styles.pressed]}>
+                        <Text style={[styles.copySourceButtonText, { color: colors.primaryForeground }]}>{expanded ? 'Close' : 'Choose steps'}</Text>
+                      </Pressable>
+                      {expanded ? (
+                        <View style={styles.copyStepChoices}>
+                          <View style={styles.copySelectionActions}>
+                            <Pressable accessibilityRole="button" testID={`select-all-copy-steps-${source.id}`}
+                              onPress={() => setCopySelectionByRoutine(current => ({ ...current, [source.id]: visibleSteps.map(step => step.id) }))}>
+                              <Text style={[styles.copyActionText, { color: colors.primary }]}>Select all shown</Text>
+                            </Pressable>
+                            <Pressable accessibilityRole="button" testID={`clear-copy-steps-${source.id}`}
+                              onPress={() => setCopySelectionByRoutine(current => ({ ...current, [source.id]: [] }))}>
+                              <Text style={[styles.copyActionText, { color: colors.mutedForeground }]}>Clear</Text>
+                            </Pressable>
+                          </View>
+                          {visibleSteps.map(step => {
+                            const checked = selectedIds.includes(step.id);
+                            return (
+                              <Pressable key={step.id} accessibilityRole="checkbox" accessibilityState={{ checked }}
+                                accessibilityLabel={`Select step ${step.title}`}
+                                testID={`select-copy-step-${source.id}-${step.id}`}
+                                onPress={() => setCopySelectionByRoutine(current => {
+                                  const previous = current[source.id] ?? [];
+                                  return { ...current, [source.id]: checked
+                                    ? previous.filter(id => id !== step.id)
+                                    : [...previous, step.id] };
+                                })}
+                                style={[styles.copyStepChoice, { borderColor: colors.border }]}>
+                                <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={19} color={checked ? colors.primary : colors.mutedForeground} />
+                                <Text style={[styles.copyStepChoiceText, { color: colors.foreground }]}>{step.title}</Text>
+                              </Pressable>
+                            );
+                          })}
+                          <Pressable accessibilityRole="button" accessibilityLabel={`Add ${selectedIds.length} selected steps from ${source.title}`}
+                            testID={`copy-selected-steps-${source.id}`} disabled={saving || !selectedIds.length}
+                            onPress={() => addStepsFromRoutine(source, selectedIds)}
+                            style={({ pressed }) => [styles.copySourceButton, styles.copySelectedButton,
+                              { backgroundColor: selectedIds.length ? colors.primary : colors.secondary }, pressed && styles.pressed]}>
+                            <Text style={[styles.copySourceButtonText, { color: selectedIds.length ? colors.primaryForeground : colors.mutedForeground }]}>
+                              Add selected ({selectedIds.length})
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                }) : (
                   <Text style={[styles.copyStepsEmpty, { color: colors.mutedForeground }]}>
                     {routines.length ? 'No routines match that search.' : 'Create a routine first to copy its steps.'}
                   </Text>
@@ -773,6 +862,10 @@ const styles = StyleSheet.create({
   copyStepsContent: { paddingTop: 8 },
   copyStepsHint: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 17, marginBottom: 8 },
   copyStepsSearch: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontFamily: 'Inter_400Regular', fontSize: 14, marginBottom: 9 },
+  copyFilterLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12, marginTop: 4, marginBottom: 6 },
+  copyFilterTabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  copyFilterTab: { minHeight: 30, justifyContent: 'center', borderRadius: 15, paddingHorizontal: 10 },
+  copyFilterTabText: { fontFamily: 'Inter_500Medium', fontSize: 11 },
   copySource: { borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 8 },
   copySourceInfo: { marginBottom: 7 },
   copySourceName: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
@@ -780,6 +873,12 @@ const styles = StyleSheet.create({
   copySourcePreview: { fontFamily: 'Inter_400Regular', fontSize: 11, lineHeight: 15, marginTop: 3 },
   copySourceButton: { minHeight: 36, alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   copySourceButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  copyStepChoices: { marginTop: 8 },
+  copySelectionActions: { flexDirection: 'row', gap: 16, marginBottom: 4 },
+  copyActionText: { fontFamily: 'Inter_600SemiBold', fontSize: 12, paddingVertical: 5 },
+  copyStepChoice: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 9, borderBottomWidth: StyleSheet.hairlineWidth },
+  copyStepChoiceText: { flex: 1, fontFamily: 'Inter_400Regular', fontSize: 13, paddingVertical: 7 },
+  copySelectedButton: { marginTop: 8 },
   copyStepsEmpty: { fontFamily: 'Inter_400Regular', fontSize: 13, paddingVertical: 8 },
   copyStepsMessage: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8 },
   stepsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, marginBottom: 9 },

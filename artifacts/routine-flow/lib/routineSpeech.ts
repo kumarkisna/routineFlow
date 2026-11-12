@@ -3,6 +3,7 @@ import { getSpokenStepDetails, getStepSeconds } from '../types/routines';
 import type { RoutineSkill } from './skills';
 import { getRoutinePlaybackStep } from './routinePlayback';
 import { detailHtmlToText } from './stepDetailHtml';
+import { getPlaylistRunEntries, type RoutinePlaylist } from './playlists';
 
 export type RoutineSpeechResult = 'finished' | 'cancelled' | 'error';
 
@@ -115,6 +116,28 @@ function skillNames(ids: string[] | undefined, skills: RoutineSkill[]) {
   return [...new Set(ids ?? [])]
     .map(id => skills.find(skill => skill.id === id)?.name)
     .filter((name): name is string => Boolean(name));
+}
+
+export function buildPlaylistAnnouncement(
+  playlist: Pick<RoutinePlaylist, 'title' | 'routineIds' | 'stepSelections' | 'skillIds'>,
+  routines: Routine[],
+  skills: RoutineSkill[],
+) {
+  const entries = getPlaylistRunEntries(playlist, routines);
+  const names = skillNames(playlist.skillIds, skills);
+  const routineNames = entries.flatMap(entry => {
+    const routine = routines.find(item => item.id === entry.routineId);
+    return routine ? [routine.title] : [];
+  });
+  const totalSeconds = entries.reduce(
+    (total, entry) => total + entry.steps.reduce((sum, step) => sum + getStepSeconds(step), 0),
+    0,
+  );
+  const summary = [`Playlist ${playlist.title}.`];
+  if (names.length) summary.push(`Skills: ${names.join(', ')}.`);
+  if (routineNames.length) summary.push(`Routines: ${routineNames.join(', ')}.`);
+  summary.push(`Estimated duration: ${describeDuration(totalSeconds)}.`);
+  return summary.join(' ');
 }
 
 export function buildStepAnnouncement(
