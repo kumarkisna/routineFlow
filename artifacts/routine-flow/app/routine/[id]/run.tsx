@@ -30,7 +30,7 @@ import { usePlaylists } from '@/context/PlaylistContext';
 import { useColors } from '@/hooks/useColors';
 import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { Notifications } from '@/lib/localNotifications';
-import { nextPlaylistCursor, parsePlaylistQueue, playablePlaylistIds } from '@/lib/playlists';
+import { nextPlaylistCursor, parsePlaylistQueue, parsePlaylistStepQueue } from '@/lib/playlists';
 import {
   isRunKeepaliveAvailable,
   startRunKeepalive,
@@ -114,16 +114,16 @@ function parseRatingPeopleParam(value: string | string[] | undefined): string[] 
 }
 
 export default function RoutineRunScreen() {
-  const { id, cursor = '0', queue, playlistId, playlistRateSkillsAtEnd, stepReminder, routineReminder, sessionId: routeSessionId } =
+  const { id, cursor = '0', queue, stepQueue, playlistId, playlistRateSkillsAtEnd, stepReminder, routineReminder, sessionId: routeSessionId } =
     useLocalSearchParams<{ id: string; cursor?: string; queue?: string; playlistId?: string;
-      playlistRateSkillsAtEnd?: string; stepReminder?: string; routineReminder?: string; sessionId?: string }>();
+      stepQueue?: string; playlistRateSkillsAtEnd?: string; stepReminder?: string; routineReminder?: string; sessionId?: string }>();
   const [generatedSessionId] = useState(() => `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const sessionId = routeSessionId || generatedSessionId;
   useEffect(() => {
     if (!routeSessionId) router.setParams({ sessionId });
   }, [routeSessionId, sessionId]);
   // A new routine (including a repeated routine) needs fresh timer/speech state.
-  return <RoutinePlayer sessionId={sessionId} key={`${sessionId}:${id}:${cursor}:${queue ?? ''}:${playlistId ?? ''}:${playlistRateSkillsAtEnd ?? '1'}:${stepReminder ?? '0'}:${routineReminder ?? '0'}`} />;
+  return <RoutinePlayer sessionId={sessionId} key={`${sessionId}:${id}:${cursor}:${queue ?? ''}:${stepQueue ?? ''}:${playlistId ?? ''}:${playlistRateSkillsAtEnd ?? '1'}:${stepReminder ?? '0'}:${routineReminder ?? '0'}`} />;
 }
 
 function RoutinePlayer({ sessionId }: { sessionId: string }) {
@@ -131,24 +131,36 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const insets = useSafeAreaInsets();
   const { activePerson, people } = usePeople();
   const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
-  const { id, queue, cursor = '0', playlistId, playlistTitle, playlistSkills: playlistSkillsParam,
+  const { id, queue, stepQueue, cursor = '0', playlistId, playlistTitle, playlistSkills: playlistSkillsParam,
     playlistRateSkillsAtEnd, autoStart, voice, stepReminder, routineReminder, ratingPeople: ratingPeopleParam, adminMode: adminModeParam } =
     useLocalSearchParams<{ id: string; queue?: string; cursor?: string; playlistId?: string; playlistTitle?: string;
-      playlistSkills?: string; playlistRateSkillsAtEnd?: string; autoStart?: string; voice?: string;
+      playlistSkills?: string; stepQueue?: string; playlistRateSkillsAtEnd?: string; autoStart?: string; voice?: string;
       stepReminder?: string; routineReminder?: string; ratingPeople?: string; adminMode?: string }>();
   const playlistQueue = useMemo(() => parsePlaylistQueue(queue), [queue]);
+  const playlistStepQueue = useMemo(() => parsePlaylistStepQueue(stepQueue), [stepQueue]);
   const playlistSkillIds = useMemo(() => parseSkillIdsParam(playlistSkillsParam), [playlistSkillsParam]);
   const rateSkillsAtPlaylistEnd = playlistRateSkillsAtEnd !== '0';
   const queueCursor = Number(cursor);
   const inPlaylist = !!playlistQueue && Number.isInteger(queueCursor)
-    && queueCursor >= 0 && playlistQueue[queueCursor] === id;
+    && queueCursor >= 0 && playlistQueue[queueCursor] === id
+    && (stepQueue === undefined || !!playlistStepQueue);
   const { routines, loading, completeRoutine, saveRunReflection: saveCompletionRunReflection } = useRoutines();
   const { playlists } = usePlaylists();
   const { skills, reload: reloadSkills } = useSkills();
   const routine = useMemo(() => {
     const savedRoutine = routines.find((item) => item.id === id);
-    return savedRoutine ? getPlayableRoutine(savedRoutine) : undefined;
-  }, [routines, id]);
+    if (!savedRoutine) return undefined;
+    if (stepQueue !== undefined && !playlistStepQueue) return undefined;
+    const visibleRoutine = getPlayableRoutine(savedRoutine);
+    if (!inPlaylist || !playlistStepQueue) return visibleRoutine;
+    const selection = playlistStepQueue[queueCursor];
+    if (!selection || selection.routineId !== id) return { ...visibleRoutine, steps: [] };
+    const visibleById = new Map(visibleRoutine.steps.map(step => [step.id, step]));
+    return { ...visibleRoutine, steps: selection.steps.flatMap(selected => {
+      const sourceStep = visibleById.get(selected.stepId);
+      return sourceStep ? [{ ...sourceStep, durationSeconds: selected.durationSeconds }] : [];
+    }) };
+  }, [routines, id, inPlaylist, playlistStepQueue, queueCursor, stepQueue]);
   const initialRemainingSeconds = routine?.steps.length ? getRoutinePlaybackStepSeconds(routine, 0) : 0;
   const [activeIndex, setActiveIndex] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(initialRemainingSeconds);
@@ -396,6 +408,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
       params: {
         id: playlistQueue[nextCursor],
         queue: JSON.stringify(playlistQueue),
+        ...(stepQueue ? { stepQueue } : {}),
         cursor: String(nextCursor),
         sessionId,
         ...(playlistId ? { playlistId } : {}),
@@ -410,7 +423,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
         adminMode: adminMode ? '1' : '0',
       },
     });
-  }, [playlistQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled,
+  }, [playlistQueue, stepQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled,
     sessionId, ratingPersonIds, adminMode]);
 
   const closeRatingPrompt = useCallback(() => {
@@ -510,7 +523,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
       void stopped.then(() => {
         if (token !== announcementTokenRef.current || !isAnnouncingRef.current) return;
         try {
-          const playlistIsStarting = inPlaylist && playlistQueue && queueCursor === nextPlaylistCursor(playlistQueue, -1, routines);
+          const playlistIsStarting = inPlaylist && playlistQueue && queueCursor === nextPlaylistCursor(playlistQueue, -1, routines, playlistStepQueue);
           void runSpeechQueue.announce(sessionId, buildStepAnnouncement(
             routine,
             index,
@@ -529,13 +542,13 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
       }).catch(() => finish(true));
     },
     [cancelNotifications, routine, startCountdown, stopAnnouncement, voiceEnabled, skills, inPlaylist, sessionId,
-      playlistQueue, queueCursor, routines, playlistTitle, playlistSkillIds, updateKeepaliveForStep, speechVoiceId],
+      playlistQueue, playlistStepQueue, queueCursor, routines, playlistTitle, playlistSkillIds, updateKeepaliveForStep, speechVoiceId],
   );
 
   const finishRoutine = useCallback(() => {
     if (!routine || isFinishedRef.current) return;
     const ratingRun = createSkillRatingRun(routine.id, inPlaylist ? playlistId : undefined);
-    const next = inPlaylist && playlistQueue ? nextPlaylistCursor(playlistQueue, queueCursor, routines) : -1;
+    const next = inPlaylist && playlistQueue ? nextPlaylistCursor(playlistQueue, queueCursor, routines, playlistStepQueue) : -1;
     const playlist = inPlaylist && playlistId ? playlists.find(item => item.id === playlistId) : undefined;
     const reflections: RunReflection[] = [];
     const routineTemplateHtml = resolveReflectionTemplateHtml(
@@ -582,7 +595,8 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     setCompletionError('');
     void cancelNotifications();
     void completeRoutine(routine.id, inPlaylist && playlistId
-      ? { playlistId, playlistTitle: playlistTitle ?? playlist?.title ?? 'Playlist' } : undefined, reflections).then(() => {
+      ? { playlistId, playlistTitle: playlistTitle ?? playlist?.title ?? 'Playlist' } : undefined, reflections,
+    inPlaylist ? routine.steps.map(step => step.id) : undefined).then(() => {
       if (!mountedRef.current) return;
       setSavingCompletion(false);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -599,7 +613,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
         return;
       }
       const involvedSkillIds = deferUntilPlaylistEnd && playlistQueue
-        ? getPlaylistSkillIds(playablePlaylistIds(playlistQueue, routines), routines, playlistSkillIds)
+        ? getPlaylistSkillIds(playlistQueue, routines, playlistSkillIds, playlistStepQueue ?? undefined)
         : [...new Set([
           ...getRoutineSkillIds(routine),
           ...(inPlaylist ? playlistSkillIds : []),
@@ -626,7 +640,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
       setCompletionError('Your completion could not be saved. Retry to continue.');
     });
   }, [cancelNotifications, completeRoutine, routine, stopAnnouncement, inPlaylist,
-    playlistQueue, queueCursor, routines, playlistSkillIds, playlistId, playlistTitle,
+    playlistQueue, playlistStepQueue, queueCursor, routines, playlistSkillIds, playlistId, playlistTitle,
     rateSkillsAtPlaylistEnd, advancePlaylist, sessionId, adminMode, ratingPeople.length, playlists]);
 
   const reconcileTimer = useCallback(
@@ -755,12 +769,13 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
 
   function restart() {
     if (inPlaylist && playlistQueue) {
-      const first = nextPlaylistCursor(playlistQueue, -1, routines);
+      const first = nextPlaylistCursor(playlistQueue, -1, routines, playlistStepQueue);
       if (first !== -1 && first !== queueCursor) {
         playlistTransitionRef.current = true;
         router.replace({
           pathname: '/routine/[id]/run',
           params: { id: playlistQueue[first], queue: JSON.stringify(playlistQueue),
+              ...(stepQueue ? { stepQueue } : {}),
               cursor: String(first), playlistTitle: playlistTitle ?? 'Playlist',
               playlistSkills: JSON.stringify(playlistSkillIds),
               playlistRateSkillsAtEnd: rateSkillsAtPlaylistEnd ? '1' : '0',

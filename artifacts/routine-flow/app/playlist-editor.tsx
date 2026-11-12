@@ -13,12 +13,13 @@ import { usePeople } from '@/context/PeopleContext';
 import { SkillPicker } from '@/components/SkillPicker';
 import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
 import { useColors } from '@/hooks/useColors';
-import { playablePlaylistIds, resolvePlaylistReminderSettings } from '@/lib/playlists';
+import { createDefaultPlaylistStepSelections, resolvePlaylistReminderSettings, type PlaylistStepSelection } from '@/lib/playlists';
 import { scheduledPlaylistSource } from '@/lib/schedules';
 import { formatLocalDateTime } from '@/lib/localDateTime';
 import { formatDuration, getStepSeconds } from '@/types/routines';
 import type { RoutineNotificationSettings } from '@/types/routines';
 import { detailHtmlToText } from '@/lib/stepDetailHtml';
+import { filterRoutinesByStepKeywords } from '@/lib/routineSearch';
 
 export default function PlaylistEditor() {
   const { id, scheduleId } = useLocalSearchParams<{ id?: string; scheduleId?: string }>();
@@ -48,7 +49,7 @@ export default function PlaylistEditor() {
   const origOk = !!schedule && !!playlists.find((p) => p.id === schedule.targetId) && !error;
   const src = scheduled ?? existing;
   return <Editor key={scheduleId ? `s-${scheduleId}` : id ?? 'new'} editId={existing?.id} scheduleId={scheduleId} hasOverride={hasOverride} canReset={origOk}
-    initialTitle={src?.title ?? ''} initialIds={src?.routineIds ?? []} initialSkillIds={src?.skillIds ?? []}
+    initialTitle={src?.title ?? ''} initialIds={src?.routineIds ?? []} initialStepSelections={src?.stepSelections} initialSkillIds={src?.skillIds ?? []}
     initialReflectionTemplateHtml={scheduleId ? '' : src?.reflectionTemplateHtml ?? ''}
     initialReflectionTemplate={scheduleId ? '' : src?.reflectionTemplate ?? ''}
     initialRateSkillsAtPlaylistEnd={src
@@ -57,10 +58,10 @@ export default function PlaylistEditor() {
     initialReminderSettings={resolvePlaylistReminderSettings(activePerson.defaultPlaylistReminderSettings, src?.reminderSettings)} />;
 }
 
-function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds, initialSkillIds,
+function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds, initialStepSelections, initialSkillIds,
   initialRateSkillsAtPlaylistEnd, initialReminderSettings, initialReflectionTemplate, initialReflectionTemplateHtml }: {
   editId?: string; scheduleId?: string; hasOverride: boolean; canReset: boolean;
-  initialTitle: string; initialIds: string[]; initialSkillIds: string[]; initialRateSkillsAtPlaylistEnd: boolean;
+  initialTitle: string; initialIds: string[]; initialStepSelections?: PlaylistStepSelection[]; initialSkillIds: string[]; initialRateSkillsAtPlaylistEnd: boolean;
   initialReminderSettings: RoutineNotificationSettings;
   initialReflectionTemplate?: string;
   initialReflectionTemplateHtml?: string;
@@ -74,7 +75,12 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const { skills } = useSkills();
   const [confirmReset, setConfirmReset] = React.useState(false);
   const [title, setTitle] = React.useState(initialTitle);
-  const [ids, setIds] = React.useState<string[]>(initialIds);
+  const [entries, setEntries] = React.useState<PlaylistStepSelection[]>(() => initialStepSelections
+    ? initialStepSelections.map(selection => ({ routineId: selection.routineId, steps: selection.steps.map(step => ({ ...step })) }))
+    : createDefaultPlaylistStepSelections(initialIds, routines));
+  const ids = entries.map(entry => entry.routineId);
+  const [routineSearch, setRoutineSearch] = React.useState('');
+  const [expandedEntry, setExpandedEntry] = React.useState<number | null>(null);
   const [skillIds, setSkillIds] = React.useState<string[]>(initialSkillIds);
   const [rateSkillsAtPlaylistEnd, setRateSkillsAtPlaylistEnd] = React.useState(initialRateSkillsAtPlaylistEnd);
   const [reminderSettings, setReminderSettings] = React.useState<RoutineNotificationSettings>({ ...initialReminderSettings });
@@ -87,15 +93,20 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const lock = React.useRef(false);
-  const addable = routines.filter((r) => playablePlaylistIds([r.id], routines).length > 0);
+  const addable = filterRoutinesByStepKeywords(routines, skills, routineSearch)
+    .filter(r => !r.hidden && r.steps.some(step => !step.hidden));
 
-  function info(rid: string) {
+  function info(rid: string, selection?: PlaylistStepSelection) {
     const r = routines.find((x) => x.id === rid);
-    if (!r || r.hidden || !playablePlaylistIds([rid], routines).length) return null;
-    return { title: r.title, secs: r.steps.filter((s) => !s.hidden).reduce((a, s) => a + getStepSeconds(s), 0) };
+    if (!r || r.hidden) return null;
+    const visible = new Set(r.steps.filter(step => !step.hidden).map(step => step.id));
+    const secs = (selection?.steps ?? r.steps.filter(step => !step.hidden).map(step => ({ stepId: step.id, durationSeconds: getStepSeconds(step) })))
+      .filter(step => visible.has(step.stepId))
+      .reduce((sum, step) => sum + step.durationSeconds, 0);
+    return { title: r.title, secs };
   }
   function move(i: number, d: -1 | 1) {
-    setIds((cur) => {
+    setEntries((cur) => {
       const n = [...cur];
       [n[i], n[i + d]] = [n[i + d], n[i]];
       return n;
@@ -103,10 +114,30 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     setError('');
     void Haptics.selectionAsync();
   }
+  function toggleStep(entryIndex: number, stepId: string) {
+    setEntries(current => current.map((entry, index) => {
+      if (index !== entryIndex) return entry;
+      const selected = entry.steps.find(step => step.stepId === stepId);
+      const next = selected ? entry.steps.filter(step => step.stepId !== stepId)
+        : [...entry.steps, { stepId, durationSeconds: getStepSeconds(routines.find(item => item.id === entry.routineId)!.steps.find(step => step.id === stepId)!) }];
+      const source = routines.find(item => item.id === entry.routineId);
+      if (!source) return { ...entry, steps: next };
+      const order = new Map(source.steps.map((step, position) => [step.id, position]));
+      return { ...entry, steps: next.sort((a, b) => (order.get(a.stepId) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.stepId) ?? Number.MAX_SAFE_INTEGER)) };
+    }));
+    setError('');
+  }
+  function updateStepDuration(entryIndex: number, stepId: string, value: string) {
+    const durationSeconds = Number.parseInt(value, 10);
+    if (!Number.isSafeInteger(durationSeconds) || durationSeconds <= 0) return;
+    setEntries(current => current.map((entry, index) => index === entryIndex
+      ? { ...entry, steps: entry.steps.map(step => step.stepId === stepId ? { ...step, durationSeconds } : step) }
+      : entry));
+  }
   async function save() {
     if (lock.current) return;
     if (!title.trim()) return setError('Give your playlist a name.');
-    if (!ids.length) return setError('Add at least one routine.');
+    if (!entries.length || !entries.some(entry => entry.steps.length)) return setError('Add at least one selected step.');
     lock.current = true;
     setBusy(true);
     setError('');
@@ -114,8 +145,8 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     try {
       const availableSkills = new Set(skills.map(skill => skill.id));
       const savedSkillIds = skillIds.filter(id => availableSkills.has(id));
-      if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds, reminderSettings);
-      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd, reminderSettings, reflectionTemplateText, reflectionTemplateHtml);
+      if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds, reminderSettings, entries);
+      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd, reminderSettings, reflectionTemplateText, reflectionTemplateHtml, entries);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e) {
@@ -247,37 +278,90 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
           <Text style={[styles.count, { color: colors.mutedForeground }]}>{ids.length} added</Text>
         </View>
         {ids.length === 0 ? <Text style={[styles.count, { color: colors.mutedForeground, marginBottom: 12 }]}>Tap a routine below to add it. Repeats are fine.</Text> : null}
-        {ids.map((rid, i) => {
-          const r = info(rid);
+        {entries.map((entry, i) => {
+          const rid = entry.routineId;
+          const r = info(rid, entry);
+          const source = routines.find(item => item.id === rid);
+          const chosen = new Map(entry.steps.map(step => [step.stepId, step]));
           const name = r?.title ?? 'Unavailable routine';
           return (
-            <View key={`${rid}-${i}`} testID={`playlist-entry-${i}`} style={[styles.entry, { backgroundColor: r ? colors.card : colors.secondary, borderColor: colors.border }]}>
-              <View style={[styles.num, { backgroundColor: r ? colors.sageSoft : colors.border }]}>
-                <Text style={[styles.numText, { color: r ? colors.success : colors.mutedForeground }]}>{i + 1}</Text>
+            <View key={`${rid}-${i}`} testID={`playlist-entry-${i}`}>
+              <View style={[styles.entry, { backgroundColor: r ? colors.card : colors.secondary, borderColor: colors.border }]}>
+                <View style={[styles.num, { backgroundColor: r ? colors.sageSoft : colors.border }]}>
+                  <Text style={[styles.numText, { color: r ? colors.success : colors.mutedForeground }]}>{i + 1}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.entryTitle, { color: r ? colors.foreground : colors.mutedForeground }]} numberOfLines={2}>{name}</Text>
+                  <Text style={[styles.count, { color: colors.mutedForeground }]}>
+                    {r ? `${entry.steps.filter(step => source?.steps.some(item => item.id === step.stepId && !item.hidden)).length} steps · ${formatDuration(r.secs)}` : 'Hidden or missing · skipped when run'}
+                  </Text>
+                </View>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Move ${name} up`} testID={`move-playlist-up-${i}`} disabled={i === 0 || busy} onPress={() => move(i, -1)} style={styles.act}>
+                  <Ionicons name="chevron-up" size={20} color={i === 0 ? colors.border : colors.primary} />
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Move ${name} down`} testID={`move-playlist-down-${i}`} disabled={i === entries.length - 1 || busy} onPress={() => move(i, 1)} style={styles.act}>
+                  <Ionicons name="chevron-down" size={20} color={i === entries.length - 1 ? colors.border : colors.primary} />
+                </Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${name} at position ${i + 1}`} testID={`remove-playlist-entry-${i}`} disabled={busy}
+                  onPress={() => { setEntries(current => current.filter((_, k) => k !== i)); setError(''); }} style={styles.act}>
+                  <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
+                </Pressable>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.entryTitle, { color: r ? colors.foreground : colors.mutedForeground }]} numberOfLines={2}>{name}</Text>
-                <Text style={[styles.count, { color: colors.mutedForeground }]}>{r ? formatDuration(r.secs) : 'Hidden or missing · skipped when run'}</Text>
-              </View>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Move ${name} up`} testID={`move-playlist-up-${i}`} disabled={i === 0 || busy} onPress={() => move(i, -1)} style={styles.act}>
-                <Ionicons name="chevron-up" size={20} color={i === 0 ? colors.border : colors.primary} />
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Move ${name} down`} testID={`move-playlist-down-${i}`} disabled={i === ids.length - 1 || busy} onPress={() => move(i, 1)} style={styles.act}>
-                <Ionicons name="chevron-down" size={20} color={i === ids.length - 1 ? colors.border : colors.primary} />
-              </Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Remove ${name} at position ${i + 1}`} testID={`remove-playlist-entry-${i}`} disabled={busy}
-                onPress={() => { setIds((c) => c.filter((_, k) => k !== i)); setError(''); }} style={styles.act}>
-                <Ionicons name="close-circle-outline" size={20} color={colors.mutedForeground} />
-              </Pressable>
+              {source && !source.hidden ? (
+                <Pressable accessibilityRole="button" accessibilityLabel={`${expandedEntry === i ? 'Hide' : 'Choose'} steps for ${name}`}
+                  accessibilityState={{ expanded: expandedEntry === i }} testID={`toggle-playlist-steps-${i}`} disabled={busy}
+                  onPress={() => setExpandedEntry(expandedEntry === i ? null : i)} style={[styles.stepPickerToggle, { borderColor: colors.border }]}>
+                  <Ionicons name={expandedEntry === i ? 'chevron-up' : 'list-outline'} size={16} color={colors.primary} />
+                  <Text style={[styles.stepPickerToggleText, { color: colors.primary }]}>
+                    {expandedEntry === i ? 'Hide step choices' : 'Choose steps'}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {expandedEntry === i && source && !source.hidden ? (
+                <View style={[styles.stepSelection, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.count, { color: colors.mutedForeground }]}>Choose visible steps. Duration changes apply only to this playlist.</Text>
+                  {source.steps.filter(step => !step.hidden).map(step => {
+                    const selected = chosen.get(step.id);
+                    return (
+                      <View key={step.id} style={[styles.selectedStep, { borderColor: colors.border }]}>
+                        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: !!selected }} accessibilityLabel={`${selected ? 'Remove' : 'Select'} ${step.title}`}
+                          testID={`playlist-step-${i}-${step.id}`} disabled={busy} onPress={() => toggleStep(i, step.id)} style={styles.stepCheck}>
+                          <Ionicons name={selected ? 'checkbox' : 'square-outline'} size={19} color={selected ? colors.primary : colors.mutedForeground} />
+                        </Pressable>
+                        <Text style={[styles.selectedStepName, { color: colors.foreground }]} numberOfLines={2}>{step.title}</Text>
+                        {selected ? (
+                          <View style={styles.durationInputWrap}>
+                            <TextInput accessibilityLabel={`Duration in seconds for ${step.title}`} testID={`playlist-duration-${i}-${step.id}`}
+                              keyboardType="number-pad" selectTextOnFocus value={String(selected.durationSeconds)} editable={!busy}
+                              onChangeText={value => updateStepDuration(i, step.id, value)}
+                              style={[styles.durationInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.input }]} />
+                            <Text style={[styles.durationUnit, { color: colors.mutedForeground }]}>sec</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                  {entry.steps.some(step => !source.steps.some(current => current.id === step.stepId && !current.hidden))
+                    ? <Text style={[styles.count, { color: colors.mutedForeground, marginTop: 6 }]}>Some saved steps are now hidden or unavailable and will be skipped.</Text>
+                    : null}
+                </View>
+              ) : null}
             </View>
           );
         })}
 
-        <Text style={[styles.label, { color: colors.inkSoft, marginTop: 18 }]}>Add routines</Text>
-        {addable.length === 0 ? <Text style={[styles.count, { color: colors.mutedForeground }]}>No visible routines with visible steps yet.</Text> : null}
+        <Text style={[styles.label, { color: colors.inkSoft, marginTop: 18 }]}>Find routines and steps</Text>
+        <TextInput accessibilityLabel="Search routines and steps" testID="playlist-step-search" value={routineSearch}
+          onChangeText={setRoutineSearch} placeholder="Search titles, details, skills, categories" placeholderTextColor={colors.mutedForeground}
+          returnKeyType="search" style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]} />
+        {addable.length === 0 ? <Text style={[styles.count, { color: colors.mutedForeground }]}>{routineSearch ? 'No routines match that search.' : 'No visible routines with visible steps yet.'}</Text> : null}
         {addable.map((r) => (
           <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`Add ${r.title}`} testID={`add-routine-${r.id}`} disabled={busy || ids.length >= 100}
-            onPress={() => { setIds((c) => [...c, r.id]); setError(''); void Haptics.selectionAsync(); }}
+            onPress={() => {
+              setEntries(current => [...current, ...createDefaultPlaylistStepSelections([r.id], routines)]);
+              setError('');
+              void Haptics.selectionAsync();
+            }}
             style={({ pressed }) => [styles.entry, { backgroundColor: colors.card, borderColor: colors.border }, pressed && { opacity: 0.72 }]}>
             <View style={[styles.num, { backgroundColor: colors.coralSoft }]}><Ionicons name="add" size={17} color={colors.primary} /></View>
             <Text style={[styles.entryTitle, { flex: 1, color: colors.foreground }]} numberOfLines={1}>{r.title}</Text>
@@ -339,5 +423,14 @@ const styles = StyleSheet.create({
   numText: { fontFamily: 'Inter_700Bold', fontSize: 13 },
   entryTitle: { fontFamily: 'Inter_500Medium', fontSize: 14, lineHeight: 19 },
   act: { width: 34, height: 40, alignItems: 'center', justifyContent: 'center' },
+  stepPickerToggle: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderWidth: 1, borderRadius: 11, alignSelf: 'flex-start', marginTop: -3, marginBottom: 10 },
+  stepPickerToggleText: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  stepSelection: { borderWidth: 1, borderRadius: 14, padding: 10, marginBottom: 10 },
+  selectedStep: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stepCheck: { width: 36, minHeight: 42, alignItems: 'center', justifyContent: 'center' },
+  selectedStepName: { flex: 1, fontFamily: 'Inter_500Medium', fontSize: 13 },
+  durationInputWrap: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  durationInput: { width: 62, height: 38, borderWidth: 1, borderRadius: 9, textAlign: 'center', paddingHorizontal: 6, fontFamily: 'Inter_500Medium', fontSize: 13 },
+  durationUnit: { fontFamily: 'Inter_400Regular', fontSize: 11 },
   error: { fontFamily: 'Inter_500Medium', fontSize: 13, marginTop: 10 },
 });

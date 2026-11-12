@@ -125,7 +125,14 @@ test('schedule parsing accepts routine and playlist references but rejects corru
 });
 test('date-only playlist versions survive parsing and malformed versions are rejected', () => {
   const custom: RoutineSchedule = {
-    ...entry, targetType: 'playlist', playlistOverride: { title: 'Special day', routineIds: ['b', 'a', 'b'] },
+    ...entry, targetType: 'playlist', playlistOverride: {
+      title: 'Special day', routineIds: ['b', 'a', 'b'],
+      stepSelections: [
+        { routineId: 'b', steps: [{ stepId: 'b-step', durationSeconds: 90 }] },
+        { routineId: 'a', steps: [{ stepId: 'a-step', durationSeconds: 45 }] },
+        { routineId: 'b', steps: [{ stepId: 'b-next', durationSeconds: 30 }] },
+      ],
+    },
   };
   assert.deepEqual(parseSchedules(JSON.stringify([custom])), [custom]);
   for (const playlistOverride of [null, {}, { title: '', routineIds: ['a'] },

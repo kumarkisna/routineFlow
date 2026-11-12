@@ -81,7 +81,7 @@ type RoutineContextValue = {
   routines: Routine[];
   progress: CompletionMap;
   loading: boolean;
-  completeRoutine: (routineId: string, playlistRun?: PlaylistCompletionSource, reflection?: RunReflection | RunReflection[]) => Promise<void>;
+  completeRoutine: (routineId: string, playlistRun?: PlaylistCompletionSource, reflection?: RunReflection | RunReflection[], completedStepIds?: string[]) => Promise<void>;
   saveRunReflection: (day: string, runId: string, responseHtml: string) => Promise<void>;
   createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
@@ -163,12 +163,13 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const completeRoutine = useCallback(
-    async (routineId: string, playlistRun?: PlaylistCompletionSource, reflection?: RunReflection | RunReflection[]) => {
+    async (routineId: string, playlistRun?: PlaylistCompletionSource, reflection?: RunReflection | RunReflection[], completedStepIds?: string[]) => {
       const routine = routines.find((item) => item.id === routineId);
       if (!routine) return;
       const day = todayKey();
       const nextDay = { ...(progress[day] ?? {}) };
-      const visibleSteps = routine.steps.filter((step) => !step.hidden);
+      const selectedIds = completedStepIds ? new Set(completedStepIds) : null;
+      const visibleSteps = routine.steps.filter((step) => !step.hidden && (!selectedIds || selectedIds.has(step.id)));
       visibleSteps.forEach((step) => {
         const key = `${routineId}:${step.id}`;
         nextDay[key] = recordCompletion(routine.title, step.title, nextDay[key], playlistRun);

@@ -26,7 +26,6 @@ import { buildSkillRatingReportHtml, formatSkillRatingDateTime } from '@/lib/ski
 import { buildSkillRatingSpeechText } from '@/lib/skillRatingSpeech';
 import { getDeferredReflectionTemplate } from '@/lib/runReflectionTemplates';
 import { getPlaylistSkillIds, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
-import { playablePlaylistIds } from '@/lib/playlists';
 import { sanitizeStepDetailHtml, detailHtmlToText } from '@/lib/stepDetailHtml';
 import type { RunReflection as CompletionRunReflection } from '@/types/routines';
 
@@ -90,9 +89,10 @@ export default function HistoryScreen() {
     : null;
   const playlistRatingSkillIds = selectedPlaylistData
     ? getPlaylistSkillIds(
-      playablePlaylistIds(selectedPlaylistData.routineIds, routines),
+      selectedPlaylistData.routineIds,
       routines,
       selectedPlaylistData.skillIds,
+      selectedPlaylistData.stepSelections,
     )
     : playlistRunGroups.flatMap(group => {
       const routine = routines.find(item => item.id === group.id);

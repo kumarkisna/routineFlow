@@ -1,5 +1,5 @@
-import type { Routine, RoutineNotificationSettings } from '../types/routines';
-import { getPlayableRoutine } from './routinePlayback';
+import type { Routine, RoutineNotificationSettings, RoutineStep } from '../types/routines';
+import { getStepSeconds } from '../types/routines';
 import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
 
 export const DEFAULT_PLAYLIST_REMINDER_SETTINGS: RoutineNotificationSettings = {
@@ -20,6 +20,8 @@ export type RoutinePlaylist = {
   id: string;
   title: string;
   routineIds: string[];
+  /** Optional ordered step snapshots; absent means legacy all-visible-steps behavior. */
+  stepSelections?: PlaylistStepSelection[];
   /** Optional links to reusable, person-specific skills. */
   skillIds?: string[];
   /** When enabled, defer skill ratings until the complete playlist run finishes. */
@@ -32,6 +34,67 @@ export type RoutinePlaylist = {
   reflectionTemplateHtml?: string;
 };
 
+export type PlaylistStepSelection = {
+  routineId: string;
+  steps: { stepId: string; durationSeconds: number }[];
+};
+
+export type PlaylistRunEntry = { routineId: string; steps: RoutineStep[] };
+
+export function createDefaultPlaylistStepSelections(routineIds: string[], routines: Routine[]): PlaylistStepSelection[] {
+  return routineIds.map(routineId => {
+    const routine = routines.find(item => item.id === routineId);
+    return {
+      routineId,
+      steps: (routine?.steps ?? []).filter(step => !step.hidden).map(step => ({
+        stepId: step.id,
+        durationSeconds: getStepSeconds(step),
+      })),
+    };
+  });
+}
+
+export function getPlaylistRunEntries(playlist: Pick<RoutinePlaylist, 'routineIds' | 'stepSelections'>, routines: Routine[]): PlaylistRunEntry[] {
+  const selections = playlist.stepSelections ?? createDefaultPlaylistStepSelections(playlist.routineIds, routines);
+  const routinesById = new Map(routines.map(routine => [routine.id, routine]));
+  return selections.flatMap((selection, index) => {
+    const routineId = playlist.routineIds[index];
+    const source = routinesById.get(routineId);
+    if (!source || source.hidden || selection.routineId !== routineId) return [];
+    const visibleById = new Map(source.steps.filter(step => !step.hidden).map(step => [step.id, step]));
+    const steps = selection.steps.flatMap(selected => {
+      const sourceStep = visibleById.get(selected.stepId);
+      return sourceStep ? [{ ...sourceStep, durationSeconds: selected.durationSeconds }] : [];
+    });
+    return steps.length ? [{ routineId, steps }] : [];
+  });
+}
+
+export function getPlaylistDurationSeconds(playlist: Pick<RoutinePlaylist, 'routineIds' | 'stepSelections'>, routines: Routine[]): number {
+  return getPlaylistRunEntries(playlist, routines).reduce(
+    (total, entry) => total + entry.steps.reduce((sum, step) => sum + getStepSeconds(step), 0),
+    0,
+  );
+}
+
+export function isValidPlaylistStepSelections(value: unknown, routineIds: string[]): value is PlaylistStepSelection[] {
+  if (!Array.isArray(value) || value.length !== routineIds.length) return false;
+  return value.every((raw: unknown, index) => {
+    if (!raw || typeof raw !== 'object') return false;
+    const selection = raw as Record<string, unknown>;
+    if (selection.routineId !== routineIds[index] || !Array.isArray(selection.steps) || selection.steps.length > 1000) return false;
+    const steps = selection.steps as unknown[];
+    if (!steps.every(step => {
+      if (!step || typeof step !== 'object') return false;
+      const entry = step as Record<string, unknown>;
+      return typeof entry.stepId === 'string' && !!entry.stepId.trim()
+        && typeof entry.durationSeconds === 'number' && Number.isSafeInteger(entry.durationSeconds)
+        && entry.durationSeconds > 0;
+    })) return false;
+    return new Set(steps.map(step => (step as Record<string, unknown>).stepId)).size === steps.length;
+  });
+}
+
 export function playablePlaylistIds(ids: string[], routines: Routine[]): string[] {
   const available = new Set(routines
     .filter(routine => !routine.hidden && routine.steps.some(step => !step.hidden))
@@ -40,14 +103,14 @@ export function playablePlaylistIds(ids: string[], routines: Routine[]): string[
 }
 
 export function getPlaylistSpeechSteps(
-  playlist: Pick<RoutinePlaylist, 'routineIds'>,
+  playlist: Pick<RoutinePlaylist, 'routineIds' | 'stepSelections'>,
   routines: Routine[],
 ): { routine: Routine; stepIndex: number }[] {
-  return playablePlaylistIds(playlist.routineIds, routines).flatMap(id => {
-    const routine = routines.find(entry => entry.id === id);
+  return getPlaylistRunEntries(playlist, routines).flatMap(entry => {
+    const routine = routines.find(item => item.id === entry.routineId);
     if (!routine) return [];
-    const playableRoutine = getPlayableRoutine(routine);
-    return playableRoutine.steps.map((_, stepIndex) => ({ routine: playableRoutine, stepIndex }));
+    const playableRoutine = { ...routine, steps: entry.steps };
+    return entry.steps.map((_, stepIndex) => ({ routine: playableRoutine, stepIndex }));
   });
 }
 
@@ -59,6 +122,7 @@ export function createPlaylistRunLaunch(
   params: {
     id: string;
     queue: string;
+    stepQueue: string;
     cursor: '0';
     playlistId: string;
     playlistTitle: string;
@@ -69,7 +133,8 @@ export function createPlaylistRunLaunch(
     autoStart: '1';
   };
 } | null {
-  const ids = playablePlaylistIds(playlist.routineIds, routines);
+  const entries = getPlaylistRunEntries(playlist, routines);
+  const ids = entries.map(entry => entry.routineId);
   if (!ids.length) return null;
 
   return {
@@ -77,6 +142,10 @@ export function createPlaylistRunLaunch(
     params: {
       id: ids[0],
       queue: JSON.stringify(ids),
+      stepQueue: JSON.stringify(entries.map(entry => ({
+        routineId: entry.routineId,
+        steps: entry.steps.map(step => ({ stepId: step.id, durationSeconds: getStepSeconds(step) })),
+      }))),
       cursor: '0',
       playlistId: playlist.id,
       playlistTitle: playlist.title,
@@ -89,11 +158,15 @@ export function createPlaylistRunLaunch(
   };
 }
 
-export function validatePlaylist(title: string, ids: string[]) {
+export function validatePlaylist(title: string, ids: string[], stepSelections?: PlaylistStepSelection[]) {
   if (!title.trim()) throw new Error('Give your playlist a name.');
   if (title.trim().length > 100) throw new Error('Use a playlist name of 100 characters or fewer.');
   if (!ids.length) throw new Error('Add at least one routine.');
   if (ids.length > 100) throw new Error('A playlist can contain up to 100 routines.');
+  if (stepSelections !== undefined) {
+    if (!isValidPlaylistStepSelections(stepSelections, ids)) throw new Error('The selected playlist steps are invalid.');
+    if (!stepSelections.some(selection => selection.steps.length)) throw new Error('Select at least one step.');
+  }
 }
 
 export function parsePlaylists(value: string): RoutinePlaylist[] {
@@ -101,6 +174,7 @@ export function parsePlaylists(value: string): RoutinePlaylist[] {
   if (!Array.isArray(parsed) || parsed.some(item =>
     !item || typeof item.id !== 'string' || typeof item.title !== 'string'
     || !Array.isArray(item.routineIds) || item.routineIds.some((id: unknown) => typeof id !== 'string')
+    || (item.stepSelections !== undefined && !isValidPlaylistStepSelections(item.stepSelections, item.routineIds))
     || (item.skillIds !== undefined && (!Array.isArray(item.skillIds)
       || item.skillIds.some((id: unknown) => typeof id !== 'string' || !id.trim())
       || new Set(item.skillIds).size !== item.skillIds.length))
@@ -115,11 +189,17 @@ export function parsePlaylists(value: string): RoutinePlaylist[] {
     || (item.reflectionTemplateHtml !== undefined
       && (typeof item.reflectionTemplateHtml !== 'string' || item.reflectionTemplateHtml.length > 100_000))
   )) throw new Error('Saved playlists could not be read.');
-  return parsed.map(playlist => ({
+  return (parsed as RoutinePlaylist[]).map(playlist => ({
     ...playlist,
     ...(playlist.reflectionTemplateHtml && detailHtmlToText(sanitizeStepDetailHtml(playlist.reflectionTemplateHtml)).trim()
       ? { reflectionTemplateHtml: sanitizeStepDetailHtml(playlist.reflectionTemplateHtml) }
       : {}),
+    ...(playlist.stepSelections ? {
+      stepSelections: playlist.stepSelections.map(selection => ({
+        routineId: selection.routineId,
+        steps: selection.steps.map(step => ({ ...step })),
+      })),
+    } : {}),
     rateSkillsAtPlaylistEnd: playlist.rateSkillsAtPlaylistEnd ?? true,
     reminderSettings: {
       stepCompletion: playlist.reminderSettings?.stepCompletion ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,
@@ -142,7 +222,7 @@ export function mergePlaylistCatalog(
 } {
   const playlists = [...existing];
   const usedIds = new Set(playlists.map(playlist => playlist.id));
-  const coreKey = (playlist: RoutinePlaylist) => JSON.stringify([playlist.title, playlist.routineIds]);
+  const coreKey = (playlist: RoutinePlaylist) => JSON.stringify([playlist.title, playlist.routineIds, playlist.stepSelections ?? null]);
   const matchingIds = new Map(playlists.map(playlist => [coreKey(playlist), playlist.id]));
   const idMap: Record<string, string> = Object.create(null) as Record<string, string>;
   let added = 0;
@@ -180,6 +260,12 @@ export function mergePlaylistCatalog(
       ...incoming,
       id,
       routineIds: [...incoming.routineIds],
+      ...(incoming.stepSelections ? {
+        stepSelections: incoming.stepSelections.map(selection => ({
+          routineId: selection.routineId,
+          steps: selection.steps.map(step => ({ ...step })),
+        })),
+      } : {}),
       ...(incoming.skillIds ? { skillIds: [...incoming.skillIds] } : {}),
     });
     matchingIds.set(key, id);
@@ -197,6 +283,12 @@ export function remapPlaylistReferences(
   return playlists.map(playlist => ({
     ...playlist,
     routineIds: playlist.routineIds.map(id => routineIdMap[id] ?? id),
+    ...(playlist.stepSelections ? {
+      stepSelections: playlist.stepSelections.map(selection => ({
+        routineId: routineIdMap[selection.routineId] ?? selection.routineId,
+        steps: selection.steps.map(step => ({ ...step })),
+      })),
+    } : {}),
     ...(playlist.skillIds !== undefined
       ? { skillIds: playlist.skillIds.map(id => skillIdMap[id] ?? id) }
       : {}),
@@ -215,7 +307,32 @@ export function parsePlaylistQueue(value?: string): string[] | null {
   }
 }
 
-export function nextPlaylistCursor(ids: string[], cursor: number, routines: Routine[]): number {
+export function parsePlaylistStepQueue(value?: string): PlaylistStepSelection[] | null {
+  if (!value) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 100) return null;
+    const ids = parsed.map(item => item && typeof item === 'object' ? (item as Record<string, unknown>).routineId : '');
+    return isValidPlaylistStepSelections(parsed, ids as string[]) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function nextPlaylistCursor(
+  ids: string[],
+  cursor: number,
+  routines: Routine[],
+  stepQueue?: PlaylistStepSelection[] | null,
+): number {
   const available = new Set(playablePlaylistIds(ids, routines));
-  return ids.findIndex((id, index) => index > cursor && available.has(id));
+  return ids.findIndex((id, index) => {
+    if (index <= cursor || !available.has(id)) return false;
+    const selected = stepQueue?.[index];
+    if (!selected) return true;
+    const routine = routines.find(item => item.id === id);
+    if (!routine || selected.routineId !== id) return false;
+    const visible = new Set(routine.steps.filter(step => !step.hidden).map(step => step.id));
+    return selected.steps.some(step => visible.has(step.stepId));
+  });
 }

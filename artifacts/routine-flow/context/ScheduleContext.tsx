@@ -3,7 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Platform } from 'react-native';
 import { useRoutines } from '@/context/RoutineContext';
 import { usePlaylists } from '@/context/PlaylistContext';
-import { playablePlaylistIds } from '@/lib/playlists';
+import { getPlaylistRunEntries, playablePlaylistIds, type PlaylistStepSelection } from '@/lib/playlists';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { createPersonStorage } from '@/lib/personStorage';
 import { alertDate, futureScheduleAlerts, scheduleAlertOffsets, validateAlertOffsets } from '@/lib/scheduleAlerts';
@@ -25,6 +25,7 @@ type ScheduleContextValue = {
   deleteSchedule: (id: string) => Promise<void>;
   savePlaylistForSchedule: (
     id: string, title: string, routineIds: string[], skillIds?: string[], reminderSettings?: RoutineNotificationSettings,
+    stepSelections?: PlaylistStepSelection[],
   ) => Promise<void>;
   resetScheduledPlaylist: (id: string) => Promise<void>;
   removeSkillAssignments: (skillId: string) => Promise<void>;
@@ -116,7 +117,7 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
     }
     const source = scheduledPlaylistSource(schedule, playlists);
     if (draft.targetType === 'routine' ? !routine || !playablePlaylistIds([routine.id], routines).length
-      : (!schedule.playlistOverride && playlistsError) || !source || !playablePlaylistIds(source.routineIds, routines).length) {
+      : (!schedule.playlistOverride && playlistsError) || !source || !getPlaylistRunEntries(source, routines).length) {
       throw new Error('Choose an available routine or playlist with visible steps.');
     }
     await commit(schedule, schedule.id);
@@ -126,17 +127,17 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
   const deleteSchedule = useCallback((id: string) => runWrite(() => commit(null, id)), [commit, runWrite]);
   const savePlaylistForSchedule = useCallback((
     id: string, title: string, routineIds: string[], skillIds?: string[],
-    reminderSettings?: RoutineNotificationSettings,
+    reminderSettings?: RoutineNotificationSettings, stepSelections?: PlaylistStepSelection[],
   ) => runWrite(async () => {
     if (routinesLoading) throw new Error('Wait for your routines to load.');
     const old = current.current.find(item => item.id === id);
     if (!old) throw new Error('Schedule not found.');
-    const next = editScheduledPlaylist(old, title, routineIds, skillIds, reminderSettings);
-    if (!playablePlaylistIds(next.playlistOverride!.routineIds, routines).length) {
-      throw new Error('Add at least one available routine with visible steps.');
+    const next = editScheduledPlaylist(old, title, routineIds, skillIds, reminderSettings, stepSelections);
+    if (!getPlaylistRunEntries(scheduledPlaylistSource(next, playlists)!, routines).length) {
+      throw new Error('Add at least one available routine with selected visible steps.');
     }
     await commit(next, id);
-  }), [routinesLoading, routines, commit, runWrite]);
+  }), [routinesLoading, routines, playlists, commit, runWrite]);
   const removeSkillAssignments = useCallback((skillId: string) => runWrite(async () => {
     if (loading || error || unsafe.current) throw new Error('Schedules are not ready to change. Restart the app if a previous save could not be confirmed.');
     const next = current.current.map(item => {
@@ -160,7 +161,7 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
     const old = current.current.find(item => item.id === id);
     if (!old || old.targetType !== 'playlist') throw new Error('Scheduled playlist not found.');
     const source = playlists.find(item => item.id === old.targetId);
-    if (!source || !playablePlaylistIds(source.routineIds, routines).length) {
+    if (!source || !getPlaylistRunEntries(source, routines).length) {
       throw new Error('The original playlist is unavailable. Your date-only version has been kept.');
     }
     await commit({ ...old, targetTitle: source.title, playlistOverride: undefined, notificationId: undefined }, id);

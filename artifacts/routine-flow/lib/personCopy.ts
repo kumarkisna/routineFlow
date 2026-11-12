@@ -138,22 +138,37 @@ export function buildPersonCopy(
   const mapSkillIds = (ids: string[] | undefined) => ids?.map(id => skillIdMap.get(id)!);
 
   const routineIdMap = new Map<string, string>();
+  const stepIdMaps = new Map<string, Map<string, string>>();
   const copiedRoutines: Routine[] = [];
   for (const routineId of routinesToCopy) {
     const routine = sourceRoutines.get(routineId)!;
     const copiedId = makeId(usedIds);
     routineIdMap.set(routineId, copiedId);
+    const stepIdMap = new Map<string, string>();
+    const steps = routine.steps.map(step => {
+      const copiedStepId = makeId(usedIds);
+      stepIdMap.set(step.id, copiedStepId);
+      return {
+        ...step,
+        id: copiedStepId,
+        ...(step.skillIds ? { skillIds: mapSkillIds(step.skillIds) } : {}),
+      };
+    });
+    stepIdMaps.set(routineId, stepIdMap);
     copiedRoutines.push({
       ...routine,
       id: copiedId,
       ...(routine.skillIds ? { skillIds: mapSkillIds(routine.skillIds) } : {}),
-      steps: routine.steps.map(step => ({
-        ...step,
-        id: makeId(usedIds),
-        ...(step.skillIds ? { skillIds: mapSkillIds(step.skillIds) } : {}),
-      })),
+      steps,
     });
   }
+  const copyStepSelections = (selections: RoutinePlaylist['stepSelections']) => selections?.map(selection => ({
+    routineId: routineIdMap.get(selection.routineId)!,
+    steps: selection.steps.map(step => ({
+      ...step,
+      stepId: stepIdMaps.get(selection.routineId)?.get(step.stepId) ?? step.stepId,
+    })),
+  }));
 
   const playlistIdMap = new Map<string, string>();
   const copiedPlaylists: RoutinePlaylist[] = [];
@@ -165,6 +180,7 @@ export function buildPersonCopy(
       ...playlist,
       id: copiedId,
       routineIds: playlist.routineIds.map(id => routineIdMap.get(id)!),
+      ...(playlist.stepSelections ? { stepSelections: copyStepSelections(playlist.stepSelections) } : {}),
       ...(playlist.skillIds ? { skillIds: mapSkillIds(playlist.skillIds) } : {}),
       ...(playlist.reminderSettings ? { reminderSettings: { ...playlist.reminderSettings } } : {}),
     });
@@ -184,6 +200,8 @@ export function buildPersonCopy(
       playlistOverride: {
         ...schedule.playlistOverride,
         routineIds: schedule.playlistOverride.routineIds.map(id => routineIdMap.get(id)!),
+        ...(schedule.playlistOverride.stepSelections
+          ? { stepSelections: copyStepSelections(schedule.playlistOverride.stepSelections) } : {}),
         ...(schedule.playlistOverride.skillIds
           ? { skillIds: mapSkillIds(schedule.playlistOverride.skillIds) } : {}),
         ...(schedule.playlistOverride.reminderSettings

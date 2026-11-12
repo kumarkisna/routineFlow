@@ -28,6 +28,11 @@ const sourceSnapshot = (): PersonSnapshot => ({
     id: 'playlist',
     title: 'Sequence',
     routineIds: ['a', 'b', 'a'],
+    stepSelections: [
+      { routineId: 'a', steps: [{ stepId: 'a-step-b', durationSeconds: 180 }] },
+      { routineId: 'b', steps: [{ stepId: 'b-step-b', durationSeconds: 120 }] },
+      { routineId: 'a', steps: [{ stepId: 'a-step-a', durationSeconds: 60 }] },
+    ],
     skillIds: ['skill-cardio'],
     reminderSettings: { stepCompletion: true, routineCompletion: false },
   }],
@@ -64,6 +69,11 @@ const sourceSnapshot = (): PersonSnapshot => ({
       playlistOverride: {
         title: 'Date-only order',
         routineIds: ['b', 'a', 'b'],
+        stepSelections: [
+          { routineId: 'b', steps: [{ stepId: 'b-step-b', durationSeconds: 120 }] },
+          { routineId: 'a', steps: [{ stepId: 'a-step-a', durationSeconds: 90 }] },
+          { routineId: 'b', steps: [{ stepId: 'b-step-a', durationSeconds: 60 }] },
+        ],
         skillIds: ['skill-special'],
         reminderSettings: { stepCompletion: false, routineCompletion: true },
       },
@@ -114,6 +124,11 @@ test('copies routine, playlist, schedule, and override dependencies with shared 
   assert.notEqual(copiedA.steps[0].id, 'a-step-a');
   assert.notEqual(copiedA.steps[0].id, copiedA.id);
   assert.deepEqual(copiedPlaylist.routineIds, [copiedA.id, copiedB.id, copiedA.id]);
+  assert.deepEqual(copiedPlaylist.stepSelections, [
+    { routineId: copiedA.id, steps: [{ stepId: copiedA.steps[1].id, durationSeconds: 180 }] },
+    { routineId: copiedB.id, steps: [{ stepId: copiedB.steps[1].id, durationSeconds: 120 }] },
+    { routineId: copiedA.id, steps: [{ stepId: copiedA.steps[0].id, durationSeconds: 60 }] },
+  ]);
   assert.equal(copiedPlaylist.title, 'Sequence');
   assert.equal(copiedB.hidden, true);
   assert.equal(copiedB.steps[0].hidden, true);
@@ -135,6 +150,11 @@ test('copies routine, playlist, schedule, and override dependencies with shared 
   assert.deepEqual(copiedPlaylistSchedule.playlistOverride, {
     title: 'Date-only order',
     routineIds: [copiedB.id, copiedA.id, copiedB.id],
+    stepSelections: [
+      { routineId: copiedB.id, steps: [{ stepId: copiedB.steps[1].id, durationSeconds: 120 }] },
+      { routineId: copiedA.id, steps: [{ stepId: copiedA.steps[0].id, durationSeconds: 90 }] },
+      { routineId: copiedB.id, steps: [{ stepId: copiedB.steps[0].id, durationSeconds: 60 }] },
+    ],
     skillIds: [copiedSpecial.id],
     reminderSettings: { stepCompletion: false, routineCompletion: true },
   });

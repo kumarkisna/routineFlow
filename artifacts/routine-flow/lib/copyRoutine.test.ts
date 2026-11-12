@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { copyRoutineSteps, filterRoutineSourcesForStepCopy } from './copyRoutine';
+import { copyRoutineSteps } from './copyRoutine';
 import type { Routine } from '../types/routines';
 
 const routine: Routine = {
@@ -60,22 +60,4 @@ test('copies ordered steps with fresh IDs and independent nested data', () => {
   copied[0].detailAttachments?.[0]?.[0] && (copied[0].detailAttachments[0][0].name = 'renamed.png');
   assert.deepEqual(routine.steps[0].additionalDetails, ['Relax your shoulders']);
   assert.equal(routine.steps[0].detailAttachments?.[0]?.[0]?.name, 'breathing.png');
-});
-
-test('filters source routines by title, category, step details, rich text, and linked skills', () => {
-  const skills = [
-    { id: 'routine-skill', name: 'Mindful focus' },
-    { id: 'step-skill', name: 'Breathwork' },
-  ];
-  const others: Routine[] = [
-    { ...routine, id: 'work', title: 'Desk reset', category: 'Work', skillIds: [], steps: [{ id: 'desk', title: 'Clear desk', durationSeconds: 30 }] },
-  ];
-
-  assert.deepEqual(filterRoutineSourcesForStepCopy([routine, ...others], skills, 'MORNING WELLNESS'), [routine]);
-  assert.deepEqual(filterRoutineSourcesForStepCopy([routine, ...others], skills, 'calming breath'), [routine]);
-  assert.deepEqual(filterRoutineSourcesForStepCopy([routine, ...others], skills, 'calm instruction'), [routine]);
-  assert.deepEqual(filterRoutineSourcesForStepCopy([routine, ...others], skills, 'breathwork'), [routine]);
-  assert.deepEqual(filterRoutineSourcesForStepCopy([routine, ...others], skills, 'mindful focus'), [routine]);
-  assert.deepEqual(filterRoutineSourcesForStepCopy([routine, ...others], skills, 'nothing matches'), []);
-  assert.deepEqual(filterRoutineSourcesForStepCopy([routine, ...others], skills, '   '), [routine, ...others]);
 });

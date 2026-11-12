@@ -364,6 +364,7 @@ test('person backup includes playlists, schedules, selected theme, and optional 
       id: 'focus',
       title: 'Focus',
       routineIds: ['morning'],
+      stepSelections: [{ routineId: 'morning', steps: [{ stepId: 'water', durationSeconds: 90 }] }],
       skillIds: ['skill-focus'],
       rateSkillsAtPlaylistEnd: false,
       reminderSettings: { stepCompletion: true, routineCompletion: false },
@@ -404,6 +405,7 @@ test('person backup includes playlists, schedules, selected theme, and optional 
   assert.deepEqual(imported.personData, {
     playlists: personData.playlists.map(playlist => ({
       ...playlist,
+      stepSelections: [{ routineId: 'morning', steps: [{ stepId: 'water', durationSeconds: 90 }] }],
       rateSkillsAtPlaylistEnd: false,
       reminderSettings: { stepCompletion: true, routineCompletion: false },
     })),

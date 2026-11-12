@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createPlaylistRunLaunch, getPlaylistSpeechSteps, mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylists, playablePlaylistIds,
+import { createPlaylistRunLaunch, getPlaylistDurationSeconds, getPlaylistRunEntries, getPlaylistSpeechSteps, mergePlaylistCatalog, nextPlaylistCursor, parsePlaylistQueue, parsePlaylistStepQueue, parsePlaylists, playablePlaylistIds,
   remapPlaylistReferences, resolvePlaylistReminderSettings, validatePlaylist } from './playlists';
 import type { Routine } from '../types/routines';
 import { getNextRoutineStepIndex, getPlayableRoutine, getRoutinePlaybackStep, getRoutinePlaybackStepSeconds } from './routinePlayback';
@@ -118,6 +118,55 @@ test('playlist names and at least one routine are required', () => {
   assert.throws(() => validatePlaylist('Morning', Array(101).fill('a')));
   assert.doesNotThrow(() => validatePlaylist('Morning', ['a', 'a']));
 });
+
+test('selected playlist steps keep source data intact and run with playlist-only durations', () => {
+  const first: Routine = {
+    ...routine('first'),
+    steps: [
+      { id: 'a', title: 'Warm up', durationSeconds: 20 },
+      { id: 'b', title: 'Drink water', durationSeconds: 30 },
+      { id: 'hidden', title: 'Hidden', durationSeconds: 40, hidden: true },
+    ],
+  };
+  const second = { ...routine('second'), steps: [{ id: 'c', title: 'Stretch', durationSeconds: 50 }] };
+  const playlist = {
+    id: 'selected',
+    title: 'Selected steps',
+    routineIds: ['first', 'second'],
+    stepSelections: [
+      { routineId: 'first', steps: [{ stepId: 'b', durationSeconds: 75 }] },
+      { routineId: 'second', steps: [{ stepId: 'c', durationSeconds: 50 }] },
+    ],
+  };
+  const sources = [first, second];
+  const entries = getPlaylistRunEntries(playlist, sources);
+  assert.deepEqual(entries.map(entry => [entry.routineId, entry.steps.map(step => [step.id, step.durationSeconds])]), [
+    ['first', [['b', 75]]],
+    ['second', [['c', 50]]],
+  ]);
+  assert.equal(getPlaylistDurationSeconds(playlist, sources), 125);
+  assert.equal(first.steps[1].durationSeconds, 30);
+  assert.equal(sources[0].steps.length, 3);
+  assert.deepEqual(getPlaylistSpeechSteps(playlist, sources).map(entry => entry.routine.steps[entry.stepIndex].id), ['b', 'c']);
+  const launch = createPlaylistRunLaunch(playlist, sources);
+  assert.ok(launch);
+  assert.deepEqual(parsePlaylistQueue(launch.params.queue), ['first', 'second']);
+  assert.deepEqual(parsePlaylistStepQueue(launch.params.stepQueue), playlist.stepSelections);
+  assert.equal(nextPlaylistCursor(['first', 'second'], 0, [first, { ...second, steps: [{ ...second.steps[0], hidden: true }] }], playlist.stepSelections), -1);
+});
+
+test('legacy playlists still select every currently visible step at its source duration', () => {
+  const source = {
+    ...routine('legacy'),
+    steps: [
+      { id: 'one', title: 'One', durationSeconds: 15 },
+      { id: 'two', title: 'Two', durationSeconds: 25 },
+      { id: 'hidden', title: 'Hidden', durationSeconds: 99, hidden: true },
+    ],
+  };
+  const entries = getPlaylistRunEntries({ routineIds: ['legacy'] }, [source]);
+  assert.deepEqual(entries[0].steps.map(step => [step.id, step.durationSeconds]), [['one', 15], ['two', 25]]);
+});
 test('saved playlist parsing keeps ordered identifiers and rejects corrupt storage', () => {
   const list = [{ id: 'p', title: 'Morning', routineIds: ['b', 'a', 'b'] }];
   assert.deepEqual(parsePlaylists(JSON.stringify(list)), [
@@ -159,6 +208,19 @@ test('saved playlist parsing keeps ordered identifiers and rejects corrupt stora
   assert.throws(() => parsePlaylists(JSON.stringify([{
     ...list[0], reflectionTemplateHtml: 'x'.repeat(100_001),
   }])));
+  const selected = {
+    ...list[0],
+    routineIds: ['b'],
+    stepSelections: [{ routineId: 'b', steps: [{ stepId: 'b-1', durationSeconds: 42 }] }],
+  };
+  assert.deepEqual(parsePlaylists(JSON.stringify([selected]))[0].stepSelections, selected.stepSelections);
+  assert.throws(() => parsePlaylists(JSON.stringify([{
+    ...selected, stepSelections: [{ routineId: 'other', steps: [] }],
+  }])));
+  assert.throws(() => parsePlaylists(JSON.stringify([{
+    ...selected, stepSelections: [{ routineId: 'b', steps: [{ stepId: 'b-1', durationSeconds: 0 }] }],
+  }])));
+  assert.throws(() => validatePlaylist('Empty selection', ['b'], [{ routineId: 'b', steps: [] }]));
 });
 
 test('playlist backup imports merge skill links and keep conflicting local playlists intact', () => {
@@ -205,6 +267,10 @@ test('playlist backup imports merge skill links and keep conflicting local playl
 test('backup playlist references follow remapped routine and skill IDs', () => {
   assert.deepEqual(remapPlaylistReferences([{
     id: 'playlist', title: 'Focus', routineIds: ['routine-old', 'local-routine'],
+    stepSelections: [
+      { routineId: 'routine-old', steps: [{ stepId: 'old-step', durationSeconds: 60 }] },
+      { routineId: 'local-routine', steps: [{ stepId: 'local-step', durationSeconds: 30 }] },
+    ],
     skillIds: ['skill-old', 'local-skill'],
     reminderSettings: { stepCompletion: true, routineCompletion: false },
   }], {
@@ -213,6 +279,10 @@ test('backup playlist references follow remapped routine and skill IDs', () => {
     'skill-old': 'local-focus',
   }), [{
     id: 'playlist', title: 'Focus', routineIds: ['routine-copy', 'local-routine'],
+    stepSelections: [
+      { routineId: 'routine-copy', steps: [{ stepId: 'old-step', durationSeconds: 60 }] },
+      { routineId: 'local-routine', steps: [{ stepId: 'local-step', durationSeconds: 30 }] },
+    ],
     skillIds: ['local-focus', 'local-skill'],
     reminderSettings: { stepCompletion: true, routineCompletion: false },
   }]);

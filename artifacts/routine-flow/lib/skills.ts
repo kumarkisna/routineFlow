@@ -1,5 +1,5 @@
 import type { Routine } from '@/types/routines';
-import type { RoutinePlaylist } from './playlists';
+import type { PlaylistStepSelection, RoutinePlaylist } from './playlists';
 
 export type RoutineSkill = { id: string; name: string; ratings?: SkillRating[] };
 export type SkillRatingRun = {
@@ -264,12 +264,24 @@ export function getUnambiguousRoutineTitles(routines: Routine[], routineIds: str
     .map(routine => routine.title);
 }
 
-export function getPlaylistSkillIds(routineIds: string[], routines: Routine[], playlistSkillIds: string[] = []): string[] {
+export function getPlaylistSkillIds(
+  routineIds: string[],
+  routines: Routine[],
+  playlistSkillIds: string[] = [],
+  stepSelections?: PlaylistStepSelection[],
+): string[] {
   const routinesById = new Map(routines.map(routine => [routine.id, routine] as const));
   return [...new Set([
-    ...routineIds.flatMap(id => {
+    ...routineIds.flatMap((id, index) => {
       const routine = routinesById.get(id);
-      return routine ? getRoutineSkillIds(routine) : [];
+      if (!routine || routine.hidden) return [];
+      const available = routine.steps.filter(step => !step.hidden);
+      const selection = stepSelections?.[index];
+      const selected = selection
+        ? new Set(selection.steps.map(step => step.stepId))
+        : null;
+      const steps = available.filter(step => !selected || selected.has(step.id));
+      return steps.length ? getRoutineSkillIds({ ...routine, steps }) : [];
     }),
     ...playlistSkillIds,
   ])];

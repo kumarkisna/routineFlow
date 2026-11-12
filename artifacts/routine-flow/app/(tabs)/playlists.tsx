@@ -14,8 +14,8 @@ import { SkillTagList } from '@/components/SkillPicker';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { useSkills } from '@/context/SkillContext';
 import { buildStepAnnouncement, getSpeechResumeMode } from '@/lib/routineSpeech';
-import { createPlaylistRunLaunch, getPlaylistSpeechSteps, playablePlaylistIds, type RoutinePlaylist } from '@/lib/playlists';
-import { formatDuration, getStepSeconds } from '@/types/routines';
+import { createPlaylistRunLaunch, getPlaylistDurationSeconds, getPlaylistRunEntries, getPlaylistSpeechSteps, type RoutinePlaylist } from '@/lib/playlists';
+import { formatDuration } from '@/types/routines';
 
 export default function PlaylistsScreen() {
   const colors = useColors();
@@ -133,12 +133,6 @@ export default function PlaylistsScreen() {
     });
   }
 
-  function seconds(ids: string[]) {
-    return playablePlaylistIds(ids, routines).reduce((sum, id) => {
-      const r = routines.find((x) => x.id === id);
-      return sum + (r ? r.steps.filter((s) => !s.hidden).reduce((a, s) => a + getStepSeconds(s), 0) : 0);
-    }, 0);
-  }
   function title(id: string) {
     const r = routines.find((x) => x.id === id);
     return r && !r.hidden ? r.title : 'Unavailable routine';
@@ -224,7 +218,7 @@ export default function PlaylistsScreen() {
           </View>
         }
         renderItem={({ item }) => {
-          const playable = playablePlaylistIds(item.routineIds, routines);
+          const playable = getPlaylistRunEntries(item, routines);
           const confirming = pendingDelete === item.id;
           const expanded = disclosure.isExpanded(item.id);
           return (
@@ -243,7 +237,7 @@ export default function PlaylistsScreen() {
               {expanded ? <>
                 <SkillTagList skillIds={item.skillIds} />
                 <Text style={[styles.meta, { color: colors.inkSoft }]}>
-                  {playable.length} {playable.length === 1 ? 'routine' : 'routines'} · {formatDuration(seconds(item.routineIds))}
+                  {playable.length} {playable.length === 1 ? 'routine' : 'routines'} · {formatDuration(getPlaylistDurationSeconds(item, routines))}
                   {playable.length < item.routineIds.length ? ` · ${item.routineIds.length - playable.length} unavailable` : ''}
                 </Text>
                 <View style={{ marginTop: 8 }}>
@@ -289,7 +283,10 @@ export default function PlaylistsScreen() {
                   <RoutinePdfExportButton
                     title={item.title}
                     kind="playlist"
-                    routines={item.routineIds.map(routineId => routines.find(routine => routine.id === routineId))}
+                    routines={getPlaylistRunEntries(item, routines).map(entry => {
+                      const routine = routines.find(source => source.id === entry.routineId);
+                      return routine ? { ...routine, steps: entry.steps } : undefined;
+                    })}
                     personName={activePerson.name}
                     personId={activePerson.id}
                     testID={`print-playlist-${item.id}`}
@@ -305,7 +302,7 @@ export default function PlaylistsScreen() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={
-                      speakingPlaylistId !== item.id ? `Speak all routines in ${item.title}`
+                      speakingPlaylistId !== item.id ? `Speak selected playlist steps in ${item.title}`
                         : playlistSpeechPaused ? `Play ${item.title} speech` : `Pause ${item.title} speech`
                     }
                     accessibilityState={{ disabled: playable.length === 0 }}

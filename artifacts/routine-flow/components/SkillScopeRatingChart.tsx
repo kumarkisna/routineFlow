@@ -64,7 +64,7 @@ export function SkillScopeRatingChart({
     }
     if (scopeKind === 'playlist') {
       const playlist = playlists.find(item => item.id === selected.id);
-      return playlist ? getPlaylistSkillIds(playlist.routineIds, routines, playlist.skillIds) : [];
+      return playlist ? getPlaylistSkillIds(playlist.routineIds, routines, playlist.skillIds, playlist.stepSelections) : [];
     }
     return [...new Set(routines
       .filter(item => categoryKey(item.category) === selected.id)

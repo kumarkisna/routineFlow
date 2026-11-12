@@ -22,7 +22,8 @@ import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEdi
 import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
 import { moveRoutineStep } from '@/lib/routineStepOrdering';
-import { copyRoutineSteps, filterRoutineSourcesForStepCopy } from '@/lib/copyRoutine';
+import { copyRoutineSteps } from '@/lib/copyRoutine';
+import { filterRoutinesByStepKeywords } from '@/lib/routineSearch';
 import {
   addAdditionalStepDetail,
   buildStepDetailFields,
@@ -98,7 +99,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const canSave = useMemo(() => title.trim().length > 0 && steps.length > 0, [title, steps.length]);
   const existingCategories = listRoutineCategories(routines);
   const routineStepSources = useMemo(
-    () => filterRoutineSourcesForStepCopy(routines, skills, stepSourceQuery),
+    () => filterRoutinesByStepKeywords(routines, skills, stepSourceQuery),
     [routines, skills, stepSourceQuery],
   );
 

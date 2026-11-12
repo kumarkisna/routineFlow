@@ -270,6 +270,20 @@ test('playlist-end ratings include unique skills from every routine and playlist
   ), ['direct', 'shared', 'first-step', 'second-direct', 'second-step', 'playlist-skill']);
 });
 
+test('playlist-end ratings only include skills from selected steps', () => {
+  const routine: Routine = {
+    id: 'routine', title: 'Routine', subtitle: '', icon: 'sun', tone: 'sage', createdAt: '',
+    skillIds: ['routine-skill'],
+    steps: [
+      { id: 'chosen', title: 'Chosen', durationSeconds: 1, skillIds: ['chosen-skill'] },
+      { id: 'omitted', title: 'Omitted', durationSeconds: 1, skillIds: ['omitted-skill'] },
+    ],
+  };
+  assert.deepEqual(getPlaylistSkillIds(['routine'], [routine], ['playlist-skill'], [
+    { routineId: 'routine', steps: [{ stepId: 'chosen', durationSeconds: 5 }] },
+  ]), ['routine-skill', 'chosen-skill', 'playlist-skill']);
+});
+
 test('skill usage includes direct and step assignments, plus playlists containing linked routines', () => {
   const routines = [
     {

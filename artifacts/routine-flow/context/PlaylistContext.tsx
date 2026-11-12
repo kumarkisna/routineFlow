@@ -1,6 +1,6 @@
 import { usePersonStorage } from '@/context/PeopleContext';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { DEFAULT_PLAYLIST_REMINDER_SETTINGS, mergePlaylistCatalog, parsePlaylists, validatePlaylist, type RoutinePlaylist } from '@/lib/playlists';
+import { DEFAULT_PLAYLIST_REMINDER_SETTINGS, mergePlaylistCatalog, parsePlaylists, validatePlaylist, type PlaylistStepSelection, type RoutinePlaylist } from '@/lib/playlists';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import type { RoutineNotificationSettings } from '@/types/routines';
 import { resolveReflectionTemplateHtml } from '@/lib/stepDetailHtml';
@@ -14,6 +14,7 @@ type PlaylistContextValue = {
   savePlaylist: (
     title: string, routineIds: string[], id?: string, skillIds?: string[], rateSkillsAtPlaylistEnd?: boolean,
     reminderSettings?: RoutineNotificationSettings, reflectionTemplate?: string, reflectionTemplateHtml?: string,
+    stepSelections?: PlaylistStepSelection[],
   ) => Promise<RoutinePlaylist>;
   mergeImportedPlaylists: (playlists: RoutinePlaylist[]) => Promise<{
     added: number; skipped: number; renamed: number; updated: number; idMap: Record<string, string>;
@@ -54,10 +55,11 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     reminderSettings?: RoutineNotificationSettings,
     reflectionTemplate?: string,
     reflectionTemplateHtml?: string,
+    stepSelections?: PlaylistStepSelection[],
   ) =>
     runWrite(async () => {
       if (loading || error) throw new Error('Wait for playlists to load successfully before saving.');
-      validatePlaylist(title, routineIds);
+      validatePlaylist(title, routineIds, stepSelections);
       if (id && !current.current.some(item => item.id === id)) throw new Error('Playlist not found.');
       const previous = id ? current.current.find(item => item.id === id) : undefined;
       const nextReflectionTemplate = reflectionTemplate !== undefined
@@ -70,6 +72,10 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
       const playlist: RoutinePlaylist = {
         id: id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         title: title.trim(), routineIds: [...routineIds],
+        ...(stepSelections ? { stepSelections: stepSelections.map(selection => ({
+          routineId: selection.routineId,
+          steps: selection.steps.map(step => ({ ...step })),
+        })) } : {}),
         ...((skillIds ?? previous?.skillIds)?.length ? { skillIds: [...(skillIds ?? previous!.skillIds!)] } : {}),
         rateSkillsAtPlaylistEnd: rateSkillsAtPlaylistEnd ?? previous?.rateSkillsAtPlaylistEnd ?? true,
         reminderSettings: {
