@@ -21,6 +21,13 @@ import { getSpokenStepDetails, getStepDetails } from '@/types/routines';
 import { getHistoryForDay } from './progressHistory';
 import { buildStepAnnouncement } from './routineSpeech';
 import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
+import {
+  buildStepDetailFields,
+  createStepDetailDraft,
+  setStepDetailHtml,
+  updateAdditionalStepDetail,
+} from './stepDetailDraft';
+import { serializeStepDetailEditorSave } from './stepDetailEditor';
 
 const day = '2026-09-28';
 const secondDay = '2026-09-29';
@@ -405,6 +412,44 @@ test('older routine backup versions sanitize formatted step links consistently',
     assert.match(detailHtml, /href="mailto:team@example\.com"/, `backup version ${version}`);
     assert.doesNotMatch(detailHtml, /javascript:/i, `backup version ${version}`);
   }
+});
+
+test('editing one imported additional detail keeps each link with its original note', () => {
+  const source = routine('legacy-multi-link');
+  source.steps[0].description = 'Main guide';
+  source.steps[0].additionalDetails = ['Follow-up note'];
+  source.steps[0].detailHtml = [
+    '<p><a href="https://example.com/main">Main guide</a></p>',
+    '<p><a href="https://example.com/follow-up">Follow-up note</a></p>',
+  ];
+  const imported = parseRoutinesFile(backup(ROUTINE_BACKUP_VERSION - 1, [source]));
+  const importedStep = imported.routines[0].steps[0];
+  let draft = createStepDetailDraft(importedStep);
+  const editedAdditional = serializeStepDetailEditorSave(
+    'native',
+    '',
+    '<p><a href="mailto:team@example.com">Email the team</a></p>',
+  );
+  draft = updateAdditionalStepDetail(draft, 0, editedAdditional.text);
+  draft = setStepDetailHtml(draft, 1, editedAdditional.html);
+  const saved = {
+    ...importedStep,
+    ...buildStepDetailFields(draft),
+  };
+  const reopened = createStepDetailDraft(JSON.parse(JSON.stringify(saved)));
+
+  assert.equal(reopened.description, 'Main guide');
+  assert.deepEqual(reopened.additionalDetails, ['Email the team']);
+  assert.deepEqual(reopened.detailHtml, [
+    '<p><a href="https://example.com/main">Main guide</a></p>',
+    '<p><a href="mailto:team@example.com">Email the team</a></p>',
+  ]);
+  assert.equal(detailHtmlToText(reopened.detailHtml[0]), reopened.description);
+  assert.equal(detailHtmlToText(reopened.detailHtml[1]), reopened.additionalDetails[0]);
+  assert.deepEqual(source.steps[0].detailHtml, [
+    '<p><a href="https://example.com/main">Main guide</a></p>',
+    '<p><a href="https://example.com/follow-up">Follow-up note</a></p>',
+  ]);
 });
 
 test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
