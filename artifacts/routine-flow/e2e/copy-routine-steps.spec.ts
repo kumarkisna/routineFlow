@@ -90,6 +90,65 @@ const skills = [
   { id: 'care', name: 'Care' },
 ];
 
+test('restored rich step links render accessibly and unsafe schemes stay inactive in the web preview', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const routine = {
+    id: 'rich-link-routine',
+    title: 'Link preview routine',
+    subtitle: 'Imported link checks',
+    icon: 'sunny-outline',
+    tone: 'coral',
+    createdAt: '2026-10-14T08:00:00.000Z',
+    steps: [{
+      id: 'rich-link-step',
+      title: 'Review the links',
+      description: 'Visit the guide or email support.',
+      detailHtml: [
+        '<p>Visit <a href="https://example.com/guide">the guide</a> or <a href="mailto:help@example.com">email support</a>. <a href="javascript:alert(1)">unsafe link</a></p>',
+      ],
+      durationSeconds: 60,
+    }],
+  };
+  const backup = JSON.stringify({
+    format: 'routine-flow-routines',
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    routines: [routine],
+    progress: {},
+  });
+
+  await page.addInitScript(() => {
+    if (localStorage.getItem('@routine-flow/routines') === null) {
+      localStorage.setItem('@routine-flow/routines', '[]');
+      localStorage.setItem('@routine-flow/progress', '{}');
+      localStorage.setItem('@routine-flow/skills', '[]');
+      localStorage.setItem('@routine-flow/playlists', '[]');
+    }
+  });
+  await page.goto('/');
+  const chooserPromise = page.waitForEvent('filechooser');
+  await page.getByTestId('import-routines').click();
+  await (await chooserPromise).setFiles({
+    name: 'rich-link-routine.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(backup),
+  });
+  await page.getByTestId('import-without-progress').click();
+  await expect(page.getByText(/1 routine imported/)).toBeVisible();
+  await page.reload();
+  await page.getByLabel('Open Link preview routine').click();
+
+  const httpsLink = page.getByRole('link', { name: 'the guide' });
+  const mailtoLink = page.getByRole('link', { name: 'email support' });
+  await expect(httpsLink).toHaveAttribute('href', 'https://example.com/guide');
+  await expect(mailtoLink).toHaveAttribute('href', 'mailto:help@example.com');
+  const unsafeLink = page.locator('a').filter({ hasText: 'unsafe link' });
+  await expect(unsafeLink).toBeVisible();
+  expect(await unsafeLink.getAttribute('href')).toBeNull();
+  await unsafeLink.click();
+  await expect(page).toHaveURL(/\/routine\/rich-link-routine$/);
+});
+
 test('copy routine empty states distinguish search from filters and let filters be cleared', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
 

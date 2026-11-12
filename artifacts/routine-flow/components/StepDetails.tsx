@@ -28,7 +28,25 @@ export function StepDetails({
     <>
       {detailEntries.map(({ detail, index }) => {
         const html = detailHtml?.[index];
-        if (html && Platform.OS !== 'web') {
+        if (html && Platform.OS === 'web') {
+          const flattenedStyle = StyleSheet.flatten(style);
+          return React.createElement('div', {
+            key: `html-${index}`,
+            'data-testid': `rich-step-detail-${index}`,
+            style: {
+              color: String(flattenedStyle?.color ?? linkColor),
+              fontFamily: flattenedStyle?.fontFamily,
+              fontSize: flattenedStyle?.fontSize,
+              fontWeight: flattenedStyle?.fontWeight,
+              lineHeight: typeof flattenedStyle?.lineHeight === 'number'
+                ? `${flattenedStyle.lineHeight}px`
+                : flattenedStyle?.lineHeight,
+              marginTop: flattenedStyle?.marginTop,
+            },
+            dangerouslySetInnerHTML: { __html: sanitizeStepDetailHtml(html) },
+          });
+        }
+        if (html) {
           return (
             <RichEditor
               key={`html-${index}`}
