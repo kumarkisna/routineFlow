@@ -480,7 +480,10 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
         steps: [{
           ...routine('me-morning').steps[0],
           additionalDetails: ['Open the saved guide.'],
-          detailHtml: ['<p>Carry the photo through restore.</p>', '<p>Read the guide.</p>'],
+          detailHtml: [
+            '<p>Carry the photo through restore. <a href="https://example.com/me">Me guide</a> <a href="javascript:run()">Unsafe</a></p>',
+            '<p><a href="mailto:me@example.com">Email Me</a></p>',
+          ],
           detailAttachments: [
             [{ id: 'portable-photo', name: 'photo.png', uri: 'file:///old-device/photo.png',
               mimeType: 'image/png', kind: 'image' as const, contentBase64: 'aGVsbG8=' }],
@@ -494,7 +497,16 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
     },
     {
       person: profile('alex', 'Alex', false),
-      routines: [routine('alex-morning')],
+      routines: [{
+        ...routine('alex-morning'),
+        steps: [{
+          ...routine('alex-morning').steps[0],
+          description: 'Open Alex’s guide.',
+          detailHtml: [
+            '<p><a href="https://example.org/alex">Alex guide</a> <a href="mailto:alex@example.org">Email Alex</a> <a href="javascript:run()">Unsafe</a></p>',
+          ],
+        }, routine('alex-morning').steps[1]],
+      }],
       personData: personData('alex-focus', 9, 12),
     },
   ];
@@ -543,8 +555,14 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   assert.equal(meBackup.personData?.skillRatingWindow, 5);
   assert.deepEqual(meBackup.progress, { [day]: { 'me-morning:water': true } });
   assert.equal(meBackup.routines[0].steps[0].detailAttachments?.[0][0].contentBase64, 'aGVsbG8=');
-  assert.equal(meBackup.routines[0].steps[0].detailHtml?.[0], '<p>Carry the photo through restore.</p>');
+  assert.equal(
+    meBackup.routines[0].steps[0].detailHtml?.[0],
+    '<p>Carry the photo through restore. <a href="https://example.com/me">Me guide</a> <a>Unsafe</a></p>',
+  );
+  assert.equal(meBackup.routines[0].steps[0].detailHtml?.[1], '<p><a href="mailto:me@example.com">Email Me</a></p>');
   assert.equal(alexBackup.routines[0].id, 'alex-morning');
+  assert.equal(alexBackup.routines[0].steps[0].detailHtml?.[0],
+    '<p><a href="https://example.org/alex">Alex guide</a> <a href="mailto:alex@example.org">Email Alex</a> <a>Unsafe</a></p>');
   assert.equal(alexBackup.skills?.[0].ratings?.[0].note, 'Reflection for alex-focus.');
   assert.equal(alexBackup.personData?.skillRatingWindow, 12);
   assert.equal(alexBackup.progress, undefined);
@@ -556,6 +574,13 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   assert.equal(parsedAllPeople.people[1].profile.speechVoiceId, null);
   assert.equal(parsedAllPeople.people[0].profile.defaultSpeakRoutineDescription, false);
   assert.equal(parsedAllPeople.people[1].profile.defaultSpeakRoutineDescription, true);
+  for (const personEntry of parsedAllPeople.people) {
+    const detailHtml = personEntry.backup.routines[0].steps[0].detailHtml?.join(' ') ?? '';
+    assert.match(detailHtml, /href="https?:\/\//);
+    assert.match(detailHtml, /href="mailto:/);
+    assert.doesNotMatch(detailHtml, /javascript:/i);
+    assert.equal(detailHtml, sanitizeStepDetailHtml(detailHtml));
+  }
   assert.equal(parsedAllPeople.people[0].backup.skills?.[0].ratings?.[0].note, 'Reflection for me-focus.');
   assert.equal(parsedAllPeople.people[1].backup.personData?.skillRatingWindow, 12);
   assert.equal(parsedAllPeople.people[0].backup.routines[0].steps[0].detailAttachments?.[0][0].contentBase64, 'aGVsbG8=');
