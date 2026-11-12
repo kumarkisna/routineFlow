@@ -11,7 +11,8 @@
     "test": "tsx --test lib/*.test.ts",
     "test:restore": "playwright test e2e/restore.spec.ts",
     "test:categories": "playwright test e2e/category-removal.spec.ts",
-    "test:copy-routine-steps": "playwright test e2e/copy-routine-steps.spec.ts"
+    "test:copy-routine-steps": "playwright test e2e/copy-routine-steps.spec.ts",
+    "test:step-detail-undo": "playwright test e2e/step-detail-undo.spec.ts"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
