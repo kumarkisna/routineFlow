@@ -57,6 +57,31 @@ export function updateAdditionalStepDetail(
   };
 }
 
+export function moveAdditionalStepDetail(
+  draft: StepDetailDraft,
+  index: number,
+  direction: -1 | 1,
+): StepDetailDraft {
+  const destination = index + direction;
+  if (!Number.isInteger(index) || index < 0 || index >= draft.additionalDetails.length
+    || destination < 0 || destination >= draft.additionalDetails.length) return draft;
+
+  const move = <T,>(items: T[], offset = 0) => {
+    const reordered = [...items];
+    [reordered[index + offset], reordered[destination + offset]] =
+      [reordered[destination + offset], reordered[index + offset]];
+    return reordered;
+  };
+
+  return {
+    ...draft,
+    additionalDetails: move(draft.additionalDetails),
+    detailSpeech: move(draft.detailSpeech, 1),
+    detailAttachments: move(draft.detailAttachments, 1),
+    detailHtml: move(draft.detailHtml, 1),
+  };
+}
+
 export function removeAdditionalStepDetail(draft: StepDetailDraft, index: number): StepDetailDraft {
   if (!Number.isInteger(index) || index < 0 || index >= draft.additionalDetails.length) return draft;
   return {

@@ -6,6 +6,7 @@ import {
   addStepDetailAttachment,
   buildStepDetailFields,
   createStepDetailDraft,
+  moveAdditionalStepDetail,
   removeAdditionalStepDetail,
   setStepDetailHtml,
   setStepDetailSpeech,
@@ -124,6 +125,41 @@ test('removing a middle additional detail keeps remaining links with their notes
     ['https://example.com/main', 'https://example.com/first', 'mailto:team@example.com'],
   );
   assert.deepEqual(originalStep.additionalDetails, ['First note', 'Remove this note', 'Last note']);
+});
+
+test('reordering additional notes keeps each formatted link with its note after save and reopen', () => {
+  const originalStep: RoutineStep = {
+    id: 'practice',
+    title: 'Practice',
+    description: 'Main guide',
+    additionalDetails: ['First note', 'Second note', 'Third note'],
+    detailSpeech: [true, true, false, true],
+    detailHtml: [
+      '<p><a href="https://example.com/main">Main guide</a></p>',
+      '<p><a href="https://example.com/first">First note</a></p>',
+      '<p><a href="mailto:team@example.com">Second note</a></p>',
+      '<p><a href="https://example.com/third">Third note</a></p>',
+    ],
+    durationSeconds: 60,
+  };
+  let draft = createStepDetailDraft(originalStep);
+  draft = moveAdditionalStepDetail(draft, 2, -1);
+  const saved = JSON.parse(JSON.stringify({
+    ...originalStep,
+    ...buildStepDetailFields(draft),
+  })) as RoutineStep;
+  const reopened = createStepDetailDraft(saved);
+
+  assert.deepEqual(reopened.additionalDetails, ['First note', 'Third note', 'Second note']);
+  assert.deepEqual(reopened.detailHtml, [
+    '<p><a href="https://example.com/main">Main guide</a></p>',
+    '<p><a href="https://example.com/first">First note</a></p>',
+    '<p><a href="https://example.com/third">Third note</a></p>',
+    '<p><a href="mailto:team@example.com">Second note</a></p>',
+  ]);
+  assert.deepEqual(reopened.detailSpeech, [true, true, true, false]);
+  assert.equal(moveAdditionalStepDetail(draft, 0, -1), draft);
+  assert.deepEqual(originalStep.additionalDetails, ['First note', 'Second note', 'Third note']);
 });
 
 test('editing a step appends files to the selected detail and preserves them after save and reopen', () => {
