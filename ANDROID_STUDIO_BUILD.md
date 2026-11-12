@@ -24,6 +24,36 @@ During Android Studio's first-run setup, install the recommended Android SDK, pl
 
 In GitHub Desktop, sign in to the GitHub account that can access the repository and clone `kumarkisna/routineFlow` to your computer.
 
+### Update an existing clone before building
+
+Close Android Studio before updating the source. In PowerShell or Git Bash, run these commands from the repository root (for example, `C:\rf`):
+
+```powershell
+cd C:\rf
+git fetch origin
+git switch main
+git pull --ff-only origin main
+git log -1 --oneline
+```
+
+The last command shows the latest commit now checked out locally. If the pull says local tracked changes would be overwritten, save those changes without including untracked build output, then retry:
+
+```powershell
+git stash push -m "Save tracked edits before pulling"
+git pull --ff-only origin main
+```
+
+Do not add `-u` to this stash command. Generated Android build folders can contain paths too long for Windows Git to read, causing an all-files stash to fail. The stash preserves tracked edits; it does not delete the untracked build folder. Keep the stash until you have reviewed whether any local edits need to be reapplied. If the pull instead says untracked files would be overwritten, stop and back up or relocate those files before retrying; do not run `git clean` or reset the repository.
+
+After pulling, install dependencies in **Git Bash**, not PowerShell. The workspace preinstall script calls `sh`; if you run pnpm from PowerShell it can fail with `'sh' is not recognized`. For a clone at `C:\rf`, open Git Bash and run:
+
+```bash
+cd /c/rf
+pnpm install --frozen-lockfile
+```
+
+If the install was already attempted from PowerShell and failed at the preinstall step, run the command above from Git Bash; you do not need to undo the partial install first. The Windows `node.exe` bin-creation warnings can be non-blocking if the install completes successfully. Then use the separate clean-release procedure below to trigger a fresh APK build.
+
 ## 3. Install project dependencies and generate Android files
 
 Open **Git Bash** in the cloned repository's top-level folder (the folder containing `pnpm-workspace.yaml`). Use Git Bash rather than PowerShell for dependency installation: this workspace's install check uses `sh`, which Git Bash provides.
@@ -83,6 +113,23 @@ Adjust `C:\rf` if you cloned the repository elsewhere. Close and reopen Android 
 8. Wait for **BUILD SUCCESSFUL** in Build Output. If the build fails, use the first meaningful error in the output rather than later summary lines.
 
 After updating the source, check Build Output for `:app:createBundleReleaseJsAndAssets`. If it reports `UP-TO-DATE` even though you expect changed screens or routes, follow the clean-release steps in Troubleshooting before installing the APK.
+
+### Trigger a fresh release build after pulling the latest code
+
+After `git pull` and the dependency install finish, open the generated `artifacts\routine-flow\android` folder in Android Studio, wait for Gradle sync, then use **Execute Gradle Task** and run:
+
+```text
+:app:clean :app:assembleRelease
+```
+
+This is the explicit build step after updating from GitHub. `:app:clean` removes generated Gradle build outputs (not source files or saved app data), forcing the JavaScript bundle to be generated from the newly pulled source instead of reused from an earlier build. Confirm `:app:createBundleReleaseJsAndAssets` runs rather than reporting `UP-TO-DATE`, then install the new release APK.
+
+You can run the same tasks from PowerShell if `JAVA_HOME` points to JDK 17:
+
+```powershell
+cd C:\rf\artifacts\routine-flow\android
+.\gradlew.bat :app:clean :app:assembleRelease
+```
 
 The debug APK is usually saved here:
 
