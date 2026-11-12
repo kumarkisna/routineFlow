@@ -91,6 +91,41 @@ test('formatted details retain plain editable text and HTML through save and reo
   ]);
 });
 
+test('removing a middle additional detail keeps remaining links with their notes', () => {
+  const originalStep: RoutineStep = {
+    id: 'practice',
+    title: 'Practice',
+    description: 'Main guide',
+    additionalDetails: ['First note', 'Remove this note', 'Last note'],
+    detailHtml: [
+      '<p><a href="https://example.com/main">Main guide</a></p>',
+      '<p><a href="https://example.com/first">First note</a></p>',
+      '<p><a href="https://example.com/remove">Remove this note</a></p>',
+      '<p><a href="mailto:team@example.com">Last note</a></p>',
+    ],
+    durationSeconds: 60,
+  };
+
+  const draft = removeAdditionalStepDetail(createStepDetailDraft(originalStep), 1);
+  const saved = {
+    ...originalStep,
+    ...buildStepDetailFields(draft),
+  };
+  const reopened = createStepDetailDraft(JSON.parse(JSON.stringify(saved)) as RoutineStep);
+
+  assert.deepEqual(reopened.additionalDetails, ['First note', 'Last note']);
+  assert.deepEqual(reopened.detailHtml, [
+    '<p><a href="https://example.com/main">Main guide</a></p>',
+    '<p><a href="https://example.com/first">First note</a></p>',
+    '<p><a href="mailto:team@example.com">Last note</a></p>',
+  ]);
+  assert.deepEqual(
+    reopened.detailHtml.map(html => html.match(/href="([^"]+)"/)?.[1]),
+    ['https://example.com/main', 'https://example.com/first', 'mailto:team@example.com'],
+  );
+  assert.deepEqual(originalStep.additionalDetails, ['First note', 'Remove this note', 'Last note']);
+});
+
 test('editing a step appends files to the selected detail and preserves them after save and reopen', () => {
   const photo = {
     id: 'photo-1', name: 'before.png', uri: 'file:///old/before.png',
