@@ -551,7 +551,24 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                             const checked = selectedIds.includes(step.id);
                             const detailKey = `${source.id}:${step.id}`;
                             const detailExpanded = expandedCopyStepIds[detailKey] ?? false;
-                            const details = getStepDetails(step);
+                            const detailCount = Math.max(
+                              1,
+                              step.detailHtml?.length ?? 0,
+                              step.detailAttachments?.length ?? 0,
+                              1 + (step.additionalDetails?.length ?? 0),
+                            );
+                            const details = Array.from({ length: detailCount }, (_, index) => {
+                              const textValue = index === 0 ? step.description : step.additionalDetails?.[index - 1];
+                              const htmlText = detailHtmlToText(step.detailHtml?.[index] ?? '').trim();
+                              const attachments = step.detailAttachments?.[index] ?? [];
+                              return {
+                                index,
+                                label: index === 0 ? 'Main detail' : `Additional detail ${index}`,
+                                text: htmlText || textValue?.trim() || '',
+                                attachments,
+                                speak: step.detailSpeech?.[index] ?? step.speakDetails !== false,
+                              };
+                            }).filter(detail => detail.text || detail.attachments.length > 0);
                             return (
                               <View key={step.id} style={[styles.copyStepChoice, { borderColor: colors.border }]}>
                                 <View style={styles.copyStepChoiceRow}>
@@ -586,12 +603,28 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                                 </View>
                                 {detailExpanded && details.length ? (
                                   <View style={[styles.copyStepDetails, { backgroundColor: colors.card }]}>
-                                    {details.map((detail, index) => (
-                                      <Text key={`${step.id}-detail-${index}`} style={[styles.copyStepDetailsText, { color: colors.inkSoft }]}>
-                                        {index === 0 ? detail : `• ${detail}`}
-                                      </Text>
-                                    ))}
+                                    <Text style={[styles.copyStepDetailsText, { color: colors.mutedForeground }]}>
+                                      {formatDuration(getStepSeconds(step))}{step.hidden ? ' · Hidden in source' : ''}
+                                    </Text>
                                     {step.skillIds?.length ? <SkillTagList skillIds={step.skillIds} /> : null}
+                                    {details.map(detail => (
+                                      <View key={`${step.id}-detail-${detail.index}`} style={styles.copyStepDetailBlock}>
+                                        <Text style={[styles.copyStepDetailLabel, { color: colors.foreground }]}>{detail.label}</Text>
+                                        {detail.text ? (
+                                          <Text style={[styles.copyStepDetailsText, { color: colors.inkSoft }]}>{detail.text}</Text>
+                                        ) : null}
+                                        {detail.attachments.length ? (
+                                          <StepDetailAttachments
+                                            label={`${detail.label} files`}
+                                            testID={`copy-step-files-${source.id}-${step.id}-${detail.index}`}
+                                            attachments={detail.attachments}
+                                          />
+                                        ) : null}
+                                        <Text style={[styles.copyStepSpeechHint, { color: colors.mutedForeground }]}>
+                                          {detail.speak ? 'Spoken during the routine' : 'Not spoken during the routine'}
+                                        </Text>
+                                      </View>
+                                    ))}
                                   </View>
                                 ) : null}
                               </View>
@@ -941,6 +974,9 @@ const styles = StyleSheet.create({
   copyStepSpeechButton: { width: 36, minHeight: 36, alignItems: 'center', justifyContent: 'center' },
   copyStepDetails: { paddingHorizontal: 9, paddingVertical: 8, borderRadius: 9, marginBottom: 8, gap: 4 },
   copyStepDetailsText: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18 },
+  copyStepDetailBlock: { gap: 4, paddingTop: 6 },
+  copyStepDetailLabel: { fontFamily: 'Inter_600SemiBold', fontSize: 12 },
+  copyStepSpeechHint: { fontFamily: 'Inter_400Regular', fontSize: 10, marginTop: 2 },
   copySelectedButton: { marginTop: 8 },
   copyStepsEmpty: { fontFamily: 'Inter_400Regular', fontSize: 13, paddingVertical: 8 },
   copyStepsMessage: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 8 },
