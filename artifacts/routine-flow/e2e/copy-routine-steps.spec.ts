@@ -316,6 +316,11 @@ test('copied steps can be edited and reopened without changing their source', as
   await page.getByLabel('Step seconds').fill('25');
   await page.getByLabel('Expand rich text editor for Main step detail').click();
   await page.getByTestId('rich-detail-web-input').fill('Copied formatted instructions');
+  await page.getByTestId('rich-detail-web-input').fill('Draft kept while editor is closed');
+  await page.getByTestId('rich-detail-close-keep').click();
+  await page.getByLabel('Continue editing draft for Main step detail').click();
+  await expect(page.getByTestId('rich-detail-web-input')).toHaveValue('Draft kept while editor is closed');
+  await page.getByTestId('rich-detail-web-input').fill('Copied formatted instructions');
   await page.getByLabel('Save formatted detail').click();
   await page.getByLabel('Update step').click();
 

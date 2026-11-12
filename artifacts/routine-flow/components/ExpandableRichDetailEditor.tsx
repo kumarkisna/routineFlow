@@ -3,12 +3,9 @@ import React, { useRef, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { actions, RichEditor, RichToolbar } from 'react-native-pell-rich-editor';
 import { useColors } from '@/hooks/useColors';
-import { sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
-import { serializeStepDetailEditorSave } from '@/lib/stepDetailEditor';
+import { openStepDetailEditorDraft, serializeStepDetailEditorSave, type StepDetailEditorDraft } from '@/lib/stepDetailEditor';
 
 export { detailHtmlToText, sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
-
-const escapeHtml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
 
 export function ExpandableRichDetailEditor({ label, value, html, disabled, onSave }: {
   label: string; value: string; html: string; disabled: boolean;
@@ -20,16 +17,13 @@ export function ExpandableRichDetailEditor({ label, value, html, disabled, onSav
   const [draftHtml, setDraftHtml] = useState('');
   const [webText, setWebText] = useState('');
   const [hasDraft, setHasDraft] = useState(false);
-  const draftRef = useRef<{ sourceKey: string; html: string; text: string } | null>(null);
+  const draftRef = useRef<StepDetailEditorDraft | null>(null);
 
   function open() {
-    const sourceKey = JSON.stringify([label, value, html]);
-    const retained = draftRef.current?.sourceKey === sourceKey ? draftRef.current : null;
-    const nextHtml = retained?.html ?? (html ? sanitizeStepDetailHtml(html) : `<p>${escapeHtml(value)}</p>`);
-    const nextText = retained?.text ?? value;
-    draftRef.current = { sourceKey, html: nextHtml, text: nextText };
-    setDraftHtml(nextHtml);
-    setWebText(nextText);
+    const draft = openStepDetailEditorDraft(label, value, html, draftRef.current);
+    draftRef.current = draft;
+    setDraftHtml(draft.html);
+    setWebText(draft.text);
     setHasDraft(true);
     setVisible(true);
   }
