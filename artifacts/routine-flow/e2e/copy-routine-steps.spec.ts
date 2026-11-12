@@ -192,3 +192,55 @@ test('select all shown copies only keyword-matched steps from the filtered sourc
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]')))
     .toEqual(sourceRoutines);
 });
+
+test('editing a routine can copy and inspect steps from another routine', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+
+  await page.addInitScript(({ routines, skills }) => {
+    localStorage.setItem('@routine-flow/routines', JSON.stringify(routines));
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/skills', JSON.stringify(skills));
+    localStorage.setItem('@routine-flow/playlists', '[]');
+
+    const testWindow = window as unknown as { __routineSpeechTexts: string[] };
+    testWindow.__routineSpeechTexts = [];
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        getVoices: () => [],
+        speak: (utterance: SpeechSynthesisUtterance) => testWindow.__routineSpeechTexts.push(utterance.text),
+        cancel: () => undefined,
+        pause: () => undefined,
+        resume: () => undefined,
+        get speaking() { return false; },
+        get pending() { return false; },
+        get paused() { return false; },
+        onvoiceschanged: null,
+      },
+    });
+  }, { routines: sourceRoutines, skills });
+
+  await page.goto('/new-routine?editId=garden-flow');
+  await expect(page.getByText('Edit routine', { exact: true })).toBeVisible();
+  await page.getByTestId('toggle-copy-routine-steps').click();
+  await expect(page.getByTestId('choose-steps-from-garden-flow')).toHaveCount(0);
+  await page.getByTestId('choose-steps-from-step-linked-garden').click();
+  await page.getByTestId('select-copy-step-step-linked-garden-prune-herbs').click();
+  await expect(page.getByText('Morning check', { exact: true })).toBeVisible();
+  await page.getByTestId('speak-copy-step-step-linked-garden-prune-herbs').click();
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { __routineSpeechTexts: string[] }).__routineSpeechTexts,
+  )).toEqual(expect.arrayContaining([expect.stringContaining('Prune the herbs')]));
+  await page.getByTestId('copy-selected-steps-step-linked-garden').click();
+  await expect(page.getByText('4 added', { exact: true })).toBeVisible();
+
+  await page.getByLabel('Save routine').click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]')
+    .find((routine: Routine) => routine.id === 'garden-flow')?.steps?.length)).toBe(4);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('@routine-flow/routines') ?? '[]') as Routine[]);
+  const destination = saved.find(routine => routine.id === 'garden-flow')!;
+  expect(destination.steps.slice(0, 3)).toEqual(sourceRoutines[0].steps);
+  expect(destination.steps[3].title).toBe('Prune the herbs');
+  expect(destination.steps[3].id).not.toBe('prune-herbs');
+  expect(saved.filter(routine => routine.id !== 'garden-flow')).toEqual(sourceRoutines.filter(routine => routine.id !== 'garden-flow'));
+});

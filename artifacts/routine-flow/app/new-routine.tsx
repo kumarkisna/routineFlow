@@ -575,12 +575,15 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
                                   <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }}
                                     accessibilityLabel={`Select step ${step.title}`}
                                     testID={`select-copy-step-${source.id}-${step.id}`}
-                                    onPress={() => setCopySelectionByRoutine(current => {
-                                      const previous = current[source.id] ?? [];
-                                      return { ...current, [source.id]: checked
-                                        ? previous.filter(id => id !== step.id)
-                                        : [...previous, step.id] };
-                                    })}
+                                    onPress={() => {
+                                      setCopySelectionByRoutine(current => {
+                                        const previous = current[source.id] ?? [];
+                                        return { ...current, [source.id]: checked
+                                          ? previous.filter(id => id !== step.id)
+                                          : [...previous, step.id] };
+                                      });
+                                      if (!checked) setExpandedCopyStepIds(current => ({ ...current, [detailKey]: true }));
+                                    }}
                                     style={styles.copyStepSelector}>
                                     <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={19} color={checked ? colors.primary : colors.mutedForeground} />
                                     <Text style={[styles.copyStepChoiceText, { color: colors.foreground }]}>{step.title}</Text>
