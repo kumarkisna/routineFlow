@@ -3,7 +3,8 @@ import React, { useRef, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { actions, RichEditor, RichToolbar } from 'react-native-pell-rich-editor';
 import { useColors } from '@/hooks/useColors';
-import { detailHtmlToText, sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
+import { sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
+import { serializeStepDetailEditorSave } from '@/lib/stepDetailEditor';
 
 export { detailHtmlToText, sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
 
@@ -44,8 +45,8 @@ export function ExpandableRichDetailEditor({ label, value, html, disabled, onSav
   }
 
   function save() {
-    const nextHtml = Platform.OS === 'web' ? `<p>${escapeHtml(webText)}</p>` : draftHtml;
-    onSave(detailHtmlToText(nextHtml), nextHtml);
+    const saved = serializeStepDetailEditorSave(Platform.OS === 'web' ? 'web' : 'native', webText, draftHtml);
+    onSave(saved.text, saved.html);
     draftRef.current = null;
     setHasDraft(false);
     setVisible(false);
