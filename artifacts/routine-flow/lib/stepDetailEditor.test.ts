@@ -89,3 +89,64 @@ test('native rich-detail draft stays available after closing and reopening a cop
   assert.deepEqual(source.detailHtml, ['<p><strong>Original instructions</strong></p>']);
   assert.equal(source.description, 'Original instructions');
 });
+
+test('edited safe links stay on a copied step through native save and reopen', () => {
+  const source: RoutineStep = {
+    id: 'source-step',
+    title: 'Water the herbs',
+    description: 'Open the original guide',
+    detailHtml: ['<p><a href="https://example.com/original">Open the original guide</a></p>'],
+    durationSeconds: 60,
+  };
+  const sourceRoutine: Routine = {
+    id: 'garden-flow',
+    title: 'Garden flow',
+    subtitle: '',
+    icon: 'leaf',
+    tone: 'sage',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    steps: [source],
+  };
+  const [copiedSource] = copyRoutineSteps(sourceRoutine, [], () => 'copied-step');
+  const draft = openStepDetailEditorDraft(
+    'Main step detail',
+    copiedSource.description ?? '',
+    copiedSource.detailHtml?.[0] ?? '',
+    null,
+  );
+  const editedHtml = '<p><a href="https://example.org/updated">Open the updated guide</a></p>';
+  const saved = serializeStepDetailEditorSave('native', draft.text, editedHtml);
+  const copied: RoutineStep = {
+    ...copiedSource,
+    ...buildStepDetailFields({
+      ...createStepDetailDraft(copiedSource),
+      description: saved.text,
+      detailHtml: [saved.html],
+    }),
+  };
+  const reopened = openStepDetailEditorDraft(
+    'Main step detail',
+    copied.description ?? '',
+    copied.detailHtml?.[0] ?? '',
+    null,
+  );
+
+  assert.equal(saved.html, editedHtml);
+  assert.equal(reopened.html, editedHtml);
+  assert.equal(reopened.text, 'Open the updated guide');
+  assert.match(reopened.html, /href="https:\/\/example\.org\/updated"/);
+  assert.notEqual(copied.detailHtml, source.detailHtml);
+  assert.deepEqual(source.detailHtml, ['<p><a href="https://example.com/original">Open the original guide</a></p>']);
+  assert.equal(source.description, 'Open the original guide');
+});
+
+test('native rich-detail saves keep safe links and remove unsafe link targets', () => {
+  const saved = serializeStepDetailEditorSave(
+    'native',
+    '',
+    '<p><a href="https://example.com/guide">Safe guide</a> <a href="javascript:run()">Unsafe guide</a></p>',
+  );
+
+  assert.equal(saved.html, '<p><a href="https://example.com/guide">Safe guide</a> <a>Unsafe guide</a></p>');
+  assert.equal(saved.text, 'Safe guide Unsafe guide');
+});

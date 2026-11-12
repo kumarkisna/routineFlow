@@ -22,6 +22,6 @@ export function openStepDetailEditorDraft(
 }
 
 export function serializeStepDetailEditorSave(platform: 'web' | 'native', webText: string, nativeHtml: string) {
-  const html = platform === 'web' ? `<p>${escapeHtml(webText)}</p>` : nativeHtml;
+  const html = platform === 'web' ? `<p>${escapeHtml(webText)}</p>` : sanitizeStepDetailHtml(nativeHtml);
   return { text: detailHtmlToText(html), html };
 }
