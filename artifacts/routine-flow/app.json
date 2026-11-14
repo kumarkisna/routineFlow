@@ -29,7 +29,11 @@
         {
           "image": "./assets/images/icon.png",
           "backgroundColor": "#f7f4ef",
-          "resizeMode": "contain"
+          "resizeMode": "contain",
+          "android": {
+            "image": "./assets/images/android-splash.png",
+            "imageWidth": 288
+          }
         }
       ],
       [
