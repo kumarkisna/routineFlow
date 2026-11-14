@@ -126,7 +126,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     } catch (e) {
       const previousValue = previous[id] ?? defaultThemeCustomization(baseTheme);
       setCustomization(previousValue);
-      setTheme(applyThemeCustomization(baseTheme, previousValue));
+      setTheme(previous[id] ? applyThemeCustomization(baseTheme, previousValue) : baseTheme);
       const message = e instanceof Error ? e.message : 'Your custom colors could not be saved.';
       setError(message);
       throw new Error(message);
