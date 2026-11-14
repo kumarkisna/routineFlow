@@ -11,6 +11,7 @@ export type AppTheme = {
 };
 export type ThemeCustomization = { tone: number; primary: string; accent: string };
 export type ThemeCustomizationStore = Record<string, ThemeCustomization>;
+export type PendingThemeCustomization = { themeId: string; customization: ThemeCustomization };
 export type ThemeColorSwatch = { name: string; color: string };
 export type PersonThemeOperation = 'loading' | 'saving';
 export type PersonThemeOperationCounts = Partial<Record<PersonThemeOperation, number>>;
@@ -261,6 +262,65 @@ export function serializeThemeCustomizationStore(store: ThemeCustomizationStore)
     }
   }
   return JSON.stringify({ version: 1, themes: store });
+}
+
+export function parsePendingThemeCustomization(raw: string | null): PendingThemeCustomization | null {
+  if (raw === null) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error('The unsaved custom colors are invalid.');
+  }
+  if (!value || typeof value !== 'object') throw new Error('The unsaved custom colors are invalid.');
+  const record = value as { version?: unknown; themeId?: unknown; customization?: unknown };
+  if (record.version !== 1 || typeof record.themeId !== 'string' || !findAppTheme(record.themeId)
+    || !isValidThemeCustomization(record.customization)) {
+    throw new Error('The unsaved custom colors are invalid.');
+  }
+  return { themeId: record.themeId, customization: record.customization };
+}
+
+export function serializePendingThemeCustomization(pending: PendingThemeCustomization): string {
+  if (!findAppTheme(pending.themeId) || !isValidThemeCustomization(pending.customization)) {
+    throw new Error('The unsaved custom colors are invalid.');
+  }
+  return JSON.stringify({ version: 1, ...pending });
+}
+
+export async function savePendingThemeCustomization(
+  storage: { setItem: (key: string, value: string) => Promise<void>; getItem: (key: string) => Promise<string | null> },
+  key: string,
+  pending: PendingThemeCustomization,
+): Promise<void> {
+  const serialized = serializePendingThemeCustomization(pending);
+  try {
+    await storage.setItem(key, serialized);
+    if (await storage.getItem(key) !== serialized) throw new Error('Pending colors could not be verified.');
+  } catch {
+    try {
+      if (await storage.getItem(key) === serialized) return;
+    } catch { /* Report an unconfirmed save below. */ }
+    throw new Error('Your unsaved colors could not be kept. Please try again.');
+  }
+}
+
+export async function clearPendingThemeCustomization(
+  storage: {
+    removeItem: (key: string) => Promise<void>;
+    getItem: (key: string) => Promise<string | null>;
+  },
+  key: string,
+): Promise<void> {
+  try {
+    await storage.removeItem(key);
+    if (await storage.getItem(key) !== null) throw new Error('Pending colors could not be cleared.');
+  } catch {
+    try {
+      if (await storage.getItem(key) === null) return;
+    } catch { /* Report an unconfirmed clear below. */ }
+    throw new Error('The saved colors could not be cleared. Please try again.');
+  }
 }
 
 export async function saveThemeCustomizationStore(

@@ -8,14 +8,18 @@ import {
   APP_THEMES,
   DEFAULT_THEME_ID,
   applyThemeCustomization,
+  clearPendingThemeCustomization,
   defaultThemeCustomization,
   findAppTheme,
+  parsePendingThemeCustomization,
   parseThemeCustomizationStore,
+  savePendingThemeCustomization,
   saveThemeCustomizationStore,
   saveThemePreference,
   type AppTheme,
   type ThemeCustomization,
   type ThemeCustomizationStore,
+  type PendingThemeCustomization,
 } from '@/lib/appThemes';
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import { PERSON_DATA_KEYS, PersonBackgroundStateUncertainError, persistPersonBackgroundImage } from '@/lib/personStorage';
@@ -28,8 +32,10 @@ type AppearanceContextValue = {
   error: string;
   selectTheme: (id: string) => Promise<void>;
   customization: ThemeCustomization;
+  pendingCustomization: PendingThemeCustomization | null;
   previewCustomization: (value: ThemeCustomization) => void;
-  saveCustomization: (value: ThemeCustomization) => Promise<void>;
+  saveCustomization: (value: ThemeCustomization, themeId?: string) => Promise<void>;
+  discardPendingCustomization: () => Promise<void>;
   resetTheme: () => Promise<void>;
   backgroundImage: string | null;
   setBackgroundImage: (image: string | null) => Promise<void>;
@@ -42,6 +48,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
   const [customization, setCustomization] = useState<ThemeCustomization>(defaultThemeCustomization(APP_THEMES[0]));
   const [customizations, setCustomizations] = useState<ThemeCustomizationStore>({});
   const customizationsRef = useRef<ThemeCustomizationStore>({});
+  const [pendingCustomization, setPendingCustomization] = useState<PendingThemeCustomization | null>(null);
   const selectedThemeId = useRef(DEFAULT_THEME_ID);
   const [backgroundImage, setBackgroundImageState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,15 +61,18 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       AsyncStorage.getItem(KEY),
       AsyncStorage.getItem(PERSON_DATA_KEYS.backgroundImage),
       AsyncStorage.getItem(PERSON_DATA_KEYS.appearanceCustomization),
-    ]).then(([id, image, rawCustomizations]) => {
+      AsyncStorage.getItem(PERSON_DATA_KEYS.appearancePendingCustomization),
+    ]).then(([id, image, rawCustomizations, rawPendingCustomization]) => {
       const saved = findAppTheme(id ?? DEFAULT_THEME_ID);
       if (!saved) throw new Error('Unknown saved theme');
       const savedCustomizations = parseThemeCustomizationStore(rawCustomizations);
+      const pending = parsePendingThemeCustomization(rawPendingCustomization);
       const savedCustomization = savedCustomizations[saved.id] ?? defaultThemeCustomization(saved);
       if (active) {
         selectedThemeId.current = saved.id;
         customizationsRef.current = savedCustomizations;
         setCustomizations(savedCustomizations);
+        setPendingCustomization(pending);
         setCustomization(savedCustomization);
         setTheme(savedCustomizations[saved.id] ? applyThemeCustomization(saved, savedCustomization) : saved);
         setBackgroundImageState(image);
@@ -107,26 +117,41 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     setCustomization(value);
     setTheme(applyThemeCustomization(baseTheme, value));
   }, []);
-  const saveCustomization = useCallback((value: ThemeCustomization) => runWrite(async () => {
+  const saveCustomization = useCallback((value: ThemeCustomization, targetThemeId?: string) => runWrite(async () => {
     if (loading) throw new Error('Wait for your appearance settings to load.');
-    const id = selectedThemeId.current;
+    const id = targetThemeId ?? selectedThemeId.current;
     const baseTheme = findAppTheme(id);
     if (!baseTheme) throw new Error('Theme not found.');
+    const isSelectedTheme = id === selectedThemeId.current;
     const previous = customizationsRef.current;
     const next = { ...previous, [id]: value };
     const nextTheme = applyThemeCustomization(baseTheme, value);
-    setTheme(nextTheme);
-    setCustomization(value);
+    if (isSelectedTheme) {
+      setTheme(nextTheme);
+      setCustomization(value);
+    }
     setSaving(true);
     setError('');
+    let customizationSaved = false;
     try {
+      const pending = { themeId: id, customization: value };
+      await savePendingThemeCustomization(AsyncStorage, PERSON_DATA_KEYS.appearancePendingCustomization, pending);
+      setPendingCustomization(pending);
       await saveThemeCustomizationStore(AsyncStorage, PERSON_DATA_KEYS.appearanceCustomization, next);
       customizationsRef.current = next;
       setCustomizations(next);
+      customizationSaved = true;
+      await clearPendingThemeCustomization(AsyncStorage, PERSON_DATA_KEYS.appearancePendingCustomization);
+      setPendingCustomization(null);
     } catch (e) {
-      const previousValue = previous[id] ?? defaultThemeCustomization(baseTheme);
-      setCustomization(previousValue);
-      setTheme(previous[id] ? applyThemeCustomization(baseTheme, previousValue) : baseTheme);
+      if (!customizationSaved && isSelectedTheme) {
+        const previousValue = previous[id] ?? defaultThemeCustomization(baseTheme);
+        setCustomization(previousValue);
+        setTheme(previous[id] ? applyThemeCustomization(baseTheme, previousValue) : baseTheme);
+      } else if (customizationSaved && isSelectedTheme) {
+        setTheme(nextTheme);
+        setCustomization(value);
+      }
       const message = e instanceof Error ? e.message : 'Your custom colors could not be saved.';
       setError(message);
       throw new Error(message);
@@ -134,6 +159,11 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       setSaving(false);
     }
   }), [loading, runWrite, AsyncStorage]);
+  const discardPendingCustomization = useCallback(async () => {
+    await clearPendingThemeCustomization(AsyncStorage, PERSON_DATA_KEYS.appearancePendingCustomization);
+    setPendingCustomization(null);
+    setError('');
+  }, [AsyncStorage]);
   const resetTheme = useCallback(() => runWrite(async () => {
     if (loading) throw new Error('Wait for your appearance settings to load.');
     const defaultTheme = findAppTheme(DEFAULT_THEME_ID)!;
@@ -173,8 +203,8 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     setBackgroundImageState(image);
   }, [loading, AsyncStorage]);
   return <AppearanceContext.Provider value={{
-    theme, loading, saving, error, selectTheme, customization, previewCustomization,
-    saveCustomization, resetTheme, backgroundImage, setBackgroundImage: saveBackgroundImage,
+    theme, loading, saving, error, selectTheme, customization, pendingCustomization, previewCustomization,
+    saveCustomization, discardPendingCustomization, resetTheme, backgroundImage, setBackgroundImage: saveBackgroundImage,
   }}>
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       {backgroundImage ? <Image testID="app-background-image" accessibilityLabel="Custom app background photo" source={{ uri: backgroundImage }} resizeMode="cover"

@@ -12,6 +12,7 @@ export const PERSON_DATA_KEYS = {
   skillRatingWindow: '@routine-flow/skill-rating-window',
   appearance: '@routine-flow/appearance',
   appearanceCustomization: '@routine-flow/appearance-customization',
+  appearancePendingCustomization: '@routine-flow/appearance-pending-customization',
   backgroundImage: '@routine-flow/background-image',
 } as const;
 

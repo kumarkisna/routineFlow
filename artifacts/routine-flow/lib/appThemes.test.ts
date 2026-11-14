@@ -6,13 +6,16 @@ import {
   DEFAULT_THEME_ID,
   THEME_GROUPS,
   applyThemeCustomization,
+  clearPendingThemeCustomization,
   contrastRatio,
   createThemeCustomizationWriteQueue,
   defaultThemeCustomization,
   findAppTheme,
   migrateLegacyThemePreference,
   parseLegacyThemePreference,
+  parsePendingThemeCustomization,
   parseThemeCustomizationStore,
+  savePendingThemeCustomization,
   saveThemeCustomizationStore,
   saveThemePreference,
   serializeThemeCustomizationStore,
@@ -152,6 +155,34 @@ test('custom palette preferences serialize, validate, and restore by theme', asy
   assert.equal(serializeThemeCustomizationStore(store), saved);
   assert.throws(() => parseThemeCustomizationStore('{"version":1,"themes":{"missing":{"tone":50,"primary":"#123456","accent":"#123456"}}}'), /invalid/);
   assert.throws(() => parseThemeCustomizationStore('{"version":1,"themes":{"forest":{"tone":101,"primary":"#123456","accent":"#123456"}}}'), /invalid/);
+});
+
+test('failed palette saves keep the latest retry choice and successful saves clear it', async () => {
+  const values = new Map<string, string>();
+  let failPaletteSave = true;
+  const storage = {
+    getItem: async (key: string) => values.get(key) ?? null,
+    setItem: async (key: string, value: string) => {
+      if (key === 'customizations' && failPaletteSave) throw new Error('Storage unavailable');
+      values.set(key, value);
+    },
+    removeItem: async (key: string) => { values.delete(key); },
+  };
+  const pendingKey = 'pending';
+  const customizationKey = 'customizations';
+  const pending = {
+    themeId: 'forest',
+    customization: { tone: 82, primary: '#6633a8', accent: '#c6a6ff' },
+  };
+
+  await savePendingThemeCustomization(storage, pendingKey, pending);
+  await assert.rejects(saveThemeCustomizationStore(storage, customizationKey, { forest: pending.customization }));
+  assert.deepEqual(parsePendingThemeCustomization(await storage.getItem(pendingKey)), pending);
+
+  failPaletteSave = false;
+  await saveThemeCustomizationStore(storage, customizationKey, { forest: pending.customization });
+  await clearPendingThemeCustomization(storage, pendingKey);
+  assert.equal(parsePendingThemeCustomization(await storage.getItem(pendingKey)), null);
 });
 
 test('queued palette edits keep the latest confirmed colors visible and retry the newest choice', async () => {
