@@ -31,6 +31,15 @@ export type PersonStorage = ReturnType<typeof createPersonStorage>;
 
 export class PersonBackgroundStateUncertainError extends Error {}
 
+async function waitForDevelopmentStorageRead(key: string) {
+  if (typeof window === 'undefined' || process.env.NODE_ENV === 'production') return;
+  // PeopleProvider reads these keys before mounting the app-level startup gate.
+  if (key === PERSON_DATA_KEYS.appearance || key === PERSON_DATA_KEYS.progress) return;
+  const delayMs = Number(window.localStorage.getItem('@routine-flow/test-storage-read-delay-ms'));
+  if (!Number.isFinite(delayMs) || delayMs <= 0 || delayMs > 10_000) return;
+  await new Promise<void>(resolve => setTimeout(resolve, delayMs));
+}
+
 export async function persistPersonBackgroundImage(storage: PersonStorage, image: string | null) {
   const action = image === null ? 'cleared' : 'saved';
   const failureMessage = `The background photo could not be ${action}. Your previous photo is still selected. Please try again.`;
@@ -88,7 +97,10 @@ export async function waitForPersonWrites(personId: string) {
 
 export function createPersonStorage(personId: string, backend: PersonStorageBackend = AsyncStorage) {
   return {
-    getItem: (key: string) => backend.getItem(personStorageKey(personId, key)),
+    getItem: async (key: string) => {
+      await waitForDevelopmentStorageRead(key);
+      return backend.getItem(personStorageKey(personId, key));
+    },
     setItem: (key: string, value: string) =>
       trackWrite(personId, backend.setItem(personStorageKey(personId, key), value)),
     removeItem: (key: string) =>

@@ -39,3 +39,25 @@ test('startup logo stays for three seconds and does not return during navigation
   await expect(startup).toHaveCount(0);
   await expect(logo).toHaveCount(0);
 });
+
+test('startup screen stays visible until delayed saved data finishes loading', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('@routine-flow/routines', '[]');
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/skills', '[]');
+    localStorage.setItem('@routine-flow/playlists', '[]');
+    localStorage.setItem('@routine-flow/test-storage-read-delay-ms', '5000');
+  });
+
+  await page.goto('/');
+  const startup = page.getByTestId('app-startup-loading');
+  const logo = page.getByTestId('app-startup-logo');
+  await expect(logo).toBeVisible();
+  await page.waitForTimeout(3500);
+  await expect(startup).toBeVisible();
+  await expect(logo).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'History' })).toHaveCount(0);
+
+  await expect(startup).toHaveCount(0, { timeout: 10000 });
+  await expect(page.getByRole('tab', { name: 'History' })).toBeVisible();
+});
