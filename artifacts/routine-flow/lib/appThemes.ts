@@ -9,6 +9,30 @@ export type AppTheme = {
   scheme: 'light' | 'dark';
   colors: AppColors;
 };
+export type ThemeCustomization = { tone: number; primary: string; accent: string };
+export type ThemeCustomizationStore = Record<string, ThemeCustomization>;
+export type ThemeColorSwatch = { name: string; color: string };
+export const DEFAULT_THEME_TONE = 50;
+const LIGHT_SWATCHES: ThemeColorSwatch[] = [
+  { name: 'Coral', color: '#b8322a' },
+  { name: 'Orange', color: '#8a3b00' },
+  { name: 'Gold', color: '#775700' },
+  { name: 'Rose', color: '#a12d65' },
+  { name: 'Purple', color: '#6633a8' },
+  { name: 'Blue', color: '#1657a8' },
+  { name: 'Teal', color: '#006b68' },
+  { name: 'Green', color: '#28653d' },
+];
+const DARK_SWATCHES: ThemeColorSwatch[] = [
+  { name: 'Coral', color: '#ff8a80' },
+  { name: 'Orange', color: '#ffb074' },
+  { name: 'Gold', color: '#ffd166' },
+  { name: 'Rose', color: '#ff8fc6' },
+  { name: 'Purple', color: '#c6a6ff' },
+  { name: 'Blue', color: '#83b6ff' },
+  { name: 'Teal', color: '#6fe2c1' },
+  { name: 'Green', color: '#82d092' },
+];
 export const THEME_GROUPS: ThemeGroup[] = ['Classic', 'Nature', 'Warm', 'Bright', 'Night'];
 
 function hsl(hue: number, saturation: number, lightness: number): string {
@@ -144,6 +168,147 @@ export const APP_THEMES: AppTheme[] = THEME_GROUPS.flatMap(group => seeds[group]
 export const DEFAULT_THEME_ID = 'routine-flow';
 export function findAppTheme(id: string): AppTheme | undefined {
   return APP_THEMES.find(theme => theme.id === id);
+}
+
+export function defaultThemeCustomization(theme: AppTheme): ThemeCustomization {
+  return { tone: DEFAULT_THEME_TONE, primary: theme.colors.primary, accent: theme.colors.accent };
+}
+
+export function themeColorSwatches(scheme: AppTheme['scheme'], presetColor: string): ThemeColorSwatch[] {
+  const swatches = scheme === 'dark' ? DARK_SWATCHES : LIGHT_SWATCHES;
+  return [{ name: 'Preset', color: presetColor }, ...swatches.filter(swatch => swatch.color !== presetColor)];
+}
+
+export function isValidThemeCustomization(value: unknown): value is ThemeCustomization {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<ThemeCustomization>;
+  return Number.isInteger(item.tone) && item.tone! >= 0 && item.tone! <= 100
+    && typeof item.primary === 'string' && /^#[0-9a-f]{6}$/i.test(item.primary)
+    && typeof item.accent === 'string' && /^#[0-9a-f]{6}$/i.test(item.accent);
+}
+
+export function parseThemeCustomizationStore(raw: string | null): ThemeCustomizationStore {
+  if (raw === null) return {};
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error('Saved custom colors are invalid.');
+  }
+  if (!value || typeof value !== 'object') throw new Error('Saved custom colors are invalid.');
+  const record = value as { version?: unknown; themes?: unknown };
+  if (record.version !== 1 || !record.themes || typeof record.themes !== 'object' || Array.isArray(record.themes)) {
+    throw new Error('Saved custom colors are invalid.');
+  }
+  const themes: ThemeCustomizationStore = {};
+  for (const [id, customization] of Object.entries(record.themes)) {
+    if (!findAppTheme(id) || !isValidThemeCustomization(customization)) {
+      throw new Error('Saved custom colors are invalid.');
+    }
+    themes[id] = customization;
+  }
+  return themes;
+}
+
+export function serializeThemeCustomizationStore(store: ThemeCustomizationStore): string {
+  for (const [id, customization] of Object.entries(store)) {
+    if (!findAppTheme(id) || !isValidThemeCustomization(customization)) {
+      throw new Error('Custom colors are invalid.');
+    }
+  }
+  return JSON.stringify({ version: 1, themes: store });
+}
+
+export async function saveThemeCustomizationStore(
+  storage: { setItem: (key: string, value: string) => Promise<void>; getItem: (key: string) => Promise<string | null> },
+  key: string,
+  store: ThemeCustomizationStore,
+): Promise<string> {
+  const serialized = serializeThemeCustomizationStore(store);
+  try {
+    await storage.setItem(key, serialized);
+    if (await storage.getItem(key) !== serialized) throw new Error('Custom colors could not be verified.');
+  } catch {
+    try {
+      if (await storage.getItem(key) === serialized) return serialized;
+    } catch { /* Report an unconfirmed save below. */ }
+    throw new Error('Your custom colors could not be saved. Your previous appearance is still shown. Please try again.');
+  }
+  return serialized;
+}
+
+function blend(hex: string, target: string, amount: number): string {
+  const channel = (color: string, offset: number) => parseInt(color.slice(offset, offset + 2), 16);
+  return `#${[1, 3, 5].map(offset => Math.round(
+    channel(hex, offset) * (1 - amount) + channel(target, offset) * amount,
+  ).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function readableText(preferred: string, backgrounds: string[]): string {
+  if (backgrounds.every(background => contrastRatio(preferred, background) >= 4.5)) return preferred;
+  const candidates = [...new Set([preferred, '#101820', '#ffffff'])];
+  return candidates.sort((a, b) => {
+    const minContrast = (text: string) => Math.min(...backgrounds.map(background => contrastRatio(text, background)));
+    return minContrast(b) - minContrast(a);
+  })[0];
+}
+
+function readableColor(preferred: string, backgrounds: string[]): string {
+  if (backgrounds.every(background => contrastRatio(preferred, background) >= 4.5)) return preferred;
+  for (let step = 1; step <= 50; step++) {
+    const amount = step / 50;
+    const candidates = [blend(preferred, '#000000', amount), blend(preferred, '#ffffff', amount)];
+    const safe = candidates.find(color => backgrounds.every(background => contrastRatio(color, background) >= 4.5));
+    if (safe) return safe;
+  }
+  return preferred;
+}
+
+export function applyThemeCustomization(theme: AppTheme, customization: ThemeCustomization): AppTheme {
+  if (!isValidThemeCustomization(customization)) throw new Error('Custom colors are invalid.');
+  const depth = (customization.tone - DEFAULT_THEME_TONE) / DEFAULT_THEME_TONE;
+  const toward = theme.scheme === 'dark'
+    ? (depth > 0 ? '#000000' : '#ffffff')
+    : (depth > 0 ? '#000000' : '#ffffff');
+  const amount = Math.abs(depth) * 0.14;
+  const base = theme.colors;
+  const background = blend(base.background, toward, amount);
+  const card = blend(base.card, toward, amount);
+  const secondary = blend(base.secondary, toward, amount);
+  const muted = blend(base.muted, toward, amount);
+  const border = blend(base.border, toward, amount);
+  const input = blend(base.input, toward, amount);
+  const hero = blend(base.hero, toward, amount);
+  const primary = readableColor(customization.primary.toLowerCase(), [background, card]);
+  const accent = customization.accent.toLowerCase();
+  return {
+    ...theme,
+    colors: {
+      ...base,
+      background,
+      foreground: readableText(base.foreground, [background]),
+      text: readableText(base.text, [background]),
+      tint: primary,
+      card,
+      cardForeground: readableText(base.cardForeground, [card]),
+      primary,
+      primaryForeground: readableText(base.primaryForeground, [primary]),
+      secondary,
+      secondaryForeground: readableText(base.secondaryForeground, [secondary]),
+      muted,
+      mutedForeground: readableText(base.mutedForeground, [background, card, secondary]),
+      accent,
+      accentForeground: readableText(base.accentForeground, [accent]),
+      border,
+      input,
+      hero,
+      heroForeground: readableText(base.heroForeground, [hero]),
+      inkSoft: readableText(base.inkSoft, [background]),
+      destructiveForeground: readableText(base.destructiveForeground, [base.destructive]),
+      success: readableText(base.success, [background, card]),
+      radius: base.radius,
+    },
+  };
 }
 
 export async function saveThemePreference(

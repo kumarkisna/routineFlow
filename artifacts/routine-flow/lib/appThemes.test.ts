@@ -1,7 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import original from '../constants/colors';
-import { APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, contrastRatio, findAppTheme, saveThemePreference } from './appThemes';
+import {
+  APP_THEMES,
+  DEFAULT_THEME_ID,
+  THEME_GROUPS,
+  applyThemeCustomization,
+  contrastRatio,
+  defaultThemeCustomization,
+  findAppTheme,
+  parseThemeCustomizationStore,
+  saveThemeCustomizationStore,
+  saveThemePreference,
+  serializeThemeCustomizationStore,
+  themeColorSwatches,
+} from './appThemes';
 
 test('the catalog contains 90 uniquely named themes, retaining the original families', () => {
   assert.equal(APP_THEMES.length, 90);
@@ -93,4 +106,43 @@ test('failed preference writes keep the previous ID, while committed-but-rejecte
   assert.equal(value, DEFAULT_THEME_ID);
   storage.setItem = async (_key: string, next: string) => { value = next; throw new Error('Late rejection'); };
   assert.equal((await saveThemePreference(storage, 'key', 'forest')).id, 'forest');
+});
+
+test('custom palette tones and swatches keep semantic tokens complete and readable', () => {
+  for (const base of APP_THEMES) {
+    const swatches = themeColorSwatches(base.scheme, base.colors.primary);
+    for (const tone of [0, 50, 100]) {
+      for (const swatch of swatches) {
+        const theme = applyThemeCustomization(base, {
+          ...defaultThemeCustomization(base),
+          tone,
+          primary: swatch.color,
+          accent: swatch.color,
+        });
+        for (const token of Object.keys(original.light)) {
+          assert.match(theme.colors[token as keyof typeof original.light], /^#[0-9a-f]{6}$/i);
+        }
+        assert.ok(contrastRatio(theme.colors.foreground, theme.colors.background) >= 4.5, `${base.name} foreground`);
+        assert.ok(contrastRatio(theme.colors.cardForeground, theme.colors.card) >= 4.5, `${base.name} card`);
+        assert.ok(contrastRatio(theme.colors.primary, theme.colors.background) >= 4.5, `${base.name} primary`);
+        assert.ok(contrastRatio(theme.colors.primaryForeground, theme.colors.primary) >= 4.5, `${base.name} primary text`);
+        assert.ok(contrastRatio(theme.colors.accentForeground, theme.colors.accent) >= 4.5, `${base.name} accent text`);
+      }
+    }
+  }
+});
+
+test('custom palette preferences serialize, validate, and restore by theme', async () => {
+  let saved: string | null = null;
+  const storage = {
+    getItem: async () => saved,
+    setItem: async (_key: string, value: string) => { saved = value; },
+  };
+  const customization = { tone: 72, primary: '#1657a8', accent: '#ff8a80' };
+  const store = { forest: customization };
+  await saveThemeCustomizationStore(storage, 'custom', store);
+  assert.deepEqual(parseThemeCustomizationStore(await storage.getItem()), store);
+  assert.equal(serializeThemeCustomizationStore(store), saved);
+  assert.throws(() => parseThemeCustomizationStore('{"version":1,"themes":{"missing":{"tone":50,"primary":"#123456","accent":"#123456"}}}'), /invalid/);
+  assert.throws(() => parseThemeCustomizationStore('{"version":1,"themes":{"forest":{"tone":101,"primary":"#123456","accent":"#123456"}}}'), /invalid/);
 });
