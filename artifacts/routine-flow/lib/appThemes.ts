@@ -12,6 +12,9 @@ export type AppTheme = {
 export type ThemeCustomization = { tone: number; primary: string; accent: string };
 export type ThemeCustomizationStore = Record<string, ThemeCustomization>;
 export type ThemeColorSwatch = { name: string; color: string };
+export type PersonThemeOperation = 'loading' | 'saving';
+export type PersonThemeOperationCounts = Partial<Record<PersonThemeOperation, number>>;
+export type PersonThemeOperations = Record<string, PersonThemeOperationCounts>;
 export type PersonThemeSaveRetry =
   | { kind: 'selection'; themeId: string }
   | { kind: 'customization'; themeId: string; customization: ThemeCustomization };
@@ -304,6 +307,22 @@ export function updatePersonThemeSaveState(
   };
   if (!state.error && !state.retry) delete next[personId];
   else next[personId] = state;
+  return next;
+}
+
+export function updatePersonThemeOperationCount(
+  current: PersonThemeOperations,
+  personId: string,
+  operation: PersonThemeOperation,
+  change: 1 | -1,
+): PersonThemeOperations {
+  const next = { ...current };
+  const person = { ...current[personId] };
+  const count = Math.max(0, (person[operation] ?? 0) + change);
+  if (count > 0) person[operation] = count;
+  else delete person[operation];
+  if (Object.keys(person).length > 0) next[personId] = person;
+  else delete next[personId];
   return next;
 }
 

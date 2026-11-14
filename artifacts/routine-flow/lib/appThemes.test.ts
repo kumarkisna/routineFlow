@@ -17,7 +17,9 @@ import {
   saveThemePreference,
   serializeThemeCustomizationStore,
   themeColorSwatches,
+  updatePersonThemeOperationCount,
   updatePersonThemeSaveState,
+  type PersonThemeOperations,
   type PersonThemeSaveState,
 } from './appThemes';
 
@@ -302,6 +304,69 @@ test('palette save errors and retries stay with their profile across interleaved
   await save('person-b', choiceB);
   assert.deepEqual(state, {});
   assert.deepEqual(parseThemeCustomizationStore(raw.get('person-b')!), { forest: choiceB });
+});
+
+test('profile loading and saving indicators stay accurate when delayed saves finish out of order', async () => {
+  let operations: PersonThemeOperations = {};
+  operations = updatePersonThemeOperationCount(operations, 'person-a', 'loading', 1);
+  operations = updatePersonThemeOperationCount(operations, 'person-b', 'loading', 1);
+  operations = updatePersonThemeOperationCount(operations, 'person-a', 'loading', -1);
+  assert.equal(operations['person-a'], undefined);
+  assert.equal(operations['person-b']?.loading, 1);
+  operations = updatePersonThemeOperationCount(operations, 'person-b', 'loading', -1);
+  assert.deepEqual(operations, {});
+
+  const raw = new Map([
+    ['person-a', serializeThemeCustomizationStore({})],
+    ['person-b', serializeThemeCustomizationStore({})],
+  ]);
+  const queue = createThemeCustomizationWriteQueue();
+  const choice = { tone: 72, primary: '#1657a8', accent: '#83b6ff' };
+  let releaseA!: () => void;
+  let releaseB!: () => void;
+  let startA!: () => void;
+  let startB!: () => void;
+  const gateA = new Promise<void>(resolve => { releaseA = resolve; });
+  const gateB = new Promise<void>(resolve => { releaseB = resolve; });
+  const startedA = new Promise<void>(resolve => { startA = resolve; });
+  const startedB = new Promise<void>(resolve => { startB = resolve; });
+
+  async function save(personId: 'person-a' | 'person-b') {
+    operations = updatePersonThemeOperationCount(operations, personId, 'saving', 1);
+    try {
+      await queue(personId, async () => {
+        await saveThemeCustomizationStore({
+          getItem: async () => raw.get(personId) ?? null,
+          setItem: async (_key, serialized) => {
+            if (personId === 'person-a') {
+              startA();
+              await gateA;
+            } else {
+              startB();
+              await gateB;
+            }
+            raw.set(personId, serialized);
+          },
+        }, 'custom', { forest: choice });
+      });
+    } finally {
+      operations = updatePersonThemeOperationCount(operations, personId, 'saving', -1);
+    }
+  }
+
+  const pendingA = save('person-a');
+  const pendingB = save('person-b');
+  await Promise.all([startedA, startedB]);
+  releaseA();
+  await pendingA;
+  assert.equal(operations['person-a'], undefined);
+  assert.equal(operations['person-b']?.saving, 1);
+
+  releaseB();
+  await pendingB;
+  assert.deepEqual(operations, {});
+  assert.deepEqual(parseThemeCustomizationStore(raw.get('person-a')!), { forest: choice });
+  assert.deepEqual(parseThemeCustomizationStore(raw.get('person-b')!), { forest: choice });
 });
 
 test('legacy inline palette preferences migrate without losing other saved themes', async () => {

@@ -15,8 +15,9 @@ import { useAppearance } from '@/context/AppearanceContext';
 import {
   APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, applyThemeCustomization,
   createThemeCustomizationWriteQueue, defaultThemeCustomization, findAppTheme, parseThemeCustomizationStore,
-  saveThemeCustomizationStore, updatePersonThemeSaveState,
-  type PersonThemeSaveState, type ThemeCustomization, type ThemeCustomizationStore, type ThemeGroup,
+  saveThemeCustomizationStore, updatePersonThemeOperationCount, updatePersonThemeSaveState,
+  type PersonThemeOperation, type PersonThemeOperations, type PersonThemeSaveState,
+  type ThemeCustomization, type ThemeCustomizationStore, type ThemeGroup,
 } from '@/lib/appThemes';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -114,8 +115,7 @@ export default function PeopleScreen() {
   const [editingPhotoSlideshowIntervalSeconds, setEditingPhotoSlideshowIntervalSeconds] =
     React.useState(DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS);
   const [personThemeIds, setPersonThemeIds] = React.useState<Record<string, string>>({});
-  const [themeLoadingId, setThemeLoadingId] = React.useState<string | null>(null);
-  const [themeSavingId, setThemeSavingId] = React.useState<string | null>(null);
+  const [themeOperations, setThemeOperations] = React.useState<PersonThemeOperations>({});
   const [personThemeCustomizations, setPersonThemeCustomizations] = React.useState<Record<string, ThemeCustomizationStore>>({});
   const [themeSearch, setThemeSearch] = React.useState('');
   const [themeGroup, setThemeGroup] = React.useState<ThemeGroup | 'All'>('All');
@@ -171,12 +171,16 @@ export default function PeopleScreen() {
     setThemeSaveStates(current => updatePersonThemeSaveState(current, personId, update));
   }
 
+  function updateThemeOperation(personId: string, operation: PersonThemeOperation, change: 1 | -1) {
+    setThemeOperations(current => updatePersonThemeOperationCount(current, personId, operation, change));
+  }
+
   async function togglePersonThemes(personId: string) {
     const opening = !themeDisclosure.isExpanded(personId);
     themeDisclosure.toggle(personId);
     const isActive = personId === activePerson.id;
     if (opening && (!personThemeIds[personId] || (!isActive && !loadedPersonThemeCustomizations.current[personId]))) {
-      setThemeLoadingId(personId);
+      updateThemeOperation(personId, 'loading', 1);
       try {
         const id = personThemeIds[personId] ?? await loadPersonTheme(personId);
         setPersonThemeIds(current => ({ ...current, [personId]: id }));
@@ -191,7 +195,7 @@ export default function PeopleScreen() {
       } catch (e) {
         updateThemeSaveState(personId, { error: msg(e, 'Could not load this person’s theme.') });
       } finally {
-        setThemeLoadingId(null);
+        updateThemeOperation(personId, 'loading', -1);
       }
     }
   }
@@ -203,7 +207,7 @@ export default function PeopleScreen() {
       ?? personThemeIds[personId]
       ?? (personId === activePerson.id ? theme.id : DEFAULT_THEME_ID);
     setPersonThemeIds(current => ({ ...current, [personId]: themeId }));
-    setThemeSavingId(personId);
+    updateThemeOperation(personId, 'saving', 1);
     updateThemeSaveState(personId, {
       error: '',
       retry: { kind: 'selection', themeId },
@@ -222,14 +226,14 @@ export default function PeopleScreen() {
         updateThemeSaveState(personId, { error: msg(e, 'Could not save this theme.') });
       }
     } finally {
-      if (themeRequestSequence.current[personId] === request) setThemeSavingId(null);
+      updateThemeOperation(personId, 'saving', -1);
     }
   }
 
   async function savePersonThemeCustomization(personId: string, themeId: string, value: ThemeCustomization) {
     const request = (themeRequestSequence.current[personId] ?? 0) + 1;
     themeRequestSequence.current[personId] = request;
-    setThemeSavingId(personId);
+    updateThemeOperation(personId, 'saving', 1);
     updateThemeSaveState(personId, {
       error: '',
       retry: { kind: 'customization', themeId, customization: value },
@@ -264,7 +268,7 @@ export default function PeopleScreen() {
         updateThemeSaveState(personId, { error: msg(e, 'Could not save these colors.') });
       }
     } finally {
-      if (themeRequestSequence.current[personId] === request) setThemeSavingId(null);
+      updateThemeOperation(personId, 'saving', -1);
     }
   }
 
@@ -692,7 +696,9 @@ export default function PeopleScreen() {
                             theme={personTheme}
                             customization={personThemeCustomization}
                             testIDPrefix={`person-theme-${p.id}`}
-                            disabled={themeLoadingId === p.id || themeSavingId === p.id || (active && appearanceSaving)}
+                            disabled={Boolean(themeOperations[p.id]?.loading)
+                              || Boolean(themeOperations[p.id]?.saving)
+                              || (active && appearanceSaving)}
                             onPreview={value => {
                               if (active) previewCustomization(value);
                               else setPersonThemeCustomizations(current => ({
@@ -740,7 +746,7 @@ export default function PeopleScreen() {
                           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
                             Showing {filteredThemes.length} of {APP_THEMES.length} themes
                           </Text>
-                          {themeLoadingId === p.id ? <ActivityIndicator color={colors.primary} /> : null}
+                          {themeOperations[p.id]?.loading ? <ActivityIndicator color={colors.primary} /> : null}
                           {(themeSaveStates[p.id]?.error || (active ? appearanceError : '')) ? (
                             <View style={{ gap: 6 }}>
                               <Text accessibilityRole="alert" style={[styles.sub, { color: colors.destructive }]}>
@@ -749,7 +755,7 @@ export default function PeopleScreen() {
                               {themeSaveStates[p.id]?.retry ? (
                                 <Pressable testID={`person-theme-retry-${p.id}`} accessibilityRole="button"
                                   accessibilityLabel={`Retry saving ${p.name} theme`}
-                                  disabled={themeSavingId === p.id}
+                                  disabled={Boolean(themeOperations[p.id]?.saving)}
                                   onPress={() => retryPersonThemeSave(p.id)}
                                   style={[styles.backgroundAction, { alignSelf: 'flex-start', borderColor: colors.border, borderWidth: 1 }]}>
                                   <Text style={[styles.linkText, { color: colors.primary }]}>Retry</Text>
@@ -767,8 +773,10 @@ export default function PeopleScreen() {
                                     testID={`person-theme-choice-${p.id}-${item.id}`}
                                     accessibilityRole="button"
                                     accessibilityLabel={`${item.name}, ${item.group}, ${item.scheme} theme`}
-                                    accessibilityState={{ selected, disabled: themeSavingId === p.id }}
-                                    disabled={themeSavingId === p.id || themeLoadingId === p.id || (p.id === activePerson.id && appearanceLoading)}
+                                    accessibilityState={{ selected, disabled: Boolean(themeOperations[p.id]?.saving) }}
+                                    disabled={Boolean(themeOperations[p.id]?.saving)
+                                      || Boolean(themeOperations[p.id]?.loading)
+                                      || (p.id === activePerson.id && appearanceLoading)}
                                     onPress={() => void choosePersonTheme(p.id, item.id)}
                                     style={[styles.themeChoice, { borderColor: selected ? colors.primary : colors.border, backgroundColor: colors.card }]}
                                   >
