@@ -154,7 +154,7 @@ export default function RootLayout() {
   }, [fontsLoaded, fontError]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setStartupDelayElapsed(true), 1400);
+    const timer = setTimeout(() => setStartupDelayElapsed(true), 3000);
     return () => clearTimeout(timer);
   }, []);
 
