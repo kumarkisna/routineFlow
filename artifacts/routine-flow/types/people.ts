@@ -12,6 +12,7 @@ export type Person = {
   defaultRateSkillsAtPlaylistEnd: boolean;
   defaultPlaylistReminderSettings: RoutineNotificationSettings;
   defaultSpeakRoutineDescription: boolean;
+  defaultStepPhotoSlideshow: boolean;
 };
 export type PersonProfileInput = {
   name: string;
@@ -20,6 +21,7 @@ export type PersonProfileInput = {
   defaultRateSkillsAtPlaylistEnd: boolean;
   defaultPlaylistReminderSettings: RoutineNotificationSettings;
   defaultSpeakRoutineDescription: boolean;
+  defaultStepPhotoSlideshow: boolean;
 };
 export type PersonSnapshot = {
   routines: Routine[];

@@ -22,6 +22,8 @@ export type RoutineStep = {
   skillIds?: string[];
   /** Hidden steps are omitted from the timer and daily progress. */
   hidden?: boolean;
+  /** Optional step-specific photo slideshow setting; absent inherits the person's default. */
+  showPhotoSlideshow?: boolean;
   durationSeconds: number;
   /** Kept for compatibility with routines saved before timers were added. */
   duration?: string;
@@ -105,6 +107,17 @@ export function getStepSeconds(step: RoutineStep) {
   if (step.durationSeconds > 0) return step.durationSeconds;
   const legacyMinutes = Number.parseInt(step.duration ?? '', 10);
   return Number.isFinite(legacyMinutes) && legacyMinutes > 0 ? legacyMinutes * 60 : 60;
+}
+
+export function getStepPhotoSlideshowImages(step: Pick<RoutineStep, 'detailAttachments'>): StepDetailAttachment[] {
+  return (step.detailAttachments ?? []).flat().filter(attachment => attachment.kind === 'image');
+}
+
+export function shouldShowStepPhotoSlideshow(
+  step: Pick<RoutineStep, 'showPhotoSlideshow'>,
+  profileDefault: boolean,
+): boolean {
+  return step.showPhotoSlideshow ?? profileDefault;
 }
 
 export function formatDuration(totalSeconds: number) {

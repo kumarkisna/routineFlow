@@ -14,7 +14,7 @@ import { usePeople } from '@/context/PeopleContext';
 import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
-import { SpeechLineGapControl } from '@/components/SpeechLineGapControl';
+import { CollapsibleSpeechLineGapControl } from '@/components/SpeechLineGapControl';
 import { useColors } from '@/hooks/useColors';
 import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { createDefaultPlaylistStepSelections, resolvePlaylistReminderSettings, type PlaylistStepSelection } from '@/lib/playlists';
@@ -299,7 +299,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
           onChangeText={(t) => { setTitle(t); setError(''); }}
           style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]} />
         <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={busy} testIDPrefix="playlist-skill" />
-        <SpeechLineGapControl
+        <CollapsibleSpeechLineGapControl
           value={speechLineGapSeconds}
           defaultValue={activePerson.defaultSpeechLineGapSeconds}
           onChange={setSpeechLineGapSeconds}
@@ -308,6 +308,8 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
           label="Pause between spoken lines"
           hint="Use the profile default or choose a pause for this playlist."
           testID="playlist-speech-line-gap"
+          disclosureNamespace="playlist-speech-line-gap"
+          disclosureOwnerId={scheduleId ? `schedule:${scheduleId}` : editId ?? 'new-playlist'}
         />
         {!scheduleId ? (
           <>

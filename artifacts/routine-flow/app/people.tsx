@@ -34,6 +34,7 @@ export default function PeopleScreen() {
   const [name, setName] = React.useState('');
   const [newPersonPlaylistRatingDefault, setNewPersonPlaylistRatingDefault] = React.useState(true);
   const [newPersonSpeakRoutineDescription, setNewPersonSpeakRoutineDescription] = React.useState(true);
+  const [newPersonStepPhotoSlideshow, setNewPersonStepPhotoSlideshow] = React.useState(true);
   const [newPersonSpeechVoiceId, setNewPersonSpeechVoiceId] = React.useState<string | null>(null);
   const [newPersonSpeechLineGapSeconds, setNewPersonSpeechLineGapSeconds] =
     React.useState(DEFAULT_SPEECH_LINE_GAP_SECONDS);
@@ -45,6 +46,7 @@ export default function PeopleScreen() {
   const [editingName, setEditingName] = React.useState('');
   const [editingPlaylistRatingDefault, setEditingPlaylistRatingDefault] = React.useState(true);
   const [editingSpeakRoutineDescription, setEditingSpeakRoutineDescription] = React.useState(true);
+  const [editingStepPhotoSlideshow, setEditingStepPhotoSlideshow] = React.useState(true);
   const [personThemeIds, setPersonThemeIds] = React.useState<Record<string, string>>({});
   const [themeLoadingId, setThemeLoadingId] = React.useState<string | null>(null);
   const [themeSavingId, setThemeSavingId] = React.useState<string | null>(null);
@@ -278,6 +280,7 @@ export default function PeopleScreen() {
     setEditingName(person.name);
     setEditingPlaylistRatingDefault(person.defaultRateSkillsAtPlaylistEnd ?? true);
     setEditingSpeakRoutineDescription(person.defaultSpeakRoutineDescription ?? true);
+    setEditingStepPhotoSlideshow(person.defaultStepPhotoSlideshow ?? true);
     setEditingSpeechVoiceId(person.speechVoiceId ?? null);
     setEditingSpeechLineGapSeconds(person.defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS);
     setEditingReminderSettings({ ...person.defaultPlaylistReminderSettings });
@@ -293,12 +296,14 @@ export default function PeopleScreen() {
         defaultRateSkillsAtPlaylistEnd: newPersonPlaylistRatingDefault,
         defaultPlaylistReminderSettings: { ...newPersonReminderSettings },
         defaultSpeakRoutineDescription: newPersonSpeakRoutineDescription,
+        defaultStepPhotoSlideshow: newPersonStepPhotoSlideshow,
       });
       setName('');
       setNewPersonSpeechVoiceId(null);
       setNewPersonSpeechLineGapSeconds(DEFAULT_SPEECH_LINE_GAP_SECONDS);
       setNewPersonPlaylistRatingDefault(true);
       setNewPersonSpeakRoutineDescription(true);
+      setNewPersonStepPhotoSlideshow(true);
       setNewPersonReminderSettings({ ...DEFAULT_PLAYLIST_REMINDER_SETTINGS });
     }, 'Could not add person.');
   }
@@ -312,6 +317,7 @@ export default function PeopleScreen() {
         defaultRateSkillsAtPlaylistEnd: editingPlaylistRatingDefault,
         defaultPlaylistReminderSettings: { ...editingReminderSettings },
         defaultSpeakRoutineDescription: editingSpeakRoutineDescription,
+        defaultStepPhotoSlideshow: editingStepPhotoSlideshow,
       });
       setEditingPersonId(null);
     }, 'Could not update person.');
@@ -691,6 +697,22 @@ export default function PeopleScreen() {
                         trackColor={{ true: colors.primary, false: colors.border }}
                       />
                     </View>
+                    <View style={styles.profileRatingSetting}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.itemText, { color: colors.foreground }]}>Show step photos automatically</Text>
+                        <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                          Steps can inherit this setting or choose their own slideshow behavior.
+                        </Text>
+                      </View>
+                      <Switch
+                        testID={`person-step-photo-slideshow-default-${p.id}`}
+                        accessibilityLabel="Show step photo slideshows by default"
+                        disabled={disabled}
+                        value={editingStepPhotoSlideshow}
+                        onValueChange={setEditingStepPhotoSlideshow}
+                        trackColor={{ true: colors.primary, false: colors.border }}
+                      />
+                    </View>
                     <PlaylistReminderDefaults
                       settings={editingReminderSettings}
                       onChange={setEditingReminderSettings}
@@ -784,6 +806,22 @@ export default function PeopleScreen() {
               disabled={disabled}
               value={newPersonSpeakRoutineDescription}
               onValueChange={setNewPersonSpeakRoutineDescription}
+              trackColor={{ true: colors.primary, false: colors.border }}
+            />
+          </View>
+          <View style={[styles.profileRatingSetting, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.itemText, { color: colors.foreground }]}>Show step photos automatically</Text>
+              <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+                Steps can inherit this setting or choose their own slideshow behavior.
+              </Text>
+            </View>
+            <Switch
+              testID="new-person-step-photo-slideshow-default"
+              accessibilityLabel="Show step photo slideshows by default"
+              disabled={disabled}
+              value={newPersonStepPhotoSlideshow}
+              onValueChange={setNewPersonStepPhotoSlideshow}
               trackColor={{ true: colors.primary, false: colors.border }}
             />
           </View>

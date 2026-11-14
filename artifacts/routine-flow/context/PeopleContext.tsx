@@ -274,6 +274,7 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       defaultSpeechLineGapSeconds: profile.defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS,
       defaultRateSkillsAtPlaylistEnd: profile.defaultRateSkillsAtPlaylistEnd ?? true,
       defaultSpeakRoutineDescription: profile.defaultSpeakRoutineDescription ?? true,
+      defaultStepPhotoSlideshow: profile.defaultStepPhotoSlideshow ?? true,
       defaultPlaylistReminderSettings: {
         stepCompletion: profile.defaultPlaylistReminderSettings?.stepCompletion
           ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,
@@ -328,6 +329,8 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
         profile.defaultRateSkillsAtPlaylistEnd ?? existing.defaultRateSkillsAtPlaylistEnd,
       defaultSpeakRoutineDescription:
         profile.defaultSpeakRoutineDescription ?? existing.defaultSpeakRoutineDescription ?? true,
+      defaultStepPhotoSlideshow:
+        profile.defaultStepPhotoSlideshow ?? existing.defaultStepPhotoSlideshow ?? true,
       defaultPlaylistReminderSettings: {
         stepCompletion: profile.defaultPlaylistReminderSettings?.stepCompletion
           ?? existing.defaultPlaylistReminderSettings?.stepCompletion

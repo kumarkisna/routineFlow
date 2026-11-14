@@ -62,6 +62,7 @@ test('profile, routine and playlist speech pauses save overrides and inheritance
 
   await page.goto('/routine/speech-gap-routine');
   await page.getByTestId('edit-routine').click();
+  await revealSpeechGap(page, 'routine-speech-line-gap');
   await page.getByTestId('routine-speech-line-gap-preset-2').click();
   await page.getByLabel('Save routine').click();
   await expect.poll(() => page.evaluate(() => {
@@ -70,6 +71,7 @@ test('profile, routine and playlist speech pauses save overrides and inheritance
   })).toBe(2);
 
   await page.getByTestId('edit-routine').click();
+  await revealSpeechGap(page, 'routine-speech-line-gap');
   await page.getByTestId('routine-speech-line-gap-inherit').click();
   await page.getByLabel('Save routine').click();
   await expect.poll(() => page.evaluate(() => {
@@ -78,6 +80,7 @@ test('profile, routine and playlist speech pauses save overrides and inheritance
   })).toBe(false);
 
   await page.goto('/playlist-editor?id=speech-gap-playlist');
+  await revealSpeechGap(page, 'playlist-speech-line-gap');
   await page.getByTestId('playlist-speech-line-gap-preset-1').click();
   await page.getByTestId('save-playlist').click();
   await expect.poll(() => page.evaluate(() => {
@@ -86,6 +89,7 @@ test('profile, routine and playlist speech pauses save overrides and inheritance
   })).toBe(1);
 
   await page.goto('/playlist-editor?id=speech-gap-playlist');
+  await revealSpeechGap(page, 'playlist-speech-line-gap');
   await page.getByTestId('playlist-speech-line-gap-inherit').click();
   await page.getByTestId('save-playlist').click();
   await expect.poll(() => page.evaluate(() => {
@@ -93,3 +97,66 @@ test('profile, routine and playlist speech pauses save overrides and inheritance
     return Object.hasOwn(playlists[0] ?? {}, 'speechLineGapSeconds');
   })).toBe(false);
 });
+
+test('routine and playlist speech pause sections remember when they are folded', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await page.addInitScript(() => {
+    localStorage.setItem('@routine-flow/people', JSON.stringify({
+      version: 1,
+      people: [{
+        id: 'me',
+        name: 'Me',
+        speechVoiceId: null,
+        defaultSpeechLineGapSeconds: 0.5,
+        defaultRateSkillsAtPlaylistEnd: true,
+        defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+        defaultSpeakRoutineDescription: true,
+        defaultStepPhotoSlideshow: true,
+      }],
+      activePersonId: 'me',
+    }));
+    localStorage.setItem('@routine-flow/routines', JSON.stringify([{
+      id: 'fold-gap-routine',
+      title: 'Fold gap routine',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'coral',
+      createdAt: '2026-11-14T08:00:00.000Z',
+      steps: [{ id: 'step-one', title: 'One step', durationSeconds: 60 }],
+    }]));
+    localStorage.setItem('@routine-flow/playlists', JSON.stringify([{
+      id: 'fold-gap-playlist',
+      title: 'Fold gap playlist',
+      routineIds: ['fold-gap-routine'],
+    }]));
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/skills', '[]');
+    localStorage.setItem('@routine-flow/schedules', '[]');
+  });
+
+  await page.goto('/routine/fold-gap-routine');
+  await page.getByTestId('edit-routine').click();
+  await expect(page.getByTestId('routine-speech-line-gap-preset-2')).toHaveCount(0);
+  await page.getByTestId('routine-speech-line-gap-disclosure').click();
+  await expect(page.getByTestId('routine-speech-line-gap-preset-2')).toBeVisible();
+  await page.getByTestId('routine-speech-line-gap-disclosure').click();
+  await page.goto('/routine/fold-gap-routine');
+  await page.getByTestId('edit-routine').click();
+  await expect(page.getByTestId('routine-speech-line-gap-preset-2')).toHaveCount(0);
+
+  await page.goto('/playlist-editor?id=fold-gap-playlist');
+  await expect(page.getByTestId('playlist-speech-line-gap-preset-2')).toHaveCount(0);
+  await page.getByTestId('playlist-speech-line-gap-disclosure').click();
+  await expect(page.getByTestId('playlist-speech-line-gap-preset-2')).toBeVisible();
+  await page.getByTestId('playlist-speech-line-gap-disclosure').click();
+  await page.goto('/playlist-editor?id=fold-gap-playlist');
+  await expect(page.getByTestId('playlist-speech-line-gap-preset-2')).toHaveCount(0);
+});
+
+async function revealSpeechGap(page: import('@playwright/test').Page, testID: string) {
+  const disclosure = page.getByTestId(`${testID}-disclosure`);
+  await expect(disclosure).toBeEnabled();
+  if (!await page.getByTestId(`${testID}-preset-2`).isVisible().catch(() => false)) {
+    await disclosure.click();
+  }
+}

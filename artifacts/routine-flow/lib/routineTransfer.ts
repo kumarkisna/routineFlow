@@ -11,7 +11,7 @@ import { DEFAULT_SPEECH_LINE_GAP_SECONDS, isValidSpeechLineGapSeconds } from './
 export const MAX_ROUTINE_FILE_BYTES = 50_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
 export const ALL_PEOPLE_FILE_FORMAT = 'routine-flow-all-people';
-export const ROUTINE_BACKUP_VERSION = 8;
+export const ROUTINE_BACKUP_VERSION = 9;
 export const ALL_PEOPLE_BACKUP_VERSION = 1;
 const TONES: RoutineTone[] = ['coral', 'sage', 'lavender', 'sun'];
 
@@ -103,6 +103,9 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
   if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
     throw new Error(`${label} has an invalid visibility setting.`);
   }
+  if (value.showPhotoSlideshow !== undefined && typeof value.showPhotoSlideshow !== 'boolean') {
+    throw new Error(`${label} has an invalid photo slideshow setting.`);
+  }
   if (value.subtitleHtml !== undefined &&
       (typeof value.subtitleHtml !== 'string' || value.subtitleHtml.length > 100_000)) {
     throw new Error(`${label} has invalid formatted description.`);
@@ -145,6 +148,7 @@ function parseStep(value: unknown, routineIndex: number, stepIndex: number): Rou
     ...(value.detailHtml !== undefined
       ? { detailHtml: (value.detailHtml as string[]).map(sanitizeStepDetailHtml) } : {}),
     ...(value.hidden !== undefined ? { hidden: value.hidden as boolean } : {}),
+    ...(value.showPhotoSlideshow !== undefined ? { showPhotoSlideshow: value.showPhotoSlideshow as boolean } : {}),
     ...(value.speakDetails !== undefined ? { speakDetails: value.speakDetails as boolean } : {}),
     ...(skillIds !== undefined ? { skillIds } : {}),
     durationSeconds: hasSeconds ? seconds : legacyMinutes * 60,
@@ -358,6 +362,7 @@ export function serializeAllPeopleBackup(activePersonId: string, entries: AllPeo
         defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd,
         defaultPlaylistReminderSettings: person.defaultPlaylistReminderSettings,
         defaultSpeakRoutineDescription: person.defaultSpeakRoutineDescription,
+        defaultStepPhotoSlideshow: person.defaultStepPhotoSlideshow,
       },
       backup: JSON.parse(serializePersonBackup(routines, personData, progress)) as RoutineBackup,
     })),
@@ -422,6 +427,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
     const profileNumber = profileValue.profileNumber ?? profileValue.id;
     const speechVoiceId = profileValue.speechVoiceId;
     const defaultSpeakRoutineDescription = profileValue.defaultSpeakRoutineDescription;
+    const defaultStepPhotoSlideshow = profileValue.defaultStepPhotoSlideshow;
     const defaultSpeechLineGapSeconds = profileValue.defaultSpeechLineGapSeconds;
     if (typeof profileValue.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileValue.id)
       || typeof profileNumber !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileNumber)
@@ -431,6 +437,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
         && (typeof speechVoiceId !== 'string' || !speechVoiceId.trim()))
       || typeof profileValue.defaultRateSkillsAtPlaylistEnd !== 'boolean'
       || (defaultSpeakRoutineDescription !== undefined && typeof defaultSpeakRoutineDescription !== 'boolean')
+      || (defaultStepPhotoSlideshow !== undefined && typeof defaultStepPhotoSlideshow !== 'boolean')
       || (defaultSpeechLineGapSeconds !== undefined
         && !isValidSpeechLineGapSeconds(defaultSpeechLineGapSeconds))
       || !isRecord(reminderSettings)
@@ -446,6 +453,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
       defaultSpeechLineGapSeconds: defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS,
       defaultRateSkillsAtPlaylistEnd: profileValue.defaultRateSkillsAtPlaylistEnd,
       defaultSpeakRoutineDescription: defaultSpeakRoutineDescription ?? true,
+      defaultStepPhotoSlideshow: defaultStepPhotoSlideshow ?? true,
       defaultPlaylistReminderSettings: {
         stepCompletion: reminderSettings.stepCompletion,
         routineCompletion: reminderSettings.routineCompletion,

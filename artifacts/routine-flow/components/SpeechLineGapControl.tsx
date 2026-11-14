@@ -1,6 +1,8 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useColors } from '@/hooks/useColors';
+import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import {
   MAX_SPEECH_LINE_GAP_SECONDS,
   MIN_SPEECH_LINE_GAP_SECONDS,
@@ -124,6 +126,50 @@ export function SpeechLineGapControl({
   );
 }
 
+export function CollapsibleSpeechLineGapControl({
+  disclosureNamespace,
+  disclosureOwnerId,
+  ...props
+}: React.ComponentProps<typeof SpeechLineGapControl> & {
+  disclosureNamespace: string;
+  disclosureOwnerId: string;
+}) {
+  const colors = useColors();
+  const disclosure = usePersistentDisclosure(disclosureNamespace, disclosureOwnerId, false);
+  const expanded = disclosure.isExpanded('speech-gap');
+  const inherited = props.allowInherit && props.value === undefined;
+  const currentValue = props.value ?? props.defaultValue;
+  const summary = inherited ? `Profile default · ${formatGap(props.defaultValue)}` : formatGap(currentValue);
+
+  return (
+    <View style={{ gap: 8 }}>
+      <Pressable
+        testID={`${props.testID ?? 'speech-line-gap'}-disclosure`}
+        accessibilityRole="button"
+        accessibilityLabel={`${expanded ? 'Hide' : 'Show'} ${(props.label ?? 'Pause between spoken lines').toLowerCase()} setting`}
+        accessibilityState={{ expanded, disabled: props.disabled || !disclosure.isHydrated }}
+        disabled={props.disabled || !disclosure.isHydrated}
+        onPress={() => disclosure.toggle('speech-gap')}
+        style={[
+          styles.disclosure,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            opacity: props.disabled ? 0.5 : 1,
+          },
+        ]}
+      >
+        <View style={styles.disclosureCopy}>
+          <Text style={[styles.disclosureTitle, { color: colors.foreground }]}>{props.label}</Text>
+          <Text style={[styles.disclosureSummary, { color: colors.mutedForeground }]}>{summary}</Text>
+        </View>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
+      </Pressable>
+      {expanded ? <SpeechLineGapControl {...props} /> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 7 },
   title: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
@@ -137,4 +183,8 @@ const styles = StyleSheet.create({
   choice: { minHeight: 38, borderWidth: 1, borderRadius: 19, paddingHorizontal: 11, justifyContent: 'center' },
   choiceText: { fontFamily: 'Inter_500Medium', fontSize: 12 },
   bounds: { fontFamily: 'Inter_400Regular', fontSize: 11 },
+  disclosure: { minHeight: 56, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  disclosureCopy: { flex: 1, gap: 3 },
+  disclosureTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
+  disclosureSummary: { fontFamily: 'Inter_400Regular', fontSize: 12 },
 });

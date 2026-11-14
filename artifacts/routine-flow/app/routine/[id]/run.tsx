@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   AppState,
+  Image,
   Linking,
   Modal,
   type AppStateStatus,
@@ -57,7 +58,9 @@ import {
 import {
   formatDuration,
   getStepDetails,
+  getStepPhotoSlideshowImages,
   getStepSeconds,
+  shouldShowStepPhotoSlideshow,
   type Routine,
   type RoutineNotificationSettings,
   type RunReflection,
@@ -194,6 +197,8 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const [pendingRunReflections, setPendingRunReflections] = useState<{ day: string; reflection: RunReflection }[]>([]);
   const [showRunReflectionPrompt, setShowRunReflectionPrompt] = useState(false);
+  const [slideshowImageIndex, setSlideshowImageIndex] = useState(0);
+  const [dismissedSlideshowStepId, setDismissedSlideshowStepId] = useState<string | null>(null);
   const [showRatingPeoplePicker, setShowRatingPeoplePicker] = useState(false);
   const [peoplePickerError, setPeoplePickerError] = useState('');
   const [ratingPersonIds, setRatingPersonIds] = useState<string[]>(
@@ -230,6 +235,33 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const notificationPermissionAlertShownRef = useRef(false);
   const notificationPermissionDeniedRef = useRef(false);
   const playlistTransitionRef = useRef(false);
+  const slideshowStep = routine?.steps[activeIndex];
+  const slideshowImages = useMemo(
+    () => slideshowStep ? getStepPhotoSlideshowImages(slideshowStep) : [],
+    [slideshowStep],
+  );
+  const visibleSlideshowImageIndex = slideshowImages.length
+    ? slideshowImageIndex % slideshowImages.length
+    : 0;
+  const slideshowImage = slideshowImages.length
+    ? slideshowImages[visibleSlideshowImageIndex]
+    : undefined;
+  const showPhotoSlideshow = !!slideshowStep && !isFinished
+    && shouldShowStepPhotoSlideshow(slideshowStep, activePerson.defaultStepPhotoSlideshow)
+    && slideshowImages.length > 0
+    && dismissedSlideshowStepId !== slideshowStep.id;
+
+  useEffect(() => {
+    setSlideshowImageIndex(0);
+  }, [slideshowStep?.id]);
+
+  useEffect(() => {
+    if (!showPhotoSlideshow || slideshowImages.length < 2) return undefined;
+    const interval = setInterval(() => {
+      setSlideshowImageIndex(index => (index + 1) % slideshowImages.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [showPhotoSlideshow, slideshowImages.length, slideshowStep?.id]);
 
   useEffect(() => {
     if (loading || !routine) return;
@@ -932,7 +964,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
             </View>
           )}
           <View style={[styles.timerRing, { borderColor: colors.sage }]}>
-            <Text style={[styles.timerText, { color: colors.heroForeground }]}>
+            <Text testID="routine-countdown" style={[styles.timerText, { color: colors.heroForeground }]}>
               {isFinished ? '00:00:00' : formatClock(remainingSeconds)}
             </Text>
             <Text style={[styles.timerCaption, { color: colors.heroForeground }]}>
@@ -1114,6 +1146,53 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
           })}
         </View>
       </ScrollView>
+      <Modal
+        visible={showPhotoSlideshow}
+        animationType="fade"
+        presentationStyle="fullScreen"
+        onRequestClose={() => {
+          if (slideshowStep) setDismissedSlideshowStepId(slideshowStep.id);
+        }}
+      >
+        <View style={[styles.photoSlideshow, { backgroundColor: colors.hero }]}>
+          {slideshowImage ? (
+            <Image
+              testID="step-photo-slideshow-image"
+              accessibilityLabel={slideshowImage.name}
+              source={{ uri: `data:${slideshowImage.mimeType};base64,${slideshowImage.contentBase64}` }}
+              resizeMode="contain"
+              style={styles.photoSlideshowImage}
+            />
+          ) : null}
+          <View style={[styles.photoSlideshowHeader, { top: (Platform.OS === 'web' ? 67 : insets.top) + 8 }]}>
+            <View style={styles.photoSlideshowTitleWrap}>
+              <Text numberOfLines={1} style={[styles.photoSlideshowTitle, { color: colors.heroForeground }]}>
+                {slideshowStep?.title}
+              </Text>
+              <Text style={[styles.photoSlideshowCounter, { color: colors.heroForeground }]}>
+                {visibleSlideshowImageIndex + 1} / {slideshowImages.length}
+              </Text>
+            </View>
+            <Pressable
+              testID="close-step-photo-slideshow"
+              accessibilityRole="button"
+              accessibilityLabel="Close step photo slideshow"
+              onPress={() => {
+                if (slideshowStep) setDismissedSlideshowStepId(slideshowStep.id);
+              }}
+              style={styles.photoSlideshowClose}
+            >
+              <Ionicons name="close" size={26} color={colors.heroForeground} />
+            </Pressable>
+          </View>
+          <View style={[styles.photoSlideshowTimer, { bottom: (Platform.OS === 'web' ? 34 : insets.bottom) + 18, backgroundColor: colors.card }]}>
+            <Text style={[styles.photoSlideshowTimerLabel, { color: colors.mutedForeground }]}>Time left</Text>
+            <Text testID="photo-slideshow-countdown" style={[styles.photoSlideshowTimerValue, { color: colors.foreground }]}>
+              {formatClock(remainingSeconds)}
+            </Text>
+          </View>
+        </View>
+      </Modal>
       {groupRating && ratingRun ? (
         <GroupSkillRatingPrompt
           visible={showRatingPrompt}
@@ -1247,6 +1326,16 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  photoSlideshow: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  photoSlideshowImage: { width: '100%', height: '100%' },
+  photoSlideshowHeader: { position: 'absolute', left: 18, right: 18, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  photoSlideshowTitleWrap: { flex: 1, alignItems: 'center' },
+  photoSlideshowTitle: { fontFamily: 'Inter_600SemiBold', fontSize: 16, maxWidth: '100%' },
+  photoSlideshowCounter: { fontFamily: 'Inter_500Medium', fontSize: 12, marginTop: 4, opacity: 0.8 },
+  photoSlideshowClose: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  photoSlideshowTimer: { position: 'absolute', alignSelf: 'center', minWidth: 128, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center' },
+  photoSlideshowTimerLabel: { fontFamily: 'Inter_500Medium', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 },
+  photoSlideshowTimerValue: { fontFamily: 'Inter_700Bold', fontSize: 19, marginTop: 2 },
   header: { minHeight: 72, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center' },
   iconButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1, alignItems: 'center' },

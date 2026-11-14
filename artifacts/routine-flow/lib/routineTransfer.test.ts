@@ -79,7 +79,7 @@ test('current export and import keep completed labels and legacy booleans', () =
     'not-a-date': { 'morning:water': true },
   });
   const json = JSON.parse(raw);
-  assert.equal(json.version, 8);
+  assert.equal(json.version, 9);
   assert.deepEqual(json.progress, { [day]: {
     'morning:water': { routineTitle: 'Original morning', stepTitle: 'Drink water' },
     'morning:stretch': true,
@@ -108,7 +108,7 @@ test('current backups retain playlist run tags and remap restored playlist IDs',
   };
   const raw = serializeRoutines([source], taggedProgress);
   const json = JSON.parse(raw);
-  assert.equal(json.version, 8);
+  assert.equal(json.version, 9);
   const imported = parseRoutinesFile(raw);
   assert.deepEqual(imported.progress, taggedProgress);
   assert.throws(
@@ -497,7 +497,8 @@ test('person backup includes playlists, schedules, selected theme, and optional 
     ...base,
     skillIds: ['skill-focus'],
     steps: base.steps.map((step, index) => index === 0 ? {
-      ...step, skillIds: ['skill-mobility'], detailHtml: ['<p><strong>Drink safely</strong></p>'],
+      ...step, skillIds: ['skill-mobility'], showPhotoSlideshow: false,
+      detailHtml: ['<p><strong>Drink safely</strong></p>'],
       detailAttachments: [[{ id: 'photo', name: 'water.png', uri: 'file:///old/water.png',
         mimeType: 'image/png', kind: 'image', contentBase64: 'aGVsbG8=' }]],
     } : step),
@@ -531,6 +532,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
     defaultRateSkillsAtPlaylistEnd,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
     defaultSpeakRoutineDescription: id !== 'me',
+    defaultStepPhotoSlideshow: id !== 'me',
   });
   const personData = (skillId: string, rating: number, skillRatingWindow: number) => ({
     playlists: [],
@@ -607,6 +609,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
       defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
       defaultSpeakRoutineDescription: false,
+      defaultStepPhotoSlideshow: false,
       defaultSpeechLineGapSeconds: 0.25,
     },
     {
@@ -617,6 +620,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
       defaultRateSkillsAtPlaylistEnd: false,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
       defaultSpeakRoutineDescription: true,
+      defaultStepPhotoSlideshow: true,
       defaultSpeechLineGapSeconds: 1,
     },
   ]);
@@ -653,6 +657,8 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   assert.equal(parsedAllPeople.people[1].profile.speechVoiceId, null);
   assert.equal(parsedAllPeople.people[0].profile.defaultSpeakRoutineDescription, false);
   assert.equal(parsedAllPeople.people[1].profile.defaultSpeakRoutineDescription, true);
+  assert.equal(parsedAllPeople.people[0].profile.defaultStepPhotoSlideshow, false);
+  assert.equal(parsedAllPeople.people[1].profile.defaultStepPhotoSlideshow, true);
   for (const personEntry of parsedAllPeople.people) {
     const detailHtml = personEntry.backup.routines[0].steps[0].detailHtml?.join(' ') ?? '';
     assert.match(detailHtml, /href="https?:\/\//);
@@ -672,10 +678,12 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   const olderArchive = JSON.parse(contents);
   delete olderArchive.people[0].profile.speechVoiceId;
   delete olderArchive.people[0].profile.defaultSpeakRoutineDescription;
+  delete olderArchive.people[0].profile.defaultStepPhotoSlideshow;
   delete olderArchive.people[0].profile.defaultSpeechLineGapSeconds;
   const parsedOlderArchive = parseAllPeopleBackup(JSON.stringify(olderArchive));
   assert.equal(parsedOlderArchive.people[0].profile.speechVoiceId, null);
   assert.equal(parsedOlderArchive.people[0].profile.defaultSpeakRoutineDescription, true);
+  assert.equal(parsedOlderArchive.people[0].profile.defaultStepPhotoSlideshow, true);
   assert.equal(parsedOlderArchive.people[0].profile.defaultSpeechLineGapSeconds, 0.5);
   const mismatchedNumber = JSON.parse(contents);
   mismatchedNumber.people[1].profile.profileNumber = 'different-profile';
@@ -692,6 +700,7 @@ test('all-people backup rejects duplicate profiles or a missing active profile',
       defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
       defaultSpeakRoutineDescription: true,
+      defaultStepPhotoSlideshow: true,
     },
     routines: [routine()],
     personData: {
@@ -883,7 +892,7 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
   const source = routine();
   const invalidFiles = [
     '{',
-    backup(9, [source]),
+    backup(ROUTINE_BACKUP_VERSION + 1, [source]),
     backup(2, [source], []),
     backup(2, [source], { '2026-02-30': { 'morning:water': true } }),
     backup(2, [source], { [day]: [] }),
@@ -899,6 +908,7 @@ test('rejects malformed backup structure and invalid or unrelated history', () =
     backup(3, [source], { [day]: { 'morning:water': { routineTitle: '', stepTitle: 'Water' } } }),
     backup(2, [source, source]),
     backup(2, [{ ...source, steps: [source.steps[0], source.steps[0]] }]),
+    backup(ROUTINE_BACKUP_VERSION, [{ ...source, steps: [{ ...source.steps[0], showPhotoSlideshow: 'yes' }] }]),
     'x'.repeat(MAX_ROUTINE_FILE_BYTES + 1),
   ];
   for (const file of invalidFiles) {

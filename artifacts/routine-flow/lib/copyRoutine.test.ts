@@ -29,6 +29,7 @@ const routine: Routine = {
       }]],
       skillIds: ['step-skill'],
       hidden: true,
+      showPhotoSlideshow: false,
       durationSeconds: 75,
     },
     { id: 'stretch', title: 'Stretch gently', durationSeconds: 120 },
@@ -45,6 +46,7 @@ test('copies ordered steps with fresh IDs and independent nested data', () => {
   assert.deepEqual(copied.map(step => step.id), ['copy-1', 'copy-2']);
   assert.equal(copied[0].durationSeconds, 75);
   assert.equal(copied[0].hidden, true);
+  assert.equal(copied[0].showPhotoSlideshow, false);
   assert.deepEqual(copied[0].skillIds, ['step-skill']);
   assert.deepEqual(copied[0].detailSpeech, [true, false]);
   assert.deepEqual(copied[0].detailHtml, ['<p>Calm instruction</p>', '<p>Extra note</p>']);

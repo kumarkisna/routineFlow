@@ -20,7 +20,7 @@ import { useSkills } from '@/context/SkillContext';
 import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
-import { SpeechLineGapControl } from '@/components/SpeechLineGapControl';
+import { CollapsibleSpeechLineGapControl } from '@/components/SpeechLineGapControl';
 import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
 import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
@@ -67,6 +67,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const insets = useSafeAreaInsets();
   const { routines, createRoutine, updateRoutine } = useRoutines();
   const { activePerson } = usePeople();
+  const speechGapDisclosureOwnerId = editingRoutine?.id ?? 'new-routine';
   const { skills } = useSkills();
   const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const [title, setTitle] = useState(editingRoutine?.title ?? '');
@@ -99,6 +100,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [steps, setSteps] = useState<RoutineStep[]>(editingRoutine?.steps ?? []);
   const [skillIds, setSkillIds] = useState<string[]>(editingRoutine?.skillIds ?? []);
   const [stepSkillIds, setStepSkillIds] = useState<string[]>([]);
+  const [stepPhotoSlideshow, setStepPhotoSlideshow] = useState<boolean | undefined>(undefined);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -189,6 +191,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft('');
     setStepDetailDraft(createEmptyStepDetailDraft());
     setStepSkillIds([]);
+    setStepPhotoSlideshow(undefined);
     setHoursDraft('0');
     setMinutesDraft('5');
     setSecondsDraft('0');
@@ -200,6 +203,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     setStepDraft(step.title);
     setStepDetailDraft(createStepDetailDraft(step));
     setStepSkillIds([...(step.skillIds ?? [])]);
+    setStepPhotoSlideshow(step.showPhotoSlideshow);
     setHoursDraft(String(Math.floor(duration / 3600)));
     setMinutesDraft(String(Math.floor((duration % 3600) / 60)));
     setSecondsDraft(String(duration % 60));
@@ -233,7 +237,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
     if (editingStepId) {
       setSteps((current) => current.map((step) =>
         step.id === editingStepId
-          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, detailSpeech: nextDetailSpeech, detailAttachments: nextDetailAttachments, detailHtml: nextDetailHtml, speakDetails: undefined, skillIds: [...stepSkillIds], durationSeconds }
+          ? { ...step, title: nextTitle, description: nextDescription, additionalDetails: nextAdditionalDetails, detailSpeech: nextDetailSpeech, detailAttachments: nextDetailAttachments, detailHtml: nextDetailHtml, speakDetails: undefined, skillIds: [...stepSkillIds], showPhotoSlideshow: stepPhotoSlideshow, durationSeconds }
           : step,
       ));
     } else {
@@ -247,6 +251,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           detailSpeech: nextDetailSpeech,
           detailAttachments: nextDetailAttachments,
           detailHtml: nextDetailHtml,
+          ...(stepPhotoSlideshow !== undefined ? { showPhotoSlideshow: stepPhotoSlideshow } : {}),
           ...(stepSkillIds.length ? { skillIds: [...stepSkillIds] } : {}),
           durationSeconds,
         },
@@ -304,6 +309,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
         ...detailFields,
         speakDetails: undefined,
         skillIds: [...stepSkillIds],
+        showPhotoSlideshow: stepPhotoSlideshow,
         durationSeconds,
       } : step);
     }
@@ -431,7 +437,7 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             thumbColor={colors.card}
           />
         </View>
-        <SpeechLineGapControl
+        <CollapsibleSpeechLineGapControl
           value={speechLineGapSeconds}
           defaultValue={activePerson.defaultSpeechLineGapSeconds}
           onChange={setSpeechLineGapSeconds}
@@ -440,6 +446,8 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
           label="Pause between spoken lines"
           hint="Use the profile default or choose a pause for this routine."
           testID="routine-speech-line-gap"
+          disclosureNamespace="routine-speech-line-gap"
+          disclosureOwnerId={speechGapDisclosureOwnerId}
         />
         <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={saving} testIDPrefix="routine-skill" />
         <Text style={[styles.categoryLabel, { color: colors.inkSoft }]}>Run reflection template (optional)</Text>
@@ -860,6 +868,47 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             disabled={saving}
             testIDPrefix="step-skill"
           />
+          <View style={[styles.stepSlideshowPreference, { borderTopColor: colors.border }]}>
+            <View>
+              <Text style={[styles.stepDescriptionLabel, { color: colors.inkSoft }]}>Step photo slideshow</Text>
+              <Text style={[styles.stepSlideshowHint, { color: colors.mutedForeground }]}>
+                {stepPhotoSlideshow === undefined
+                  ? `Inherits the ${activePerson.defaultStepPhotoSlideshow ? 'on' : 'off'} profile default.`
+                  : 'This step overrides the profile default.'}
+              </Text>
+            </View>
+            <View style={styles.slideshowPreferenceOptions}>
+              {([
+                { value: undefined, label: 'Inherit', id: 'inherit' },
+                { value: true, label: 'On', id: 'on' },
+                { value: false, label: 'Off', id: 'off' },
+              ] as const).map(option => {
+                const selected = stepPhotoSlideshow === option.value;
+                return (
+                  <Pressable
+                    key={option.id}
+                    testID={`step-photo-slideshow-${option.id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Step photo slideshow ${option.label.toLowerCase()}`}
+                    accessibilityState={{ selected, disabled: saving }}
+                    disabled={saving}
+                    onPress={() => setStepPhotoSlideshow(option.value)}
+                    style={[
+                      styles.slideshowPreferenceOption,
+                      {
+                        backgroundColor: selected ? colors.primary : colors.card,
+                        borderColor: selected ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: selected ? colors.primaryForeground : colors.foreground, fontFamily: 'Inter_500Medium', fontSize: 12 }}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
           <View style={styles.durationComposer}>
             <Text style={[styles.durationLabel, { color: colors.mutedForeground }]}>Timer</Text>
             <View style={styles.timeInputs}>
@@ -1064,6 +1113,10 @@ const styles = StyleSheet.create({
   stepDescriptionLabel: { fontFamily: 'Inter_500Medium', fontSize: 12, marginLeft: 8, marginTop: 4, marginBottom: 7 },
   detailSpeechRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginHorizontal: 8, marginBottom: 7 },
   detailSpeechLabel: { fontFamily: 'Inter_500Medium', fontSize: 12 },
+  stepSlideshowPreference: { gap: 6, borderTopWidth: StyleSheet.hairlineWidth, marginTop: 10, paddingHorizontal: 8, paddingTop: 10, paddingBottom: 6 },
+  stepSlideshowHint: { fontFamily: 'Inter_400Regular', fontSize: 11, marginTop: 3 },
+  slideshowPreferenceOptions: { flexDirection: 'row', gap: 7 },
+  slideshowPreferenceOption: { minHeight: 36, flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: 10 },
   stepDescriptionInput: { minHeight: 72, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, paddingVertical: 9, marginHorizontal: 6, fontFamily: 'Inter_400Regular', fontSize: 14, lineHeight: 20 },
   additionalDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 7 },
   additionalDetailInput: { flex: 1, marginHorizontal: 6 },

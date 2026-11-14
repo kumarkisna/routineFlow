@@ -8,11 +8,13 @@ export function usePersistentDisclosure(namespace: string, ownerId: string, defa
   const current = React.useRef<Record<string, true>>({});
   const pending = React.useRef<Record<string, true | false>>({});
   const hydrated = React.useRef(false);
+  const [isHydrated, setIsHydrated] = React.useState(false);
   const writeQueue = React.useRef<Promise<void>>(Promise.resolve());
 
   React.useEffect(() => {
     let active = true;
     hydrated.current = false;
+    setIsHydrated(false);
     current.current = {};
     pending.current = {};
     setCollapsed({});
@@ -34,6 +36,7 @@ export function usePersistentDisclosure(namespace: string, ownerId: string, defa
       }
       current.current = merged;
       hydrated.current = true;
+      setIsHydrated(true);
       setCollapsed(merged);
       if (Object.keys(pending.current).length) persist(merged);
       pending.current = {};
@@ -41,6 +44,7 @@ export function usePersistentDisclosure(namespace: string, ownerId: string, defa
       if (active) {
         console.warn(`Could not load ${namespace} disclosure preferences.`, error);
         hydrated.current = true;
+        setIsHydrated(true);
         if (Object.keys(pending.current).length) persist(current.current);
         pending.current = {};
       }
@@ -66,5 +70,5 @@ export function usePersistentDisclosure(namespace: string, ownerId: string, defa
 
   const isExpanded = React.useCallback((id: string) => collapsed[id] === true ? !defaultExpanded : defaultExpanded,
     [collapsed, defaultExpanded]);
-  return { isExpanded, toggle };
+  return { isExpanded, toggle, isHydrated };
 }

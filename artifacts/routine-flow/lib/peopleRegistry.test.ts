@@ -18,9 +18,12 @@ test('legacy person profiles keep skill ratings on and default playlist reminder
   assert.equal(registry.people[1].speechVoiceId, null);
   assert.equal(registry.people[0].defaultSpeakRoutineDescription, true);
   assert.equal(registry.people[1].defaultSpeakRoutineDescription, true);
+  assert.equal(registry.people[0].defaultStepPhotoSlideshow, true);
+  assert.equal(registry.people[1].defaultStepPhotoSlideshow, true);
   assert.deepEqual(registry.people[0].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
   assert.deepEqual(registry.people[1].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
   assert.equal(initialPeopleRegistry.people[0].defaultRateSkillsAtPlaylistEnd, true);
+  assert.equal(initialPeopleRegistry.people[0].defaultStepPhotoSlideshow, true);
   assert.equal(initialPeopleRegistry.people[0].defaultSpeechLineGapSeconds, DEFAULT_SPEECH_LINE_GAP_SECONDS);
   assert.deepEqual(initialPeopleRegistry.people[0].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
 });
@@ -87,6 +90,15 @@ test('person registry preserves a disabled default for speaking new routine desc
   assert.equal(registry.people[0].defaultSpeakRoutineDescription, false);
 });
 
+test('person registry preserves an explicitly disabled photo slideshow default', () => {
+  const registry = parsePeopleRegistry(JSON.stringify({
+    version: 1,
+    people: [{ id: 'me', name: 'Me', defaultStepPhotoSlideshow: false }],
+    activePersonId: 'me',
+  }));
+  assert.equal(registry.people[0].defaultStepPhotoSlideshow, false);
+});
+
 test('person registry rejects invalid playlist default values', () => {
   assert.throws(() => parsePeopleRegistry(JSON.stringify({
     version: 1,
@@ -106,6 +118,11 @@ test('person registry rejects invalid playlist default values', () => {
   assert.throws(() => parsePeopleRegistry(JSON.stringify({
     version: 1,
     people: [{ id: 'me', name: 'Me', defaultSpeakRoutineDescription: 'off' }],
+    activePersonId: 'me',
+  })));
+  assert.throws(() => parsePeopleRegistry(JSON.stringify({
+    version: 1,
+    people: [{ id: 'me', name: 'Me', defaultStepPhotoSlideshow: 'off' }],
     activePersonId: 'me',
   })));
 });

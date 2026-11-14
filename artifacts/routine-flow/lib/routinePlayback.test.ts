@@ -1,10 +1,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Routine } from '../types/routines';
+import {
+  getStepPhotoSlideshowImages,
+  shouldShowStepPhotoSlideshow,
+  type Routine,
+} from '../types/routines';
 import { buildStepAnnouncement } from './routineSpeech';
 import { getNextRoutineStepIndex, getPlayableRoutine, getRoutinePlaybackStep, getRoutinePlaybackStepSeconds } from './routinePlayback';
 import { scheduledRoutineRunParams, scheduledRoutineSource } from './schedules';
 import { moveRoutineStep } from './routineStepOrdering';
+
+test('step photo slideshows inherit the profile default unless explicitly overridden', () => {
+  assert.equal(shouldShowStepPhotoSlideshow({}, true), true);
+  assert.equal(shouldShowStepPhotoSlideshow({}, false), false);
+  assert.equal(shouldShowStepPhotoSlideshow({ showPhotoSlideshow: true }, false), true);
+  assert.equal(shouldShowStepPhotoSlideshow({ showPhotoSlideshow: false }, true), false);
+});
+
+test('step slideshow images include all detail photos and exclude documents', () => {
+  const images = getStepPhotoSlideshowImages({
+    detailAttachments: [
+      [
+        { id: 'first', name: 'first.png', mimeType: 'image/png', kind: 'image', contentBase64: 'AA==' },
+        { id: 'document', name: 'guide.pdf', mimeType: 'application/pdf', kind: 'document', contentBase64: 'AA==' },
+      ],
+      [{ id: 'second', name: 'second.jpg', mimeType: 'image/jpeg', kind: 'image', contentBase64: 'AA==' }],
+    ],
+  });
+  assert.deepEqual(images.map(image => image.id), ['first', 'second']);
+});
 
 test('a scheduled run loads the saved reordered routine and announces, times, and completes it in order', () => {
   const originalRoutine: Routine = {

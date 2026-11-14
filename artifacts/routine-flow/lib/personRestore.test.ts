@@ -12,6 +12,7 @@ const activeProfile = {
   defaultRateSkillsAtPlaylistEnd: true,
   defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
   defaultSpeakRoutineDescription: true,
+  defaultStepPhotoSlideshow: true,
 };
 const day = '2026-10-01';
 
@@ -48,6 +49,7 @@ function backup(includeProgress = true): AllPeopleBackup {
     defaultRateSkillsAtPlaylistEnd: false,
     defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
     defaultSpeakRoutineDescription: false,
+    defaultStepPhotoSlideshow: false,
   };
   return {
     activePersonId: 'me',
