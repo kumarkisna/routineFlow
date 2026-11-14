@@ -7,6 +7,10 @@ import { parseSkillRatingWindow, parseSkills, type RoutineSkill } from './skills
 import type { Person } from '@/types/people';
 import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
 import { DEFAULT_SPEECH_LINE_GAP_SECONDS, isValidSpeechLineGapSeconds } from './speechGap';
+import {
+  DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
+  isValidStepPhotoSlideshowIntervalSeconds,
+} from './photoSlideshow';
 
 export const MAX_ROUTINE_FILE_BYTES = 50_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
@@ -363,6 +367,7 @@ export function serializeAllPeopleBackup(activePersonId: string, entries: AllPeo
         defaultPlaylistReminderSettings: person.defaultPlaylistReminderSettings,
         defaultSpeakRoutineDescription: person.defaultSpeakRoutineDescription,
         defaultStepPhotoSlideshow: person.defaultStepPhotoSlideshow,
+        defaultStepPhotoSlideshowIntervalSeconds: person.defaultStepPhotoSlideshowIntervalSeconds,
       },
       backup: JSON.parse(serializePersonBackup(routines, personData, progress)) as RoutineBackup,
     })),
@@ -428,6 +433,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
     const speechVoiceId = profileValue.speechVoiceId;
     const defaultSpeakRoutineDescription = profileValue.defaultSpeakRoutineDescription;
     const defaultStepPhotoSlideshow = profileValue.defaultStepPhotoSlideshow;
+    const defaultStepPhotoSlideshowIntervalSeconds = profileValue.defaultStepPhotoSlideshowIntervalSeconds;
     const defaultSpeechLineGapSeconds = profileValue.defaultSpeechLineGapSeconds;
     if (typeof profileValue.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileValue.id)
       || typeof profileNumber !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileNumber)
@@ -438,6 +444,8 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
       || typeof profileValue.defaultRateSkillsAtPlaylistEnd !== 'boolean'
       || (defaultSpeakRoutineDescription !== undefined && typeof defaultSpeakRoutineDescription !== 'boolean')
       || (defaultStepPhotoSlideshow !== undefined && typeof defaultStepPhotoSlideshow !== 'boolean')
+      || (defaultStepPhotoSlideshowIntervalSeconds !== undefined
+        && !isValidStepPhotoSlideshowIntervalSeconds(defaultStepPhotoSlideshowIntervalSeconds))
       || (defaultSpeechLineGapSeconds !== undefined
         && !isValidSpeechLineGapSeconds(defaultSpeechLineGapSeconds))
       || !isRecord(reminderSettings)
@@ -454,6 +462,8 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
       defaultRateSkillsAtPlaylistEnd: profileValue.defaultRateSkillsAtPlaylistEnd,
       defaultSpeakRoutineDescription: defaultSpeakRoutineDescription ?? true,
       defaultStepPhotoSlideshow: defaultStepPhotoSlideshow ?? true,
+      defaultStepPhotoSlideshowIntervalSeconds:
+        defaultStepPhotoSlideshowIntervalSeconds ?? DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
       defaultPlaylistReminderSettings: {
         stepCompletion: reminderSettings.stepCompletion,
         routineCompletion: reminderSettings.routineCompletion,

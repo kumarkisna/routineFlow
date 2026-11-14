@@ -112,6 +112,7 @@ test('routine and playlist speech pause sections remember when they are folded',
         defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
         defaultSpeakRoutineDescription: true,
         defaultStepPhotoSlideshow: true,
+        defaultStepPhotoSlideshowIntervalSeconds: 5,
       }],
       activePersonId: 'me',
     }));

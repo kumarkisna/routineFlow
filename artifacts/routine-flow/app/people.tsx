@@ -19,10 +19,62 @@ import { createPersonStorage, PERSON_DATA_KEYS, PersonBackgroundStateUncertainEr
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
 import { DEFAULT_SPEECH_LINE_GAP_SECONDS } from '@/lib/speechGap';
+import {
+  DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
+  MAX_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
+  MIN_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
+} from '@/lib/photoSlideshow';
 import type { RoutineNotificationSettings } from '@/types/routines';
 import type { Person, PersonSnapshot } from '@/types/people';
 
 const msg = (e: unknown, fb: string) => (e instanceof Error && e.message ? e.message : fb);
+
+function StepPhotoSlideshowIntervalControl({
+  value,
+  onChange,
+  disabled,
+  testID,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  disabled: boolean;
+  testID: string;
+}) {
+  const colors = useColors();
+  return (
+    <View style={[styles.photoIntervalSetting, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.itemText, { color: colors.foreground }]}>Time per slideshow photo</Text>
+        <Text style={[styles.sub, { color: colors.mutedForeground }]}>Routine and playlist timers are unchanged.</Text>
+      </View>
+      <Pressable
+        testID={`${testID}-decrease`}
+        accessibilityRole="button"
+        accessibilityLabel="Show each photo one second less"
+        accessibilityState={{ disabled: disabled || value <= MIN_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS }}
+        disabled={disabled || value <= MIN_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS}
+        onPress={() => onChange(value - 1)}
+        style={[styles.photoIntervalButton, { borderColor: colors.border }]}
+      >
+        <Text style={[styles.photoIntervalButtonText, { color: colors.foreground }]}>−</Text>
+      </Pressable>
+      <Text testID={`${testID}-value`} accessibilityLiveRegion="polite" style={[styles.photoIntervalValue, { color: colors.foreground }]}>
+        {value}s
+      </Text>
+      <Pressable
+        testID={`${testID}-increase`}
+        accessibilityRole="button"
+        accessibilityLabel="Show each photo one second longer"
+        accessibilityState={{ disabled: disabled || value >= MAX_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS }}
+        disabled={disabled || value >= MAX_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS}
+        onPress={() => onChange(value + 1)}
+        style={[styles.photoIntervalButton, { borderColor: colors.border }]}
+      >
+        <Text style={[styles.photoIntervalButtonText, { color: colors.foreground }]}>+</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 export default function PeopleScreen() {
   const colors = useColors();
@@ -47,6 +99,10 @@ export default function PeopleScreen() {
   const [editingPlaylistRatingDefault, setEditingPlaylistRatingDefault] = React.useState(true);
   const [editingSpeakRoutineDescription, setEditingSpeakRoutineDescription] = React.useState(true);
   const [editingStepPhotoSlideshow, setEditingStepPhotoSlideshow] = React.useState(true);
+  const [newPersonPhotoSlideshowIntervalSeconds, setNewPersonPhotoSlideshowIntervalSeconds] =
+    React.useState(DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS);
+  const [editingPhotoSlideshowIntervalSeconds, setEditingPhotoSlideshowIntervalSeconds] =
+    React.useState(DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS);
   const [personThemeIds, setPersonThemeIds] = React.useState<Record<string, string>>({});
   const [themeLoadingId, setThemeLoadingId] = React.useState<string | null>(null);
   const [themeSavingId, setThemeSavingId] = React.useState<string | null>(null);
@@ -281,6 +337,9 @@ export default function PeopleScreen() {
     setEditingPlaylistRatingDefault(person.defaultRateSkillsAtPlaylistEnd ?? true);
     setEditingSpeakRoutineDescription(person.defaultSpeakRoutineDescription ?? true);
     setEditingStepPhotoSlideshow(person.defaultStepPhotoSlideshow ?? true);
+    setEditingPhotoSlideshowIntervalSeconds(
+      person.defaultStepPhotoSlideshowIntervalSeconds ?? DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
+    );
     setEditingSpeechVoiceId(person.speechVoiceId ?? null);
     setEditingSpeechLineGapSeconds(person.defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS);
     setEditingReminderSettings({ ...person.defaultPlaylistReminderSettings });
@@ -297,6 +356,7 @@ export default function PeopleScreen() {
         defaultPlaylistReminderSettings: { ...newPersonReminderSettings },
         defaultSpeakRoutineDescription: newPersonSpeakRoutineDescription,
         defaultStepPhotoSlideshow: newPersonStepPhotoSlideshow,
+        defaultStepPhotoSlideshowIntervalSeconds: newPersonPhotoSlideshowIntervalSeconds,
       });
       setName('');
       setNewPersonSpeechVoiceId(null);
@@ -304,6 +364,7 @@ export default function PeopleScreen() {
       setNewPersonPlaylistRatingDefault(true);
       setNewPersonSpeakRoutineDescription(true);
       setNewPersonStepPhotoSlideshow(true);
+      setNewPersonPhotoSlideshowIntervalSeconds(DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS);
       setNewPersonReminderSettings({ ...DEFAULT_PLAYLIST_REMINDER_SETTINGS });
     }, 'Could not add person.');
   }
@@ -318,6 +379,7 @@ export default function PeopleScreen() {
         defaultPlaylistReminderSettings: { ...editingReminderSettings },
         defaultSpeakRoutineDescription: editingSpeakRoutineDescription,
         defaultStepPhotoSlideshow: editingStepPhotoSlideshow,
+        defaultStepPhotoSlideshowIntervalSeconds: editingPhotoSlideshowIntervalSeconds,
       });
       setEditingPersonId(null);
     }, 'Could not update person.');
@@ -713,6 +775,12 @@ export default function PeopleScreen() {
                         trackColor={{ true: colors.primary, false: colors.border }}
                       />
                     </View>
+                    <StepPhotoSlideshowIntervalControl
+                      value={editingPhotoSlideshowIntervalSeconds}
+                      onChange={setEditingPhotoSlideshowIntervalSeconds}
+                      disabled={disabled}
+                      testID={`person-step-photo-slideshow-interval-${p.id}`}
+                    />
                     <PlaylistReminderDefaults
                       settings={editingReminderSettings}
                       onChange={setEditingReminderSettings}
@@ -825,6 +893,12 @@ export default function PeopleScreen() {
               trackColor={{ true: colors.primary, false: colors.border }}
             />
           </View>
+          <StepPhotoSlideshowIntervalControl
+            value={newPersonPhotoSlideshowIntervalSeconds}
+            onChange={setNewPersonPhotoSlideshowIntervalSeconds}
+            disabled={disabled}
+            testID="new-person-step-photo-slideshow-interval"
+          />
           <PlaylistReminderDefaults
             settings={newPersonReminderSettings}
             onChange={setNewPersonReminderSettings}
@@ -965,6 +1039,10 @@ const styles = StyleSheet.create({
   backgroundActions: { flexDirection: 'row', gap: 8 },
   backgroundAction: { minHeight: 40, paddingHorizontal: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   profileRatingSetting: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, padding: 12 },
+  photoIntervalSetting: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 14, padding: 10 },
+  photoIntervalButton: { width: 40, height: 40, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  photoIntervalButtonText: { fontFamily: 'Inter_600SemiBold', fontSize: 22 },
+  photoIntervalValue: { minWidth: 34, textAlign: 'center', fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   reminderDefaults: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 8 },
   reminderDefaultsCopy: { gap: 3, paddingBottom: 2 },
   reminderDefaultRow: { minHeight: 44, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 7 },

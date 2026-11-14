@@ -533,6 +533,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
     defaultSpeakRoutineDescription: id !== 'me',
     defaultStepPhotoSlideshow: id !== 'me',
+    defaultStepPhotoSlideshowIntervalSeconds: id === 'me' ? 2 : 8,
   });
   const personData = (skillId: string, rating: number, skillRatingWindow: number) => ({
     playlists: [],
@@ -610,6 +611,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
       defaultSpeakRoutineDescription: false,
       defaultStepPhotoSlideshow: false,
+      defaultStepPhotoSlideshowIntervalSeconds: 2,
       defaultSpeechLineGapSeconds: 0.25,
     },
     {
@@ -621,6 +623,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
       defaultSpeakRoutineDescription: true,
       defaultStepPhotoSlideshow: true,
+      defaultStepPhotoSlideshowIntervalSeconds: 8,
       defaultSpeechLineGapSeconds: 1,
     },
   ]);
@@ -658,6 +661,8 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   assert.equal(parsedAllPeople.people[0].profile.defaultSpeakRoutineDescription, false);
   assert.equal(parsedAllPeople.people[1].profile.defaultSpeakRoutineDescription, true);
   assert.equal(parsedAllPeople.people[0].profile.defaultStepPhotoSlideshow, false);
+  assert.equal(parsedAllPeople.people[0].profile.defaultStepPhotoSlideshowIntervalSeconds, 2);
+  assert.equal(parsedAllPeople.people[1].profile.defaultStepPhotoSlideshowIntervalSeconds, 8);
   assert.equal(parsedAllPeople.people[1].profile.defaultStepPhotoSlideshow, true);
   for (const personEntry of parsedAllPeople.people) {
     const detailHtml = personEntry.backup.routines[0].steps[0].detailHtml?.join(' ') ?? '';
@@ -679,11 +684,13 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   delete olderArchive.people[0].profile.speechVoiceId;
   delete olderArchive.people[0].profile.defaultSpeakRoutineDescription;
   delete olderArchive.people[0].profile.defaultStepPhotoSlideshow;
+  delete olderArchive.people[0].profile.defaultStepPhotoSlideshowIntervalSeconds;
   delete olderArchive.people[0].profile.defaultSpeechLineGapSeconds;
   const parsedOlderArchive = parseAllPeopleBackup(JSON.stringify(olderArchive));
   assert.equal(parsedOlderArchive.people[0].profile.speechVoiceId, null);
   assert.equal(parsedOlderArchive.people[0].profile.defaultSpeakRoutineDescription, true);
   assert.equal(parsedOlderArchive.people[0].profile.defaultStepPhotoSlideshow, true);
+  assert.equal(parsedOlderArchive.people[0].profile.defaultStepPhotoSlideshowIntervalSeconds, 5);
   assert.equal(parsedOlderArchive.people[0].profile.defaultSpeechLineGapSeconds, 0.5);
   const mismatchedNumber = JSON.parse(contents);
   mismatchedNumber.people[1].profile.profileNumber = 'different-profile';
@@ -701,6 +708,7 @@ test('all-people backup rejects duplicate profiles or a missing active profile',
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
       defaultSpeakRoutineDescription: true,
       defaultStepPhotoSlideshow: true,
+      defaultStepPhotoSlideshowIntervalSeconds: 5,
     },
     routines: [routine()],
     personData: {

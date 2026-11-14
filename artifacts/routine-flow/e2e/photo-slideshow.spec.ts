@@ -24,7 +24,7 @@ const image = (id: string, name: string) => ({
   contentBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p2sAAAAASUVORK5CYII=',
 });
 
-const profile = (defaultStepPhotoSlideshow: boolean): Person => ({
+const profile = (defaultStepPhotoSlideshow: boolean, intervalSeconds = 5): Person => ({
   id: 'me',
   name: 'Me',
   speechVoiceId: null,
@@ -33,6 +33,7 @@ const profile = (defaultStepPhotoSlideshow: boolean): Person => ({
   defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
   defaultSpeakRoutineDescription: true,
   defaultStepPhotoSlideshow,
+  defaultStepPhotoSlideshowIntervalSeconds: intervalSeconds,
 });
 
 function photoRoutine(showPhotoSlideshow?: boolean): Routine {
@@ -109,6 +110,23 @@ test('step photos cycle while the timer runs, switch steps, and end on completio
   await expect(page.getByTestId('step-photo-slideshow-image')).toHaveCount(0);
 });
 
+test('profile slideshow timing changes photo cadence without changing the routine timer', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await seed(page, profile(true, 2), photoRoutine());
+  await page.goto('/routine/photo-routine/run?autoStart=1&voice=0');
+
+  const slide = page.getByTestId('step-photo-slideshow-image');
+  await expect(slide).toHaveAttribute('aria-label', 'first-photo.png');
+  const routineCountdown = page.getByTestId('routine-countdown');
+  const initialRoutineSeconds = countdownTextToSeconds(await routineCountdown.textContent());
+  await page.waitForTimeout(1200);
+  await expect(slide).toHaveAttribute('aria-label', 'first-photo.png');
+  await expect.poll(() => slide.getAttribute('aria-label'), { timeout: 3000 }).toBe('second-photo.png');
+  const remainingRoutineSeconds = countdownTextToSeconds(await routineCountdown.textContent());
+  expect(remainingRoutineSeconds).toBeGreaterThan(50);
+  expect(remainingRoutineSeconds).toBeLessThan(initialRoutineSeconds);
+});
+
 test('profile default and per-step slideshow choices save and inherit correctly', async ({ page }) => {
   if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
   await seed(page, profile(false), photoRoutine());
@@ -116,11 +134,18 @@ test('profile default and per-step slideshow choices save and inherit correctly'
 
   await page.getByTestId('person-edit-me').click();
   await page.getByTestId('person-step-photo-slideshow-default-me').click();
+  await page.getByTestId('person-step-photo-slideshow-interval-me-decrease').click();
+  await page.getByTestId('person-step-photo-slideshow-interval-me-decrease').click();
+  await page.getByTestId('person-step-photo-slideshow-interval-me-decrease').click();
   await page.getByTestId('person-edit-save-me').click();
   await expect.poll(() => page.evaluate(() => {
     const saved = JSON.parse(localStorage.getItem('@routine-flow/people') ?? '{}');
     return saved.people?.[0]?.defaultStepPhotoSlideshow;
   })).toBe(true);
+  await expect.poll(() => page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem('@routine-flow/people') ?? '{}');
+    return saved.people?.[0]?.defaultStepPhotoSlideshowIntervalSeconds;
+  })).toBe(2);
 
   await page.goto('/routine/photo-routine');
   await page.getByTestId('edit-routine').click();
@@ -186,6 +211,7 @@ test('playlist runs replace the slideshow at routine transitions and close it at
         defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
         defaultSpeakRoutineDescription: true,
         defaultStepPhotoSlideshow: true,
+        defaultStepPhotoSlideshowIntervalSeconds: 5,
       }],
       activePersonId: 'me',
     }));

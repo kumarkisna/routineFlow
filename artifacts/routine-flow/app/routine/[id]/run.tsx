@@ -66,6 +66,7 @@ import {
   type RunReflection,
 } from '@/types/routines';
 
+import { DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS } from '@/lib/photoSlideshow';
 import { localDayKey } from '@/lib/progressHistory';
 import { detailHtmlToText, resolveReflectionTemplateHtml } from '@/lib/stepDetailHtml';
 
@@ -250,6 +251,8 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     && shouldShowStepPhotoSlideshow(slideshowStep, activePerson.defaultStepPhotoSlideshow)
     && slideshowImages.length > 0
     && dismissedSlideshowStepId !== slideshowStep.id;
+  const slideshowIntervalSeconds = activePerson.defaultStepPhotoSlideshowIntervalSeconds
+    ?? DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS;
 
   useEffect(() => {
     setSlideshowImageIndex(0);
@@ -259,9 +262,9 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     if (!showPhotoSlideshow || slideshowImages.length < 2) return undefined;
     const interval = setInterval(() => {
       setSlideshowImageIndex(index => (index + 1) % slideshowImages.length);
-    }, 5000);
+    }, slideshowIntervalSeconds * 1000);
     return () => clearInterval(interval);
-  }, [showPhotoSlideshow, slideshowImages.length, slideshowStep?.id]);
+  }, [showPhotoSlideshow, slideshowImages.length, slideshowStep?.id, slideshowIntervalSeconds]);
 
   useEffect(() => {
     if (loading || !routine) return;

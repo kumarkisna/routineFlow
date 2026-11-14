@@ -2,6 +2,10 @@ import { DEFAULT_PERSON_ID } from './personStorage';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from './playlists';
 import type { Person } from '@/types/people';
 import { DEFAULT_SPEECH_LINE_GAP_SECONDS, isValidSpeechLineGapSeconds } from './speechGap';
+import {
+  DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
+  isValidStepPhotoSlideshowIntervalSeconds,
+} from './photoSlideshow';
 
 export type PeopleRegistry = { version: 1; people: Person[]; activePersonId: string };
 
@@ -16,6 +20,7 @@ export const initialPeopleRegistry: PeopleRegistry = {
     defaultPlaylistReminderSettings: { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
     defaultSpeakRoutineDescription: true,
     defaultStepPhotoSlideshow: true,
+    defaultStepPhotoSlideshowIntervalSeconds: DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
   }],
   activePersonId: DEFAULT_PERSON_ID,
 };
@@ -36,6 +41,8 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
         && typeof person.defaultSpeakRoutineDescription !== 'boolean')
       || (person.defaultStepPhotoSlideshow !== undefined
         && typeof person.defaultStepPhotoSlideshow !== 'boolean')
+      || (person.defaultStepPhotoSlideshowIntervalSeconds !== undefined
+        && !isValidStepPhotoSlideshowIntervalSeconds(person.defaultStepPhotoSlideshowIntervalSeconds))
       || (person.defaultSpeechLineGapSeconds !== undefined
         && !isValidSpeechLineGapSeconds(person.defaultSpeechLineGapSeconds))
       || (person.defaultPlaylistReminderSettings !== undefined && (
@@ -58,6 +65,8 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
       defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd ?? true,
       defaultSpeakRoutineDescription: person.defaultSpeakRoutineDescription ?? true,
       defaultStepPhotoSlideshow: person.defaultStepPhotoSlideshow ?? true,
+      defaultStepPhotoSlideshowIntervalSeconds:
+        person.defaultStepPhotoSlideshowIntervalSeconds ?? DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
       defaultPlaylistReminderSettings: {
         stepCompletion: person.defaultPlaylistReminderSettings?.stepCompletion
           ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,

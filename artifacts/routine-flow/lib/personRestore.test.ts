@@ -13,6 +13,7 @@ const activeProfile = {
   defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
   defaultSpeakRoutineDescription: true,
   defaultStepPhotoSlideshow: true,
+  defaultStepPhotoSlideshowIntervalSeconds: 5,
 };
 const day = '2026-10-01';
 
@@ -50,6 +51,7 @@ function backup(includeProgress = true): AllPeopleBackup {
     defaultPlaylistReminderSettings: { stepCompletion: true, routineCompletion: true },
     defaultSpeakRoutineDescription: false,
     defaultStepPhotoSlideshow: false,
+    defaultStepPhotoSlideshowIntervalSeconds: 11,
   };
   return {
     activePersonId: 'me',
@@ -105,6 +107,7 @@ test('all-profile restore adds conflicting routine copies and merges skill refle
   const result = mergePersonRestore(current, imported.people[0].profile, imported.people[0], true);
 
   assert.equal(result.profile.defaultRateSkillsAtPlaylistEnd, false);
+  assert.equal(result.profile.defaultStepPhotoSlideshowIntervalSeconds, 11);
   assert.deepEqual(result.snapshot.skills[0].ratings?.map(item => [item.id, item.note]), [
     ['local-rating', 'Local reflection.'],
     ['backup-rating', 'Backup reflection.'],

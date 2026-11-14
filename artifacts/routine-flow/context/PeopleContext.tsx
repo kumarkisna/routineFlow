@@ -24,6 +24,10 @@ import type { AllPeopleBackup } from '@/lib/routineTransfer';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
 import { DEFAULT_SPEECH_LINE_GAP_SECONDS, isValidSpeechLineGapSeconds } from '@/lib/speechGap';
+import {
+  DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
+  isValidStepPhotoSlideshowIntervalSeconds,
+} from '@/lib/photoSlideshow';
 import * as FileSystem from 'expo-file-system/legacy';
 import { removePersonSavedData } from '@/lib/personRemoval';
 
@@ -267,6 +271,11 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     if (!isValidSpeechLineGapSeconds(profile.defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS)) {
       throw new Error('Choose a speech pause between 0 and 5 seconds.');
     }
+    if (!isValidStepPhotoSlideshowIntervalSeconds(
+      profile.defaultStepPhotoSlideshowIntervalSeconds ?? DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
+    )) {
+      throw new Error('Choose a photo display time from 1 to 30 seconds.');
+    }
     const person: Person = {
       id: `person-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       name: trimmed,
@@ -275,6 +284,8 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       defaultRateSkillsAtPlaylistEnd: profile.defaultRateSkillsAtPlaylistEnd ?? true,
       defaultSpeakRoutineDescription: profile.defaultSpeakRoutineDescription ?? true,
       defaultStepPhotoSlideshow: profile.defaultStepPhotoSlideshow ?? true,
+      defaultStepPhotoSlideshowIntervalSeconds:
+        profile.defaultStepPhotoSlideshowIntervalSeconds ?? DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
       defaultPlaylistReminderSettings: {
         stepCompletion: profile.defaultPlaylistReminderSettings?.stepCompletion
           ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.stepCompletion,
@@ -315,6 +326,10 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       && !isValidSpeechLineGapSeconds(profile.defaultSpeechLineGapSeconds)) {
       throw new Error('Choose a speech pause between 0 and 5 seconds.');
     }
+    if (profile.defaultStepPhotoSlideshowIntervalSeconds !== undefined
+      && !isValidStepPhotoSlideshowIntervalSeconds(profile.defaultStepPhotoSlideshowIntervalSeconds)) {
+      throw new Error('Choose a photo display time from 1 to 30 seconds.');
+    }
 
     const updated: Person = {
       ...existing,
@@ -331,6 +346,10 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
         profile.defaultSpeakRoutineDescription ?? existing.defaultSpeakRoutineDescription ?? true,
       defaultStepPhotoSlideshow:
         profile.defaultStepPhotoSlideshow ?? existing.defaultStepPhotoSlideshow ?? true,
+      defaultStepPhotoSlideshowIntervalSeconds:
+        profile.defaultStepPhotoSlideshowIntervalSeconds
+        ?? existing.defaultStepPhotoSlideshowIntervalSeconds
+        ?? DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS,
       defaultPlaylistReminderSettings: {
         stepCompletion: profile.defaultPlaylistReminderSettings?.stepCompletion
           ?? existing.defaultPlaylistReminderSettings?.stepCompletion

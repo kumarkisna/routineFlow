@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialPeopleRegistry, parsePeopleRegistry } from './peopleRegistry';
 import { DEFAULT_SPEECH_LINE_GAP_SECONDS } from './speechGap';
+import { DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS } from './photoSlideshow';
 
 test('legacy person profiles keep skill ratings on and default playlist reminders off', () => {
   const registry = parsePeopleRegistry(JSON.stringify({
@@ -20,10 +21,13 @@ test('legacy person profiles keep skill ratings on and default playlist reminder
   assert.equal(registry.people[1].defaultSpeakRoutineDescription, true);
   assert.equal(registry.people[0].defaultStepPhotoSlideshow, true);
   assert.equal(registry.people[1].defaultStepPhotoSlideshow, true);
+  assert.equal(registry.people[0].defaultStepPhotoSlideshowIntervalSeconds, DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS);
+  assert.equal(registry.people[1].defaultStepPhotoSlideshowIntervalSeconds, DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS);
   assert.deepEqual(registry.people[0].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
   assert.deepEqual(registry.people[1].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
   assert.equal(initialPeopleRegistry.people[0].defaultRateSkillsAtPlaylistEnd, true);
   assert.equal(initialPeopleRegistry.people[0].defaultStepPhotoSlideshow, true);
+  assert.equal(initialPeopleRegistry.people[0].defaultStepPhotoSlideshowIntervalSeconds, DEFAULT_STEP_PHOTO_SLIDESHOW_INTERVAL_SECONDS);
   assert.equal(initialPeopleRegistry.people[0].defaultSpeechLineGapSeconds, DEFAULT_SPEECH_LINE_GAP_SECONDS);
   assert.deepEqual(initialPeopleRegistry.people[0].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
 });
@@ -97,6 +101,26 @@ test('person registry preserves an explicitly disabled photo slideshow default',
     activePersonId: 'me',
   }));
   assert.equal(registry.people[0].defaultStepPhotoSlideshow, false);
+});
+
+test('person registry preserves valid slideshow timing and defaults older profiles', () => {
+  const registry = parsePeopleRegistry(JSON.stringify({
+    version: 1,
+    people: [
+      { id: 'me', name: 'Me', defaultStepPhotoSlideshowIntervalSeconds: 9 },
+      { id: 'person-2', name: 'Alex' },
+    ],
+    activePersonId: 'me',
+  }));
+  assert.equal(registry.people[0].defaultStepPhotoSlideshowIntervalSeconds, 9);
+  assert.equal(registry.people[1].defaultStepPhotoSlideshowIntervalSeconds, 5);
+  for (const value of [0, 31, 2.5, '5']) {
+    assert.throws(() => parsePeopleRegistry(JSON.stringify({
+      version: 1,
+      people: [{ id: 'me', name: 'Me', defaultStepPhotoSlideshowIntervalSeconds: value }],
+      activePersonId: 'me',
+    })));
+  }
 });
 
 test('person registry rejects invalid playlist default values', () => {
