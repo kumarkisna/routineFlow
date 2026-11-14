@@ -7,6 +7,7 @@ import {
   THEME_GROUPS,
   applyThemeCustomization,
   contrastRatio,
+  createThemeCustomizationWriteQueue,
   defaultThemeCustomization,
   findAppTheme,
   migrateLegacyThemePreference,
@@ -147,6 +148,81 @@ test('custom palette preferences serialize, validate, and restore by theme', asy
   assert.equal(serializeThemeCustomizationStore(store), saved);
   assert.throws(() => parseThemeCustomizationStore('{"version":1,"themes":{"missing":{"tone":50,"primary":"#123456","accent":"#123456"}}}'), /invalid/);
   assert.throws(() => parseThemeCustomizationStore('{"version":1,"themes":{"forest":{"tone":101,"primary":"#123456","accent":"#123456"}}}'), /invalid/);
+});
+
+test('queued palette edits keep the latest confirmed colors visible and retry the newest choice', async () => {
+  const initial = { tone: 50, primary: '#28653d', accent: '#a5c7ad' };
+  const firstEdit = { tone: 65, primary: '#1657a8', accent: '#83b6ff' };
+  const latestEdit = { tone: 82, primary: '#6633a8', accent: '#c6a6ff' };
+  const otherProfile = { tone: 42, primary: '#006b68', accent: '#6fe2c1' };
+  const rawByPerson = new Map([
+    ['person-a', serializeThemeCustomizationStore({ forest: initial })],
+    ['person-b', serializeThemeCustomizationStore({ forest: otherProfile })],
+  ]);
+  const confirmedByPerson = new Map([
+    ['person-a', { forest: initial }],
+    ['person-b', { forest: otherProfile }],
+  ]);
+  const visibleByPerson = new Map([
+    ['person-a', { forest: initial }],
+    ['person-b', { forest: otherProfile }],
+  ]);
+  const queue = createThemeCustomizationWriteQueue();
+  let request = 0;
+  let latestRequest = 0;
+  let failedWrites = 0;
+  let releaseFirstWrite!: () => void;
+  let markFirstWriteStarted!: () => void;
+  const firstWriteGate = new Promise<void>(resolve => { releaseFirstWrite = resolve; });
+  const firstWriteStarted = new Promise<void>(resolve => { markFirstWriteStarted = resolve; });
+
+  async function edit(personId: string, value: typeof initial) {
+    const ownRequest = ++request;
+    latestRequest = ownRequest;
+    visibleByPerson.set(personId, { ...(visibleByPerson.get(personId) ?? {}), forest: value });
+    try {
+      await queue(personId, async () => {
+        const next = { ...(confirmedByPerson.get(personId) ?? {}), forest: value };
+        await saveThemeCustomizationStore({
+          getItem: async () => rawByPerson.get(personId) ?? null,
+          setItem: async (_key, serialized) => {
+            if (personId === 'person-a' && failedWrites < 2) {
+              const attempt = failedWrites++;
+              if (attempt === 0) {
+                markFirstWriteStarted();
+                await firstWriteGate;
+              }
+              throw new Error('Storage unavailable');
+            }
+            rawByPerson.set(personId, serialized);
+          },
+        }, 'customizations', next);
+        confirmedByPerson.set(personId, next);
+        if (latestRequest === ownRequest) visibleByPerson.set(personId, next);
+      });
+    } catch (error) {
+      if (latestRequest === ownRequest) visibleByPerson.set(personId, confirmedByPerson.get(personId)!);
+      throw error;
+    }
+  }
+
+  const firstSave = edit('person-a', firstEdit);
+  await firstWriteStarted;
+  const latestSave = edit('person-a', latestEdit);
+  releaseFirstWrite();
+  const otherProfileBefore = rawByPerson.get('person-b');
+  const [firstResult, latestResult] = await Promise.allSettled([firstSave, latestSave]);
+  assert.equal(firstResult.status, 'rejected');
+  assert.equal(latestResult.status, 'rejected');
+  assert.deepEqual(visibleByPerson.get('person-a'), { forest: initial });
+  assert.equal(rawByPerson.get('person-b'), otherProfileBefore);
+  assert.deepEqual(parseThemeCustomizationStore(rawByPerson.get('person-b')!), { forest: otherProfile });
+
+  const retrySelection = latestEdit;
+  await edit('person-a', retrySelection);
+  assert.deepEqual(visibleByPerson.get('person-a'), { forest: latestEdit });
+  assert.deepEqual(parseThemeCustomizationStore(rawByPerson.get('person-a')!), { forest: latestEdit });
+  assert.equal(rawByPerson.get('person-b'), otherProfileBefore);
 });
 
 test('legacy inline palette preferences migrate without losing other saved themes', async () => {

@@ -274,6 +274,20 @@ export async function saveThemeCustomizationStore(
   return serialized;
 }
 
+export function createThemeCustomizationWriteQueue() {
+  const writes = new Map<string, Promise<void>>();
+  return async (personId: string, operation: () => Promise<void>): Promise<void> => {
+    const previous = writes.get(personId) ?? Promise.resolve();
+    const write = previous.catch(() => undefined).then(operation);
+    writes.set(personId, write);
+    try {
+      await write;
+    } finally {
+      if (writes.get(personId) === write) writes.delete(personId);
+    }
+  };
+}
+
 function blend(hex: string, target: string, amount: number): string {
   const channel = (color: string, offset: number) => parseInt(color.slice(offset, offset + 2), 16);
   return `#${[1, 3, 5].map(offset => Math.round(

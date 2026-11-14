@@ -14,7 +14,7 @@ import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { useAppearance } from '@/context/AppearanceContext';
 import {
   APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, applyThemeCustomization,
-  defaultThemeCustomization, findAppTheme, parseThemeCustomizationStore, saveThemeCustomizationStore,
+  createThemeCustomizationWriteQueue, defaultThemeCustomization, findAppTheme, parseThemeCustomizationStore, saveThemeCustomizationStore,
   type ThemeCustomization, type ThemeCustomizationStore, type ThemeGroup,
 } from '@/lib/appThemes';
 import * as ImagePicker from 'expo-image-picker';
@@ -129,7 +129,7 @@ export default function PeopleScreen() {
   const savedThemePreferences = React.useRef<Record<string, string>>({});
   const savedPersonThemeCustomizations = React.useRef<Record<string, ThemeCustomizationStore>>({});
   const loadedPersonThemeCustomizations = React.useRef<Record<string, boolean>>({});
-  const themeWriteQueues = React.useRef(new Map<string, Promise<void>>()).current;
+  const queueThemeWrite = React.useRef(createThemeCustomizationWriteQueue()).current;
   const [personBackgrounds, setPersonBackgrounds] = React.useState<Record<string, string | null>>({});
   const [backgroundLoadingId, setBackgroundLoadingId] = React.useState<string | null>(null);
   const [backgroundSavingId, setBackgroundSavingId] = React.useState<string | null>(null);
@@ -197,17 +197,6 @@ export default function PeopleScreen() {
     }
   }
 
-  async function queuePersonThemeWrite(personId: string, operation: () => Promise<void>) {
-    const previous = themeWriteQueues.get(personId) ?? Promise.resolve();
-    const write = previous.catch(() => undefined).then(operation);
-    themeWriteQueues.set(personId, write);
-    try {
-      await write;
-    } finally {
-      if (themeWriteQueues.get(personId) === write) themeWriteQueues.delete(personId);
-    }
-  }
-
   async function choosePersonTheme(personId: string, themeId: string) {
     const request = (themeRequestSequence.current[personId] ?? 0) + 1;
     themeRequestSequence.current[personId] = request;
@@ -219,7 +208,7 @@ export default function PeopleScreen() {
     setThemeError('');
     try {
       if (personId === activePerson.id) await selectTheme(themeId);
-      else await queuePersonThemeWrite(personId, () => savePersonTheme(personId, themeId));
+      else await queueThemeWrite(personId, () => savePersonTheme(personId, themeId));
       savedThemePreferences.current[personId] = themeId;
       setThemeRetry(null);
       void Haptics.selectionAsync();
@@ -245,16 +234,17 @@ export default function PeopleScreen() {
         previewCustomization(value);
         await saveCustomization(value);
       } else {
-        const previous = savedPersonThemeCustomizations.current[personId] ?? {};
-        const current = personThemeCustomizations[personId] ?? previous;
-        const next = { ...current, [themeId]: value };
-        await queuePersonThemeWrite(personId, async () => {
+        await queueThemeWrite(personId, async () => {
+          const previous = savedPersonThemeCustomizations.current[personId] ?? {};
+          const next = { ...previous, [themeId]: value };
           await saveThemeCustomizationStore(
             createPersonStorage(personId), PERSON_DATA_KEYS.appearanceCustomization, next,
           );
+          savedPersonThemeCustomizations.current[personId] = next;
+          if (themeRequestSequence.current[personId] === request) {
+            setPersonThemeCustomizations(currentStores => ({ ...currentStores, [personId]: next }));
+          }
         });
-        savedPersonThemeCustomizations.current[personId] = next;
-        setPersonThemeCustomizations(currentStores => ({ ...currentStores, [personId]: next }));
       }
       if (themeRequestSequence.current[personId] === request) setThemeRetry(null);
       void Haptics.selectionAsync();
