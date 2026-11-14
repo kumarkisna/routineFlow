@@ -61,7 +61,16 @@ function ToneSlider({ value, disabled, onPreview, onCommit, colors, testID }: {
         accessibilityRole="adjustable"
         accessibilityLabel="Surface depth"
         accessibilityHint="Swipe to make the theme lighter or deeper."
-        accessibilityValue={{ min: 0, max: 100, now: value, text: `${value}% depth` }}
+        accessibilityValue={{
+          min: 0,
+          max: 100,
+          now: value,
+          ...(Platform.OS === 'web' ? { text: `${value}% depth` } : {}),
+        }}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={value}
+        aria-valuetext={Platform.OS === 'web' ? `${value}% depth` : undefined}
         accessibilityActions={[{ name: 'increment', label: 'Make deeper' }, { name: 'decrement', label: 'Make lighter' }]}
         onAccessibilityAction={event => adjust(event.nativeEvent.actionName === 'increment' ? 5 : -5)}
         accessibilityState={{ disabled }}
@@ -112,7 +121,8 @@ function ColorSwatchRow({ label, id, swatches, value, disabled, onSelect, colors
               testID={`${testIDPrefix}-${id}-color-${swatch.name.toLowerCase().replace(/\s+/g, '-')}`}
               accessibilityRole="radio"
               accessibilityLabel={`${label}: ${swatch.name}, ${swatch.color}`}
-              accessibilityState={{ selected, disabled }}
+              accessibilityState={{ checked: selected, disabled }}
+              aria-checked={selected}
               disabled={disabled}
               onPress={() => onSelect(swatch.color)}
               style={styles.swatchChoice}

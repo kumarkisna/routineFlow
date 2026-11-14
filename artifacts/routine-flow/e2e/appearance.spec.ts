@@ -11,9 +11,18 @@ test('People theme settings customize, restore, filter and reset a profile palet
   await page.getByTestId('person-theme-toggle-me').click();
   await expect(page.getByTestId('person-theme-me-customization')).toBeVisible();
 
+  const depthSlider = page.getByRole('slider', { name: 'Surface depth' });
+  await expect(depthSlider).toHaveAttribute('aria-valuemin', '0');
+  await expect(depthSlider).toHaveAttribute('aria-valuemax', '100');
+  await expect(depthSlider).toHaveAttribute('aria-valuenow', '50');
+  await expect(depthSlider).toHaveAttribute('aria-valuetext', '50% depth');
+
+  const bluePrimarySwatch = page.getByRole('radio', { name: /Primary color: Blue/ });
+  await expect(bluePrimarySwatch).toHaveAttribute('aria-checked', 'false');
   await page.getByTestId('person-theme-choice-me-forest').click();
   await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/appearance'))).toBe('forest');
-  await page.getByTestId('person-theme-me-primary-color-blue').click();
+  await bluePrimarySwatch.click();
+  await expect(bluePrimarySwatch).toHaveAttribute('aria-checked', 'true');
   await expect.poll(() => page.evaluate(() => {
     const store = JSON.parse(localStorage.getItem('@routine-flow/appearance-customization') ?? '{}');
     return store.themes?.forest?.primary;
