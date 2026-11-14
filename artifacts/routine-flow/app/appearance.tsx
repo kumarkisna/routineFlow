@@ -191,6 +191,7 @@ function ThemeCustomizationControls({ theme, customization, disabled, onPreview,
     <View style={[styles.customizer, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.customizerTitle, { color: colors.foreground }]}>Customize {theme.name}</Text>
       <Text style={[styles.meta, { color: colors.mutedForeground }]}>Changes preview across the app as you adjust them.</Text>
+      <Text style={[styles.meta, { color: colors.mutedForeground }]}>Primary colors are adjusted when needed for readable text.</Text>
       <ToneSlider
         value={customization.tone}
         disabled={disabled}
@@ -223,6 +224,7 @@ export default function AppearanceScreen({ asTab = false }: { asTab?: boolean } 
   const [failed, setFailed] = React.useState('');
   const [lastId, setLastId] = React.useState<string | null>(null);
   const [lastCustomization, setLastCustomization] = React.useState<ThemeCustomization | null>(null);
+  const [lastReset, setLastReset] = React.useState(false);
   const busy = loading || saving;
 
   const data = React.useMemo(() => {
@@ -235,6 +237,7 @@ export default function AppearanceScreen({ asTab = false }: { asTab?: boolean } 
     setFailed('');
     setLastId(id);
     setLastCustomization(null);
+    setLastReset(false);
     try {
       await selectTheme(id);
       void Haptics.selectionAsync();
@@ -246,6 +249,7 @@ export default function AppearanceScreen({ asTab = false }: { asTab?: boolean } 
     setFailed('');
     setLastCustomization(value);
     setLastId(null);
+    setLastReset(false);
     try {
       await saveCustomization(value);
     } catch (e) {
@@ -256,6 +260,7 @@ export default function AppearanceScreen({ asTab = false }: { asTab?: boolean } 
     setFailed('');
     setLastCustomization(null);
     setLastId(DEFAULT_THEME_ID);
+    setLastReset(true);
     try {
       await resetTheme();
     } catch (e) {
@@ -317,10 +322,10 @@ export default function AppearanceScreen({ asTab = false }: { asTab?: boolean } 
             {message ? (
               <View accessibilityRole="alert" testID="appearance-error" style={[styles.errBox, { borderColor: colors.destructive, backgroundColor: colors.card }]}>
                 <Text style={[styles.errText, { color: colors.destructive }]}>{message}</Text>
-                {lastId || lastCustomization ? (
-                  <Pressable accessibilityRole="button" accessibilityLabel={lastCustomization ? 'Retry saving custom colors' : 'Retry saving theme'}
+                {lastId || lastCustomization || lastReset ? (
+                  <Pressable accessibilityRole="button" accessibilityLabel={lastCustomization ? 'Retry saving custom colors' : lastReset ? 'Retry resetting theme' : 'Retry saving theme'}
                     testID="retry-theme" disabled={busy}
-                    onPress={() => { if (lastCustomization) void saveColors(lastCustomization); else if (lastId) void choose(lastId); }}>
+                    onPress={() => { if (lastCustomization) void saveColors(lastCustomization); else if (lastReset) void reset(); else if (lastId) void choose(lastId); }}>
                     <Text style={[styles.chipText, { color: colors.primary }]}>Retry</Text>
                   </Pressable>
                 ) : null}
