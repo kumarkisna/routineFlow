@@ -1,6 +1,7 @@
 import type { Routine, RoutineNotificationSettings, RoutineStep } from '../types/routines';
 import { getStepSeconds } from '../types/routines';
 import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
+import { isValidSpeechLineGapSeconds } from './speechGap';
 
 export const DEFAULT_PLAYLIST_REMINDER_SETTINGS: RoutineNotificationSettings = {
   stepCompletion: false,
@@ -28,6 +29,8 @@ export type RoutinePlaylist = {
   rateSkillsAtPlaylistEnd?: boolean;
   /** Reminder choices for runs launched from this playlist. */
   reminderSettings?: RoutineNotificationSettings;
+  /** Optional pause between spoken instruction lines; absent uses the current routine/profile setting. */
+  speechLineGapSeconds?: number;
   /** Optional plain-text fallback for the rich-text reflection prompt. */
   reflectionTemplate?: string;
   /** Sanitized rich-text prompt captured for each completed playlist run. */
@@ -151,6 +154,7 @@ export function createPlaylistRunLaunch(
     playlistTitle: string;
     playlistSkills: string;
     playlistRateSkillsAtEnd: '0' | '1';
+    playlistSpeechLineGapSeconds: string;
     stepReminder: '0' | '1';
     routineReminder: '0' | '1';
     autoStart: '1';
@@ -174,6 +178,9 @@ export function createPlaylistRunLaunch(
       playlistTitle: playlist.title,
       playlistSkills: JSON.stringify(playlist.skillIds ?? []),
       playlistRateSkillsAtEnd: (playlist.rateSkillsAtPlaylistEnd ?? true) ? '1' : '0',
+      playlistSpeechLineGapSeconds: playlist.speechLineGapSeconds === undefined
+        ? 'profile'
+        : String(playlist.speechLineGapSeconds),
       stepReminder: playlist.reminderSettings?.stepCompletion ? '1' : '0',
       routineReminder: playlist.reminderSettings?.routineCompletion ? '1' : '0',
       autoStart: '1',
@@ -207,6 +214,7 @@ export function parsePlaylists(value: string): RoutinePlaylist[] {
       || typeof item.reminderSettings.stepCompletion !== 'boolean'
       || typeof item.reminderSettings.routineCompletion !== 'boolean'
     ))
+    || (item.speechLineGapSeconds !== undefined && !isValidSpeechLineGapSeconds(item.speechLineGapSeconds))
     || (item.reflectionTemplate !== undefined
       && (typeof item.reflectionTemplate !== 'string' || item.reflectionTemplate.length > 20_000))
     || (item.reflectionTemplateHtml !== undefined
@@ -245,7 +253,9 @@ export function mergePlaylistCatalog(
 } {
   const playlists = [...existing];
   const usedIds = new Set(playlists.map(playlist => playlist.id));
-  const coreKey = (playlist: RoutinePlaylist) => JSON.stringify([playlist.title, playlist.routineIds, playlist.stepSelections ?? null]);
+  const coreKey = (playlist: RoutinePlaylist) => JSON.stringify([
+    playlist.title, playlist.routineIds, playlist.stepSelections ?? null, playlist.speechLineGapSeconds ?? null,
+  ]);
   const matchingIds = new Map(playlists.map(playlist => [coreKey(playlist), playlist.id]));
   const idMap: Record<string, string> = Object.create(null) as Record<string, string>;
   let added = 0;

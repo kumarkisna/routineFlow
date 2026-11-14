@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialPeopleRegistry, parsePeopleRegistry } from './peopleRegistry';
+import { DEFAULT_SPEECH_LINE_GAP_SECONDS } from './speechGap';
 
 test('legacy person profiles keep skill ratings on and default playlist reminders off', () => {
   const registry = parsePeopleRegistry(JSON.stringify({
@@ -12,12 +13,15 @@ test('legacy person profiles keep skill ratings on and default playlist reminder
   assert.equal(registry.people[0].defaultRateSkillsAtPlaylistEnd, true);
   assert.equal(registry.people[1].defaultRateSkillsAtPlaylistEnd, true);
   assert.equal(registry.people[0].speechVoiceId, null);
+  assert.equal(registry.people[0].defaultSpeechLineGapSeconds, DEFAULT_SPEECH_LINE_GAP_SECONDS);
+  assert.equal(registry.people[1].defaultSpeechLineGapSeconds, DEFAULT_SPEECH_LINE_GAP_SECONDS);
   assert.equal(registry.people[1].speechVoiceId, null);
   assert.equal(registry.people[0].defaultSpeakRoutineDescription, true);
   assert.equal(registry.people[1].defaultSpeakRoutineDescription, true);
   assert.deepEqual(registry.people[0].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
   assert.deepEqual(registry.people[1].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
   assert.equal(initialPeopleRegistry.people[0].defaultRateSkillsAtPlaylistEnd, true);
+  assert.equal(initialPeopleRegistry.people[0].defaultSpeechLineGapSeconds, DEFAULT_SPEECH_LINE_GAP_SECONDS);
   assert.deepEqual(initialPeopleRegistry.people[0].defaultPlaylistReminderSettings, { stepCompletion: false, routineCompletion: false });
 });
 
@@ -56,6 +60,22 @@ test('person registry preserves a selected platform speech voice', () => {
   }));
 
   assert.equal(registry.people[0].speechVoiceId, 'com.example.voice.enhanced');
+});
+
+test('person registry saves valid speech line gaps and rejects values outside the supported range', () => {
+  const registry = parsePeopleRegistry(JSON.stringify({
+    version: 1,
+    people: [{ id: 'me', name: 'Me', defaultSpeechLineGapSeconds: 1.25 }],
+    activePersonId: 'me',
+  }));
+  assert.equal(registry.people[0].defaultSpeechLineGapSeconds, 1.25);
+  for (const value of [-0.25, 5.25, '0.5', Number.NaN]) {
+    assert.throws(() => parsePeopleRegistry(JSON.stringify({
+      version: 1,
+      people: [{ id: 'me', name: 'Me', defaultSpeechLineGapSeconds: value }],
+      activePersonId: 'me',
+    })));
+  }
 });
 
 test('person registry preserves a disabled default for speaking new routine descriptions', () => {

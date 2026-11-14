@@ -4,6 +4,7 @@ import { alertDate, futureScheduleAlerts, MAX_SCHEDULE_ALERTS, scheduleNotificat
   type ScheduledAlertNotification } from './scheduleAlerts';
 import { localDateTimeCandidates } from './localDateTime';
 import type { Routine, RoutineNotificationSettings } from '../types/routines';
+import { isValidSpeechLineGapSeconds } from './speechGap';
 
 export type ScheduleTargetType = 'routine' | 'playlist';
 export type ScheduledPlaylistOverride = {
@@ -12,6 +13,7 @@ export type ScheduledPlaylistOverride = {
   stepSelections?: PlaylistStepSelection[];
   skillIds?: string[];
   reminderSettings?: RoutineNotificationSettings;
+  speechLineGapSeconds?: number;
 };
 export type RoutineSchedule = {
   id: string;
@@ -54,7 +56,8 @@ export function scheduledPlaylistSource(schedule: RoutineSchedule, playlists: Ro
       ...(schedule.playlistOverride.skillIds ? { skillIds: [...schedule.playlistOverride.skillIds] } : {}),
       rateSkillsAtPlaylistEnd: savedPlaylist?.rateSkillsAtPlaylistEnd ?? true,
       reminderSettings: { ...(schedule.playlistOverride.reminderSettings ?? savedPlaylist?.reminderSettings
-        ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS) } };
+         ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS) },
+       speechLineGapSeconds: schedule.playlistOverride.speechLineGapSeconds };
   }
   return savedPlaylist ?? null;
 }
@@ -62,9 +65,14 @@ export function scheduledPlaylistSource(schedule: RoutineSchedule, playlists: Ro
 export function editScheduledPlaylist(
   schedule: RoutineSchedule, title: string, routineIds: string[], skillIds?: string[],
   reminderSettings?: RoutineNotificationSettings, stepSelections?: PlaylistStepSelection[],
+  speechLineGapSeconds?: number | null,
 ): RoutineSchedule {
   if (schedule.targetType !== 'playlist') throw new Error('Only a scheduled playlist can have a date-only playlist edit.');
   validatePlaylist(title, routineIds, stepSelections);
+  if (speechLineGapSeconds !== undefined && speechLineGapSeconds !== null
+    && !isValidSpeechLineGapSeconds(speechLineGapSeconds)) {
+    throw new Error('Choose a speech pause between 0 and 5 seconds.');
+  }
   return {
     ...schedule, targetTitle: title.trim(), notificationId: undefined, notifications: undefined,
     playlistOverride: { title: title.trim(), routineIds: [...routineIds],
@@ -72,7 +80,12 @@ export function editScheduledPlaylist(
       ...((skillIds ?? schedule.playlistOverride?.skillIds)?.length
         ? { skillIds: [...(skillIds ?? schedule.playlistOverride!.skillIds!)] } : {}),
       ...((reminderSettings ?? schedule.playlistOverride?.reminderSettings)
-        ? { reminderSettings: { ...(reminderSettings ?? schedule.playlistOverride!.reminderSettings!) } } : {}) },
+         ? { reminderSettings: { ...(reminderSettings ?? schedule.playlistOverride!.reminderSettings!) } } : {}),
+       ...(speechLineGapSeconds !== undefined
+         ? speechLineGapSeconds === null ? {} : { speechLineGapSeconds }
+         : schedule.playlistOverride?.speechLineGapSeconds !== undefined
+           ? { speechLineGapSeconds: schedule.playlistOverride.speechLineGapSeconds }
+           : {}) },
   };
 }
 
@@ -86,7 +99,9 @@ export function keepScheduledPlaylistOverride(
       ...(previous.playlistOverride.stepSelections ? { stepSelections: cloneStepSelections(previous.playlistOverride.stepSelections) } : {}),
       ...(previous.playlistOverride.skillIds ? { skillIds: [...previous.playlistOverride.skillIds] } : {}),
       ...(previous.playlistOverride.reminderSettings
-        ? { reminderSettings: { ...previous.playlistOverride.reminderSettings } } : {}) } };
+         ? { reminderSettings: { ...previous.playlistOverride.reminderSettings } } : {}),
+       ...(previous.playlistOverride.speechLineGapSeconds !== undefined
+         ? { speechLineGapSeconds: previous.playlistOverride.speechLineGapSeconds } : {}) } };
 }
 
 function cloneStepSelections(selections: PlaylistStepSelection[]): PlaylistStepSelection[] {
@@ -172,6 +187,8 @@ export function parseSchedules(value: string): RoutineSchedule[] {
         || typeof item.playlistOverride.reminderSettings.stepCompletion !== 'boolean'
         || typeof item.playlistOverride.reminderSettings.routineCompletion !== 'boolean'
       ))
+      || (item.playlistOverride.speechLineGapSeconds !== undefined
+        && !isValidSpeechLineGapSeconds(item.playlistOverride.speechLineGapSeconds))
       || (item.playlistOverride.stepSelections !== undefined
         && !isValidPlaylistStepSelections(item.playlistOverride.stepSelections, item.playlistOverride.routineIds))
     ))
@@ -203,6 +220,7 @@ export function mergeImportedSchedules(
       schedule.playlistOverride.routineIds,
         schedule.playlistOverride.stepSelections ?? null,
       schedule.playlistOverride.skillIds ?? [],
+      schedule.playlistOverride.speechLineGapSeconds ?? null,
     ] : null,
   ]);
   const signatures = new Set(schedules.map(signature));

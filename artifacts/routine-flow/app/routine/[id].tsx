@@ -24,7 +24,8 @@ import { useRoutines } from '@/context/RoutineContext';
 import { useSkills } from '@/context/SkillContext';
 import { useColors } from '@/hooks/useColors';
 import { useSpeechVoice } from '@/hooks/useSpeechVoice';
-import { buildStepAnnouncement } from '@/lib/routineSpeech';
+import { buildStepAnnouncementLines, createRoutineSpeechLineSequence, type RoutineSpeechLineSequence } from '@/lib/routineSpeech';
+import { resolveSpeechLineGapSeconds } from '@/lib/speechGap';
 import { formatDuration, getStepDetails, getStepSeconds, isCompleted } from '@/types/routines';
 
 export default function RoutineDetailScreen() {
@@ -53,6 +54,7 @@ export default function RoutineDetailScreen() {
   const [speakingAllPaused, setSpeakingAllPaused] = React.useState(false);
   const speechToken = React.useRef(0);
   const speechUtteranceToken = React.useRef(0);
+  const speechSequenceRef = React.useRef<RoutineSpeechLineSequence | null>(null);
   const speakingAllRef = React.useRef(false);
   const speakingAllPausedRef = React.useRef(false);
   const speakAllIndexRef = React.useRef(0);
@@ -64,6 +66,8 @@ export default function RoutineDetailScreen() {
   const selectedRunPeople = people.filter(person => runPersonIds.includes(person.id));
   React.useEffect(() => () => {
     speechToken.current += 1;
+    speechSequenceRef.current?.stop();
+    speechSequenceRef.current = null;
     void Speech.stop();
   }, []);
 
@@ -123,6 +127,8 @@ export default function RoutineDetailScreen() {
     setSpeakingStepId(null);
     setSpeakingAll(false);
     setSpeakingAllPaused(false);
+    speechSequenceRef.current?.stop();
+    speechSequenceRef.current = null;
     void Speech.stop();
   }
 
@@ -133,6 +139,8 @@ export default function RoutineDetailScreen() {
     }
     const token = ++speechToken.current;
     speechUtteranceToken.current += 1;
+    speechSequenceRef.current?.stop();
+    speechSequenceRef.current = null;
     void Speech.stop();
     speakingAllRef.current = false;
     speakingAllPausedRef.current = false;
@@ -147,14 +155,27 @@ export default function RoutineDetailScreen() {
       }
     };
     try {
-      Speech.speak(buildStepAnnouncement(currentRoutine, index, skills), {
-        rate: 0.92,
-        pitch: 1,
-        voice: speechVoiceId,
-        onDone: finish,
-        onStopped: finish,
-        onError: finish,
-      });
+      speechSequenceRef.current = createRoutineSpeechLineSequence(
+        buildStepAnnouncementLines(currentRoutine, index, skills),
+        resolveSpeechLineGapSeconds(undefined, currentRoutine.speechLineGapSeconds, activePerson.defaultSpeechLineGapSeconds),
+        {
+          speak: (text, onFinish) => Speech.speak(text, {
+            rate: 0.92, pitch: 1, voice: speechVoiceId,
+            onDone: () => onFinish('finished'),
+            onStopped: () => onFinish('cancelled'),
+            onError: () => onFinish('error'),
+          }),
+          pause: () => { void Speech.pause(); },
+          resume: () => { void Speech.resume(); },
+          stop: () => { void Speech.stop(); },
+        },
+        result => {
+          if (speechToken.current !== token) return;
+          speechSequenceRef.current = null;
+          if (result !== 'finished') finish();
+          else finish();
+        },
+      );
     } catch {
       finish();
     }
@@ -178,22 +199,30 @@ export default function RoutineDetailScreen() {
       && speechUtteranceToken.current === utteranceToken
     );
     try {
-      Speech.speak(buildStepAnnouncement(currentRoutine, index, skills), {
-        rate: 0.92,
-        pitch: 1,
-        voice: speechVoiceId,
-        onDone: () => {
-          if (isCurrentUtterance() && !speakingAllPausedRef.current) {
+      speechSequenceRef.current = createRoutineSpeechLineSequence(
+        buildStepAnnouncementLines(currentRoutine, index, skills),
+        resolveSpeechLineGapSeconds(undefined, currentRoutine.speechLineGapSeconds, activePerson.defaultSpeechLineGapSeconds),
+        {
+          speak: (text, onFinish) => Speech.speak(text, {
+            rate: 0.92, pitch: 1, voice: speechVoiceId,
+            onDone: () => onFinish('finished'),
+            onStopped: () => onFinish('cancelled'),
+            onError: () => onFinish('error'),
+          }),
+          pause: () => { void Speech.pause(); },
+          resume: () => { void Speech.resume(); },
+          stop: () => { void Speech.stop(); },
+        },
+        result => {
+          if (!isCurrentUtterance()) return;
+          speechSequenceRef.current = null;
+          if (result === 'finished' && !speakingAllPausedRef.current) {
             speakAllStepAt(index + 1, sessionToken);
+          } else if (!speakingAllPausedRef.current) {
+            stopPreviewSpeech();
           }
         },
-        onStopped: () => {
-          if (isCurrentUtterance() && !speakingAllPausedRef.current) stopPreviewSpeech();
-        },
-        onError: () => {
-          if (isCurrentUtterance() && !speakingAllPausedRef.current) stopPreviewSpeech();
-        },
-      });
+      );
     } catch {
       if (isCurrentUtterance()) stopPreviewSpeech();
     }
@@ -208,9 +237,10 @@ export default function RoutineDetailScreen() {
           // Android's native speech engine cannot pause mid-utterance. Retain
           // the current step and replay that step when the user resumes.
           speechUtteranceToken.current += 1;
-          void Speech.stop();
+          speechSequenceRef.current?.stop();
+          speechSequenceRef.current = null;
         } else {
-          void Speech.pause();
+          speechSequenceRef.current?.pause();
         }
       } else {
         speakingAllPausedRef.current = false;
@@ -218,13 +248,15 @@ export default function RoutineDetailScreen() {
         if (Platform.OS === 'android') {
           speakAllStepAt(speakAllIndexRef.current, speechToken.current);
         } else {
-          void Speech.resume();
+          speechSequenceRef.current?.resume();
         }
       }
       return;
     }
     const token = ++speechToken.current;
     speechUtteranceToken.current += 1;
+    speechSequenceRef.current?.stop();
+    speechSequenceRef.current = null;
     speakAllIndexRef.current = 0;
     speakingAllRef.current = true;
     speakingAllPausedRef.current = false;

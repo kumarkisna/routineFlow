@@ -65,20 +65,24 @@ export default function ScheduleScreen() {
       if (!r) return {
         title: null as string | null, ids: [] as string[], skillIds: [] as string[],
         rateSkillsAtPlaylistEnd: false, reminderSettings: activePerson.defaultPlaylistReminderSettings,
+        speechLineGapSeconds: undefined,
       };
       return {
         title: r.title, ids: r.hidden ? [] : playablePlaylistIds([r.id], routines), skillIds: [] as string[],
         rateSkillsAtPlaylistEnd: false, reminderSettings: activePerson.defaultPlaylistReminderSettings,
+        speechLineGapSeconds: undefined,
       };
     }
     const p = scheduledPlaylistSource(s, playlists);
     if (!p) return {
       title: null, ids: [], skillIds: [], rateSkillsAtPlaylistEnd: false,
       reminderSettings: DEFAULT_PLAYLIST_REMINDER_SETTINGS,
+      speechLineGapSeconds: undefined,
     };
     return { title: p.title, ids: playablePlaylistIds(p.routineIds, routines), skillIds: p.skillIds ?? [],
       rateSkillsAtPlaylistEnd: p.rateSkillsAtPlaylistEnd ?? false,
-      reminderSettings: p.reminderSettings ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS };
+      reminderSettings: p.reminderSettings ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS,
+      speechLineGapSeconds: p.speechLineGapSeconds };
   }
   function start(s: RoutineSchedule) {
     const src = source(s);
@@ -93,6 +97,9 @@ export default function ScheduleScreen() {
         playlistId: s.targetId, playlistTitle: src.title ?? s.targetTitle,
         playlistSkills: JSON.stringify(src.skillIds),
         playlistRateSkillsAtEnd: src.rateSkillsAtPlaylistEnd ? '1' : '0',
+        playlistSpeechLineGapSeconds: src.speechLineGapSeconds === undefined
+          ? 'profile'
+          : String(src.speechLineGapSeconds),
          stepReminder: src.reminderSettings.stepCompletion ? '1' : '0',
          routineReminder: src.reminderSettings.routineCompletion ? '1' : '0',
         autoStart: '1' },

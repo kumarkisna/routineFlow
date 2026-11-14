@@ -27,7 +27,8 @@ import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
-import { buildStepAnnouncement } from '@/lib/routineSpeech';
+import { buildStepAnnouncementLines, createRoutineSpeechLineSequence, type RoutineSpeechLineSequence } from '@/lib/routineSpeech';
+import { resolveSpeechLineGapSeconds } from '@/lib/speechGap';
 import { categoryKey, listRoutineCategories, MAX_CATEGORY_LENGTH } from '@/lib/routineCategories';
 import { remapRoutineSkillIds } from '@/lib/skills';
 import { remapPlaylistReferences } from '@/lib/playlists';
@@ -105,6 +106,7 @@ export default function HomeScreen() {
   const [routineSpeechPaused, setRoutineSpeechPaused] = React.useState(false);
   const speechSessionToken = React.useRef(0);
   const speechUtteranceToken = React.useRef(0);
+  const speechSequenceRef = React.useRef<RoutineSpeechLineSequence | null>(null);
   const speakingRoutineRef = React.useRef<string | null>(null);
   const routineSpeechPausedRef = React.useRef(false);
   const speechStepIndex = React.useRef(0);
@@ -123,6 +125,8 @@ export default function HomeScreen() {
     routineSpeechPausedRef.current = false;
     setSpeakingRoutineId(null);
     setRoutineSpeechPaused(false);
+    speechSequenceRef.current?.stop();
+    speechSequenceRef.current = null;
     void Speech.stop();
   }, []);
 
@@ -148,22 +152,30 @@ export default function HomeScreen() {
       && speechUtteranceToken.current === utteranceToken
     );
     try {
-      Speech.speak(buildStepAnnouncement(routine, index, skills), {
-        rate: 0.92,
-        pitch: 1,
-        voice: speechVoiceId,
-        onDone: () => {
-          if (isCurrentUtterance() && !routineSpeechPausedRef.current) {
+      speechSequenceRef.current = createRoutineSpeechLineSequence(
+        buildStepAnnouncementLines(routine, index, skills),
+        resolveSpeechLineGapSeconds(undefined, routine.speechLineGapSeconds, activePerson.defaultSpeechLineGapSeconds),
+        {
+          speak: (text, finish) => Speech.speak(text, {
+            rate: 0.92, pitch: 1, voice: speechVoiceId,
+            onDone: () => finish('finished'),
+            onStopped: () => finish('cancelled'),
+            onError: () => finish('error'),
+          }),
+          pause: () => { void Speech.pause(); },
+          resume: () => { void Speech.resume(); },
+          stop: () => { void Speech.stop(); },
+        },
+        result => {
+          if (!isCurrentUtterance()) return;
+          speechSequenceRef.current = null;
+          if (result === 'finished' && !routineSpeechPausedRef.current) {
             speakRoutineStepAt(routine, index + 1, sessionToken);
+          } else if (result === 'error' && !routineSpeechPausedRef.current) {
+            stopRoutineSpeech();
           }
         },
-        onStopped: () => {
-          if (isCurrentUtterance() && !routineSpeechPausedRef.current) stopRoutineSpeech();
-        },
-        onError: () => {
-          if (isCurrentUtterance() && !routineSpeechPausedRef.current) stopRoutineSpeech();
-        },
-      });
+      );
     } catch {
       if (isCurrentUtterance()) stopRoutineSpeech();
     }
@@ -179,9 +191,10 @@ export default function HomeScreen() {
           // Android cannot pause mid-utterance. Keep the step index and replay
           // only that step when resumed.
           speechUtteranceToken.current += 1;
-          void Speech.stop();
+          speechSequenceRef.current?.stop();
+          speechSequenceRef.current = null;
         } else {
-          void Speech.pause();
+          speechSequenceRef.current?.pause();
         }
       } else {
         routineSpeechPausedRef.current = false;
@@ -189,7 +202,7 @@ export default function HomeScreen() {
         if (Platform.OS === 'android') {
           speakRoutineStepAt(routine, speechStepIndex.current, sessionToken);
         } else {
-          void Speech.resume();
+          speechSequenceRef.current?.resume();
         }
       }
       return;
@@ -197,6 +210,8 @@ export default function HomeScreen() {
 
     const sessionToken = ++speechSessionToken.current;
     speechUtteranceToken.current += 1;
+    speechSequenceRef.current?.stop();
+    speechSequenceRef.current = null;
     speechStepIndex.current = 0;
     speakingRoutineRef.current = routine.id;
     routineSpeechPausedRef.current = false;

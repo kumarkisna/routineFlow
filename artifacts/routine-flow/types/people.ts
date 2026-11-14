@@ -8,6 +8,7 @@ export type Person = {
   id: string;
   name: string;
   speechVoiceId: string | null;
+  defaultSpeechLineGapSeconds: number;
   defaultRateSkillsAtPlaylistEnd: boolean;
   defaultPlaylistReminderSettings: RoutineNotificationSettings;
   defaultSpeakRoutineDescription: boolean;
@@ -15,6 +16,7 @@ export type Person = {
 export type PersonProfileInput = {
   name: string;
   speechVoiceId?: string | null;
+  defaultSpeechLineGapSeconds?: number;
   defaultRateSkillsAtPlaylistEnd: boolean;
   defaultPlaylistReminderSettings: RoutineNotificationSettings;
   defaultSpeakRoutineDescription: boolean;

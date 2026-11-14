@@ -37,6 +37,8 @@ export type Routine = {
   subtitleHtml?: string;
   /** Routine descriptions are spoken by default, matching step-detail speech defaults. */
   speakSubtitle?: boolean;
+  /** Optional pause between separately spoken instruction lines; absent uses the profile default. */
+  speechLineGapSeconds?: number;
   /** Optional images attached to the routine description. */
   descriptionAttachments?: StepDetailAttachment[];
   /** Optional links to reusable, person-specific skills. */

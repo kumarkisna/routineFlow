@@ -4,6 +4,7 @@ import { DEFAULT_PLAYLIST_REMINDER_SETTINGS, mergePlaylistCatalog, parsePlaylist
 import { createRoutineWriteGuard } from '@/lib/routineWriteGuard';
 import type { RoutineNotificationSettings } from '@/types/routines';
 import { resolveReflectionTemplateHtml } from '@/lib/stepDetailHtml';
+import { isValidSpeechLineGapSeconds } from '@/lib/speechGap';
 
 const KEY = '@routine-flow/playlists';
 type PlaylistContextValue = {
@@ -14,7 +15,7 @@ type PlaylistContextValue = {
   savePlaylist: (
     title: string, routineIds: string[], id?: string, skillIds?: string[], rateSkillsAtPlaylistEnd?: boolean,
     reminderSettings?: RoutineNotificationSettings, reflectionTemplate?: string, reflectionTemplateHtml?: string,
-    stepSelections?: PlaylistStepSelection[],
+    stepSelections?: PlaylistStepSelection[], speechLineGapSeconds?: number | null,
   ) => Promise<RoutinePlaylist>;
   mergeImportedPlaylists: (playlists: RoutinePlaylist[]) => Promise<{
     added: number; skipped: number; renamed: number; updated: number; idMap: Record<string, string>;
@@ -56,10 +57,15 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
     reflectionTemplate?: string,
     reflectionTemplateHtml?: string,
     stepSelections?: PlaylistStepSelection[],
+    speechLineGapSeconds?: number | null,
   ) =>
     runWrite(async () => {
       if (loading || error) throw new Error('Wait for playlists to load successfully before saving.');
       validatePlaylist(title, routineIds, stepSelections);
+      if (speechLineGapSeconds !== undefined && speechLineGapSeconds !== null
+        && !isValidSpeechLineGapSeconds(speechLineGapSeconds)) {
+        throw new Error('Choose a speech pause between 0 and 5 seconds.');
+      }
       if (id && !current.current.some(item => item.id === id)) throw new Error('Playlist not found.');
       const previous = id ? current.current.find(item => item.id === id) : undefined;
       const nextReflectionTemplate = reflectionTemplate !== undefined
@@ -86,6 +92,11 @@ export function PlaylistProvider({ children }: { children: React.ReactNode }) {
             ?? previous?.reminderSettings?.routineCompletion
             ?? DEFAULT_PLAYLIST_REMINDER_SETTINGS.routineCompletion,
         },
+        ...(speechLineGapSeconds !== undefined
+          ? speechLineGapSeconds === null ? {} : { speechLineGapSeconds }
+          : previous?.speechLineGapSeconds !== undefined
+            ? { speechLineGapSeconds: previous.speechLineGapSeconds }
+            : {}),
         ...(nextReflectionTemplate ? { reflectionTemplate: nextReflectionTemplate } : {}),
         ...(nextReflectionTemplateHtml ? { reflectionTemplateHtml: nextReflectionTemplateHtml } : {}),
       };

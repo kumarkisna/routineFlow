@@ -20,13 +20,15 @@ import { useSkills } from '@/context/SkillContext';
 import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
+import { SpeechLineGapControl } from '@/components/SpeechLineGapControl';
 import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
 import { useColors } from '@/hooks/useColors';
 import { listRoutineCategories, MAX_CATEGORY_LENGTH, normalizeCategory, categoryKey } from '@/lib/routineCategories';
 import { moveRoutineStep } from '@/lib/routineStepOrdering';
 import { copyRoutineSteps } from '@/lib/copyRoutine';
 import { filterRoutineStepsByKeywords, filterRoutinesByStepKeywords } from '@/lib/routineSearch';
-import { buildStepAnnouncement } from '@/lib/routineSpeech';
+import { buildStepAnnouncementLines, createRoutineSpeechLineSequence, type RoutineSpeechLineSequence } from '@/lib/routineSpeech';
+import { resolveSpeechLineGapSeconds } from '@/lib/speechGap';
 import {
   addAdditionalStepDetail,
   buildStepDetailFields,
@@ -79,6 +81,9 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [speakSubtitle, setSpeakSubtitle] = useState(
     editingRoutine ? editingRoutine.speakSubtitle ?? true : activePerson.defaultSpeakRoutineDescription,
   );
+  const [speechLineGapSeconds, setSpeechLineGapSeconds] = useState<number | undefined>(
+    editingRoutine?.speechLineGapSeconds,
+  );
   const [descriptionAttachments, setDescriptionAttachments] = useState(editingRoutine?.descriptionAttachments ?? []);
   const [category, setCategory] = useState(editingRoutine?.category ?? '');
   const [stepDraft, setStepDraft] = useState('');
@@ -106,9 +111,12 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
   const [copySkillFilter, setCopySkillFilter] = useState('');
   const [expandedCopyStepIds, setExpandedCopyStepIds] = useState<Record<string, boolean>>({});
   const stepPreviewToken = React.useRef(0);
+  const stepPreviewSequence = React.useRef<RoutineSpeechLineSequence | null>(null);
 
   React.useEffect(() => () => {
     stepPreviewToken.current += 1;
+    stepPreviewSequence.current?.stop();
+    stepPreviewSequence.current = null;
     void Speech.stop();
   }, []);
 
@@ -152,14 +160,27 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
 
   function speakCopiedStep(source: Routine, step: RoutineStep) {
     const token = ++stepPreviewToken.current;
+    stepPreviewSequence.current?.stop();
+    stepPreviewSequence.current = null;
     const previewRoutine = { ...source, steps: [step] };
     void Speech.stop().finally(() => {
       if (stepPreviewToken.current !== token) return;
-      Speech.speak(buildStepAnnouncement(previewRoutine, 0, skills), {
-        rate: 0.92,
-        pitch: 1,
-        voice: speechVoiceId,
-      });
+      stepPreviewSequence.current = createRoutineSpeechLineSequence(
+        buildStepAnnouncementLines(previewRoutine, 0, skills),
+        resolveSpeechLineGapSeconds(undefined, source.speechLineGapSeconds, activePerson.defaultSpeechLineGapSeconds),
+        {
+          speak: (text, onFinish) => Speech.speak(text, {
+            rate: 0.92, pitch: 1, voice: speechVoiceId,
+            onDone: () => onFinish('finished'),
+            onStopped: () => onFinish('cancelled'),
+            onError: () => onFinish('error'),
+          }),
+          pause: () => { void Speech.pause(); },
+          resume: () => { void Speech.resume(); },
+          stop: () => { void Speech.stop(); },
+        },
+        () => { stepPreviewSequence.current = null; },
+      );
     });
   }
 
@@ -301,10 +322,10 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
         ...(step.skillIds ? { skillIds: step.skillIds.filter(id => availableSkills.has(id)) } : {}),
       }));
       if (editingRoutine) {
-        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments, reflectionTemplateText, reflectionTemplateHtml);
+        await updateRoutine(editingRoutine.id, title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments, reflectionTemplateText, reflectionTemplateHtml, speechLineGapSeconds ?? null);
         router.back();
       } else {
-        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments, reflectionTemplateText, reflectionTemplateHtml);
+        const routine = await createRoutine(title.trim(), subtitle.trim() || 'A routine made for your day', savedSteps, savedCategory, savedSkillIds, subtitleHtml, speakSubtitle, descriptionAttachments, reflectionTemplateText, reflectionTemplateHtml, speechLineGapSeconds ?? null);
         router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
       }
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -410,6 +431,16 @@ function RoutineForm({ editingRoutine }: { editingRoutine?: Routine }) {
             thumbColor={colors.card}
           />
         </View>
+        <SpeechLineGapControl
+          value={speechLineGapSeconds}
+          defaultValue={activePerson.defaultSpeechLineGapSeconds}
+          onChange={setSpeechLineGapSeconds}
+          allowInherit
+          disabled={saving}
+          label="Pause between spoken lines"
+          hint="Use the profile default or choose a pause for this routine."
+          testID="routine-speech-line-gap"
+        />
         <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={saving} testIDPrefix="routine-skill" />
         <Text style={[styles.categoryLabel, { color: colors.inkSoft }]}>Run reflection template (optional)</Text>
         <TextInput accessibilityLabel="Routine reflection template" testID="routine-reflection-template-input" multiline

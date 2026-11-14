@@ -6,6 +6,7 @@ import { parseSchedules, type RoutineSchedule } from './schedules';
 import { parseSkillRatingWindow, parseSkills, type RoutineSkill } from './skills';
 import type { Person } from '@/types/people';
 import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
+import { DEFAULT_SPEECH_LINE_GAP_SECONDS, isValidSpeechLineGapSeconds } from './speechGap';
 
 export const MAX_ROUTINE_FILE_BYTES = 50_000_000;
 const FILE_FORMAT = 'routine-flow-routines';
@@ -160,6 +161,9 @@ function parseRoutine(value: unknown, index: number): Routine {
       value.steps.length === 0 || value.steps.length > 1000) {
     throw new Error(`${label} is missing required routine details or steps.`);
   }
+  if (value.speechLineGapSeconds !== undefined && !isValidSpeechLineGapSeconds(value.speechLineGapSeconds)) {
+    throw new Error(`${label} has an invalid speech pause.`);
+  }
   if (value.hidden !== undefined && typeof value.hidden !== 'boolean') {
     throw new Error(`${label} has an invalid visibility setting.`);
   }
@@ -185,6 +189,8 @@ function parseRoutine(value: unknown, index: number): Routine {
       && detailHtmlToText(sanitizeStepDetailHtml(value.reflectionTemplateHtml)).trim()
       ? { reflectionTemplateHtml: sanitizeStepDetailHtml(value.reflectionTemplateHtml) } : {}),
     ...(value.speakSubtitle !== undefined ? { speakSubtitle: value.speakSubtitle as boolean } : {}),
+    ...(value.speechLineGapSeconds !== undefined
+      ? { speechLineGapSeconds: value.speechLineGapSeconds as number } : {}),
     ...(value.descriptionAttachments !== undefined
       ? { descriptionAttachments: [...(value.descriptionAttachments as NonNullable<Routine['descriptionAttachments']>)] } : {}),
     ...(value.category !== undefined ? { category: (value.category as string).trim() } : {}),
@@ -348,6 +354,7 @@ export function serializeAllPeopleBackup(activePersonId: string, entries: AllPeo
         name: person.name,
         profileNumber: person.id,
         speechVoiceId: person.speechVoiceId,
+        defaultSpeechLineGapSeconds: person.defaultSpeechLineGapSeconds,
         defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd,
         defaultPlaylistReminderSettings: person.defaultPlaylistReminderSettings,
         defaultSpeakRoutineDescription: person.defaultSpeakRoutineDescription,
@@ -415,6 +422,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
     const profileNumber = profileValue.profileNumber ?? profileValue.id;
     const speechVoiceId = profileValue.speechVoiceId;
     const defaultSpeakRoutineDescription = profileValue.defaultSpeakRoutineDescription;
+    const defaultSpeechLineGapSeconds = profileValue.defaultSpeechLineGapSeconds;
     if (typeof profileValue.id !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileValue.id)
       || typeof profileNumber !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(profileNumber)
       || profileNumber !== profileValue.id
@@ -423,6 +431,8 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
         && (typeof speechVoiceId !== 'string' || !speechVoiceId.trim()))
       || typeof profileValue.defaultRateSkillsAtPlaylistEnd !== 'boolean'
       || (defaultSpeakRoutineDescription !== undefined && typeof defaultSpeakRoutineDescription !== 'boolean')
+      || (defaultSpeechLineGapSeconds !== undefined
+        && !isValidSpeechLineGapSeconds(defaultSpeechLineGapSeconds))
       || !isRecord(reminderSettings)
       || typeof reminderSettings.stepCompletion !== 'boolean'
       || typeof reminderSettings.routineCompletion !== 'boolean'
@@ -433,6 +443,7 @@ export function parseAllPeopleBackup(contents: string): AllPeopleBackup {
       id: profileNumber,
       name: profileValue.name.trim(),
       speechVoiceId: typeof speechVoiceId === 'string' ? speechVoiceId : null,
+      defaultSpeechLineGapSeconds: defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS,
       defaultRateSkillsAtPlaylistEnd: profileValue.defaultRateSkillsAtPlaylistEnd,
       defaultSpeakRoutineDescription: defaultSpeakRoutineDescription ?? true,
       defaultPlaylistReminderSettings: {
@@ -518,6 +529,7 @@ function routineSignature(routine: Routine): string {
     routine.tone,
     routine.createdAt,
     routine.hidden ?? false,
+    routine.speechLineGapSeconds ?? null,
     routine.skillIds ?? [],
     routine.reflectionTemplateHtml ?? '',
     routine.steps.map((step) => [

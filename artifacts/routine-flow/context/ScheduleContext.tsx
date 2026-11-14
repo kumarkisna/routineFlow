@@ -25,7 +25,7 @@ type ScheduleContextValue = {
   deleteSchedule: (id: string) => Promise<void>;
   savePlaylistForSchedule: (
     id: string, title: string, routineIds: string[], skillIds?: string[], reminderSettings?: RoutineNotificationSettings,
-    stepSelections?: PlaylistStepSelection[],
+    stepSelections?: PlaylistStepSelection[], speechLineGapSeconds?: number | null,
   ) => Promise<void>;
   resetScheduledPlaylist: (id: string) => Promise<void>;
   removeSkillAssignments: (skillId: string) => Promise<void>;
@@ -128,11 +128,12 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
   const savePlaylistForSchedule = useCallback((
     id: string, title: string, routineIds: string[], skillIds?: string[],
     reminderSettings?: RoutineNotificationSettings, stepSelections?: PlaylistStepSelection[],
+    speechLineGapSeconds?: number | null,
   ) => runWrite(async () => {
     if (routinesLoading) throw new Error('Wait for your routines to load.');
     const old = current.current.find(item => item.id === id);
     if (!old) throw new Error('Schedule not found.');
-    const next = editScheduledPlaylist(old, title, routineIds, skillIds, reminderSettings, stepSelections);
+    const next = editScheduledPlaylist(old, title, routineIds, skillIds, reminderSettings, stepSelections, speechLineGapSeconds);
     if (!getPlaylistRunEntries(scheduledPlaylistSource(next, playlists)!, routines).length) {
       throw new Error('Add at least one available routine with selected visible steps.');
     }

@@ -8,6 +8,7 @@ const activeProfile = {
   id: 'me',
   name: 'Me',
   speechVoiceId: null,
+  defaultSpeechLineGapSeconds: 0.5,
   defaultRateSkillsAtPlaylistEnd: true,
   defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
   defaultSpeakRoutineDescription: true,

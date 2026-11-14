@@ -14,11 +14,13 @@ import { usePeople } from '@/context/PeopleContext';
 import { SkillPicker, SkillTagList } from '@/components/SkillPicker';
 import { StepDetailAttachments } from '@/components/StepDetailAttachments';
 import { ExpandableRichDetailEditor } from '@/components/ExpandableRichDetailEditor';
+import { SpeechLineGapControl } from '@/components/SpeechLineGapControl';
 import { useColors } from '@/hooks/useColors';
 import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { createDefaultPlaylistStepSelections, resolvePlaylistReminderSettings, type PlaylistStepSelection } from '@/lib/playlists';
-import { buildStepAnnouncement } from '@/lib/routineSpeech';
+import { buildStepAnnouncementLines, createRoutineSpeechLineSequence, type RoutineSpeechLineSequence } from '@/lib/routineSpeech';
 import { scheduledPlaylistSource } from '@/lib/schedules';
+import { resolveSpeechLineGapSeconds } from '@/lib/speechGap';
 import { formatLocalDateTime } from '@/lib/localDateTime';
 import { formatDuration, getStepSeconds } from '@/types/routines';
 import type { Routine, RoutineNotificationSettings } from '@/types/routines';
@@ -76,14 +78,16 @@ export default function PlaylistEditor() {
     initialRateSkillsAtPlaylistEnd={src
       ? src.rateSkillsAtPlaylistEnd ?? true
       : activePerson.defaultRateSkillsAtPlaylistEnd}
-    initialReminderSettings={resolvePlaylistReminderSettings(activePerson.defaultPlaylistReminderSettings, src?.reminderSettings)} />;
+    initialReminderSettings={resolvePlaylistReminderSettings(activePerson.defaultPlaylistReminderSettings, src?.reminderSettings)}
+    initialSpeechLineGapSeconds={src?.speechLineGapSeconds} />;
 }
 
 function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initialIds, initialStepSelections, initialSkillIds,
-  initialRateSkillsAtPlaylistEnd, initialReminderSettings, initialReflectionTemplate, initialReflectionTemplateHtml }: {
+  initialRateSkillsAtPlaylistEnd, initialReminderSettings, initialSpeechLineGapSeconds, initialReflectionTemplate, initialReflectionTemplateHtml }: {
   editId?: string; scheduleId?: string; hasOverride: boolean; canReset: boolean;
   initialTitle: string; initialIds: string[]; initialStepSelections?: PlaylistStepSelection[]; initialSkillIds: string[]; initialRateSkillsAtPlaylistEnd: boolean;
   initialReminderSettings: RoutineNotificationSettings;
+  initialSpeechLineGapSeconds?: number;
   initialReflectionTemplate?: string;
   initialReflectionTemplateHtml?: string;
 }) {
@@ -109,6 +113,7 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const [skillIds, setSkillIds] = React.useState<string[]>(initialSkillIds);
   const [rateSkillsAtPlaylistEnd, setRateSkillsAtPlaylistEnd] = React.useState(initialRateSkillsAtPlaylistEnd);
   const [reminderSettings, setReminderSettings] = React.useState<RoutineNotificationSettings>({ ...initialReminderSettings });
+  const [speechLineGapSeconds, setSpeechLineGapSeconds] = React.useState<number | undefined>(initialSpeechLineGapSeconds);
   const [reflectionTemplateHtml, setReflectionTemplateHtml] = React.useState(initialReflectionTemplateHtml ?? '');
   const [reflectionTemplateText, setReflectionTemplateText] = React.useState(
     initialReflectionTemplateHtml
@@ -119,8 +124,11 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   const [busy, setBusy] = React.useState(false);
   const lock = React.useRef(false);
   const stepPreviewToken = React.useRef(0);
+  const stepPreviewSequence = React.useRef<RoutineSpeechLineSequence | null>(null);
   React.useEffect(() => () => {
     stepPreviewToken.current += 1;
+    stepPreviewSequence.current?.stop();
+    stepPreviewSequence.current = null;
     void Speech.stop();
   }, []);
   const addable = filterRoutinesByStepKeywords(routines, skills, routineSearch)
@@ -175,13 +183,30 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
   }
   function speakStep(source: Routine, step: Routine['steps'][number]) {
     const token = ++stepPreviewToken.current;
+    stepPreviewSequence.current?.stop();
+    stepPreviewSequence.current = null;
     void Speech.stop().finally(() => {
       if (stepPreviewToken.current !== token) return;
-      Speech.speak(buildStepAnnouncement({ ...source, steps: [step] }, 0, skills), {
-        rate: 0.92,
-        pitch: 1,
-        voice: speechVoiceId,
-      });
+      stepPreviewSequence.current = createRoutineSpeechLineSequence(
+        buildStepAnnouncementLines({ ...source, steps: [step] }, 0, skills),
+        resolveSpeechLineGapSeconds(
+          speechLineGapSeconds,
+          source.speechLineGapSeconds,
+          activePerson.defaultSpeechLineGapSeconds,
+        ),
+        {
+          speak: (text, onFinish) => Speech.speak(text, {
+            rate: 0.92, pitch: 1, voice: speechVoiceId,
+            onDone: () => onFinish('finished'),
+            onStopped: () => onFinish('cancelled'),
+            onError: () => onFinish('error'),
+          }),
+          pause: () => { void Speech.pause(); },
+          resume: () => { void Speech.resume(); },
+          stop: () => { void Speech.stop(); },
+        },
+        () => { stepPreviewSequence.current = null; },
+      );
     });
   }
   async function save() {
@@ -207,8 +232,13 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
     try {
       const availableSkills = new Set(skills.map(skill => skill.id));
       const savedSkillIds = skillIds.filter(id => availableSkills.has(id));
-      if (scheduleId) await savePlaylistForSchedule(scheduleId, title, ids, savedSkillIds, reminderSettings, entriesWithDurations);
-      else await savePlaylist(title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd, reminderSettings, reflectionTemplateText, reflectionTemplateHtml, entriesWithDurations);
+      if (scheduleId) await savePlaylistForSchedule(
+        scheduleId, title, ids, savedSkillIds, reminderSettings, entriesWithDurations, speechLineGapSeconds ?? null,
+      );
+      else await savePlaylist(
+        title, ids, editId, savedSkillIds, rateSkillsAtPlaylistEnd, reminderSettings,
+        reflectionTemplateText, reflectionTemplateHtml, entriesWithDurations, speechLineGapSeconds ?? null,
+      );
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e) {
@@ -269,6 +299,16 @@ function Editor({ editId, scheduleId, hasOverride, canReset, initialTitle, initi
           onChangeText={(t) => { setTitle(t); setError(''); }}
           style={[styles.input, { backgroundColor: colors.input, borderColor: colors.border, color: colors.foreground }]} />
         <SkillPicker selectedIds={skillIds} onChange={setSkillIds} disabled={busy} testIDPrefix="playlist-skill" />
+        <SpeechLineGapControl
+          value={speechLineGapSeconds}
+          defaultValue={activePerson.defaultSpeechLineGapSeconds}
+          onChange={setSpeechLineGapSeconds}
+          allowInherit
+          disabled={busy}
+          label="Pause between spoken lines"
+          hint="Use the profile default or choose a pause for this playlist."
+          testID="playlist-speech-line-gap"
+        />
         {!scheduleId ? (
           <>
             <Text style={[styles.label, { color: colors.inkSoft }]}>Run reflection template (optional)</Text>

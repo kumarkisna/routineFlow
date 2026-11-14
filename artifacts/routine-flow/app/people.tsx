@@ -6,6 +6,7 @@ import { ActivityIndicator, AppState, Image, Linking, Platform, Pressable, Scrol
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { SpeechVoicePreference } from '@/components/SpeechVoicePreference';
+import { SpeechLineGapControl } from '@/components/SpeechLineGapControl';
 import { usePeople } from '@/context/PeopleContext';
 import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
@@ -17,6 +18,7 @@ import { capturePersonBackground } from '@/lib/personBackgroundCamera';
 import { createPersonStorage, PERSON_DATA_KEYS, PersonBackgroundStateUncertainError, persistPersonBackgroundImage } from '@/lib/personStorage';
 import { DEFAULT_PERSON_ID } from '@/lib/personStorage';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
+import { DEFAULT_SPEECH_LINE_GAP_SECONDS } from '@/lib/speechGap';
 import type { RoutineNotificationSettings } from '@/types/routines';
 import type { Person, PersonSnapshot } from '@/types/people';
 
@@ -33,6 +35,8 @@ export default function PeopleScreen() {
   const [newPersonPlaylistRatingDefault, setNewPersonPlaylistRatingDefault] = React.useState(true);
   const [newPersonSpeakRoutineDescription, setNewPersonSpeakRoutineDescription] = React.useState(true);
   const [newPersonSpeechVoiceId, setNewPersonSpeechVoiceId] = React.useState<string | null>(null);
+  const [newPersonSpeechLineGapSeconds, setNewPersonSpeechLineGapSeconds] =
+    React.useState(DEFAULT_SPEECH_LINE_GAP_SECONDS);
   const [newPersonReminderSettings, setNewPersonReminderSettings] = React.useState<RoutineNotificationSettings>(
     { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
   );
@@ -65,6 +69,8 @@ export default function PeopleScreen() {
     setBackgroundError(msg(error, fallback));
   }
   const [editingSpeechVoiceId, setEditingSpeechVoiceId] = React.useState<string | null>(null);
+  const [editingSpeechLineGapSeconds, setEditingSpeechLineGapSeconds] =
+    React.useState(DEFAULT_SPEECH_LINE_GAP_SECONDS);
   const [editingReminderSettings, setEditingReminderSettings] = React.useState<RoutineNotificationSettings>(
     { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
   );
@@ -273,6 +279,7 @@ export default function PeopleScreen() {
     setEditingPlaylistRatingDefault(person.defaultRateSkillsAtPlaylistEnd ?? true);
     setEditingSpeakRoutineDescription(person.defaultSpeakRoutineDescription ?? true);
     setEditingSpeechVoiceId(person.speechVoiceId ?? null);
+    setEditingSpeechLineGapSeconds(person.defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS);
     setEditingReminderSettings({ ...person.defaultPlaylistReminderSettings });
     setError('');
   }
@@ -282,12 +289,14 @@ export default function PeopleScreen() {
       await addPerson({
         name,
         speechVoiceId: newPersonSpeechVoiceId,
+        defaultSpeechLineGapSeconds: newPersonSpeechLineGapSeconds,
         defaultRateSkillsAtPlaylistEnd: newPersonPlaylistRatingDefault,
         defaultPlaylistReminderSettings: { ...newPersonReminderSettings },
         defaultSpeakRoutineDescription: newPersonSpeakRoutineDescription,
       });
       setName('');
       setNewPersonSpeechVoiceId(null);
+      setNewPersonSpeechLineGapSeconds(DEFAULT_SPEECH_LINE_GAP_SECONDS);
       setNewPersonPlaylistRatingDefault(true);
       setNewPersonSpeakRoutineDescription(true);
       setNewPersonReminderSettings({ ...DEFAULT_PLAYLIST_REMINDER_SETTINGS });
@@ -299,6 +308,7 @@ export default function PeopleScreen() {
       await updatePerson(personId, {
         name: editingName,
         speechVoiceId: editingSpeechVoiceId,
+        defaultSpeechLineGapSeconds: editingSpeechLineGapSeconds,
         defaultRateSkillsAtPlaylistEnd: editingPlaylistRatingDefault,
         defaultPlaylistReminderSettings: { ...editingReminderSettings },
         defaultSpeakRoutineDescription: editingSpeakRoutineDescription,
@@ -481,6 +491,15 @@ export default function PeopleScreen() {
                       onChange={setEditingSpeechVoiceId}
                       disabled={disabled}
                       testID={`person-speech-voice-${p.id}`}
+                    />
+                    <SpeechLineGapControl
+                      value={editingSpeechLineGapSeconds}
+                      defaultValue={editingSpeechLineGapSeconds}
+                      onChange={value => { if (value !== undefined) setEditingSpeechLineGapSeconds(value); }}
+                      disabled={disabled}
+                      label="Default pause between spoken lines"
+                      hint="Used when a routine or playlist does not set its own pause."
+                      testID={`person-speech-line-gap-${p.id}`}
                     />
                     <View style={[styles.themeSettings, { borderColor: colors.border }]}>
                       <Pressable
@@ -726,6 +745,15 @@ export default function PeopleScreen() {
             onChange={setNewPersonSpeechVoiceId}
             disabled={disabled}
             testID="new-person-speech-voice"
+          />
+          <SpeechLineGapControl
+            value={newPersonSpeechLineGapSeconds}
+            defaultValue={DEFAULT_SPEECH_LINE_GAP_SECONDS}
+            onChange={value => { if (value !== undefined) setNewPersonSpeechLineGapSeconds(value); }}
+            disabled={disabled}
+            label="Default pause between spoken lines"
+            hint="Used when a routine or playlist does not set its own pause."
+            testID="new-person-speech-line-gap"
           />
           <View style={[styles.profileRatingSetting, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
             <View style={{ flex: 1 }}>

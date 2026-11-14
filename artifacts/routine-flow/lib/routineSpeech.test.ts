@@ -3,7 +3,9 @@ import test from 'node:test';
 import type { Routine } from '../types/routines';
 import {
   buildStepAnnouncement,
+  buildStepAnnouncementLines,
   buildPlaylistAnnouncement,
+  createRoutineSpeechLineSequence,
   getSpeechResumeMode,
   RoutineSpeechQueue,
   type RoutineSpeechOptions,
@@ -101,7 +103,75 @@ test('cancelling an active run stops it before the next routine starts speaking'
   assert.equal(await second, 'finished');
 });
 
+test('instruction lines speak in order with the selected gap before the run can finish', async () => {
+  const spoken: string[] = [];
+  const finishes = new Map<string, (result: 'finished' | 'error') => void>();
+  const queue = new RoutineSpeechQueue((text, _options, finish) => {
+    spoken.push(text);
+    finishes.set(text, finish);
+  }, () => undefined);
+  const announcement = queue.announce('run-lines', ['First line.', 'Final line.'], speechOptions, 0.01);
+
+  assert.deepEqual(spoken, ['First line.']);
+  finishes.get('First line.')?.('finished');
+  assert.deepEqual(spoken, ['First line.']);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(spoken, ['First line.', 'Final line.']);
+  let completed = false;
+  void announcement.then(() => { completed = true; });
+  assert.equal(completed, false);
+  finishes.get('Final line.')?.('finished');
+  assert.equal(await announcement, 'finished');
+});
+
+test('cancelling an announcement during its line gap prevents the next utterance', async () => {
+  const spoken: string[] = [];
+  let finishFirst: ((result: 'finished' | 'error') => void) | undefined;
+  const queue = new RoutineSpeechQueue((text, _options, finish) => {
+    spoken.push(text);
+    finishFirst = finish;
+  }, () => undefined);
+  const announcement = queue.announce('run-gap-cancel', ['First line.', 'Cancelled line.'], speechOptions, 0.5);
+  finishFirst?.('finished');
+
+  await queue.cancel('run-gap-cancel');
+  assert.equal(await announcement, 'cancelled');
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(spoken, ['First line.']);
+});
+
+test('pausing a standalone speech preview preserves the remaining line gap on resume', async () => {
+  const spoken: string[] = [];
+  const finishers: ((result: 'finished' | 'cancelled' | 'error') => void)[] = [];
+  let pauseCount = 0;
+  let resumeCount = 0;
+  let result: string | undefined;
+  const sequence = createRoutineSpeechLineSequence(['First.', 'Second.'], 0.03, {
+    speak: (text, finish) => { spoken.push(text); finishers.push(finish); },
+    pause: () => { pauseCount += 1; },
+    resume: () => { resumeCount += 1; },
+    stop: () => undefined,
+  }, value => { result = value; });
+  finishers[0]('finished');
+  sequence.pause();
+  await new Promise(resolve => setTimeout(resolve, 35));
+  assert.deepEqual(spoken, ['First.']);
+  sequence.resume();
+  await new Promise(resolve => setTimeout(resolve, 35));
+  assert.deepEqual(spoken, ['First.', 'Second.']);
+  finishers[1]('finished');
+  assert.equal(result, 'finished');
+  assert.equal(pauseCount, 0);
+  assert.equal(resumeCount, 0);
+});
+
 test('routine and step announcements use the current renamed skill while keeping assignment IDs', () => {
+  assert.deepEqual(buildStepAnnouncementLines(routine, 0, renamedSkills), [
+    'Routine Morning reset. Skills: Sustained focus.',
+    'Step 1. Drink a glass of water.',
+    'Skills: Sustained focus.',
+    'You have 1 minute.',
+  ]);
   assert.equal(
     buildStepAnnouncement(routine, 0, renamedSkills),
     'Routine Morning reset. Skills: Sustained focus. Step 1. Drink a glass of water. Skills: Sustained focus. You have 1 minute.',

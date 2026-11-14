@@ -299,8 +299,18 @@ test('multiple step details survive backup round-trips while old single details 
   assert.throws(() => parseRoutinesFile(JSON.stringify(invalidDetailSpeech)), /invalid per-detail speech settings/);
 });
 
+test('routine speech pause overrides survive backups and invalid settings are rejected', () => {
+  const configured = { ...routine(), speechLineGapSeconds: 1.25 };
+  assert.equal(parseRoutinesFile(serializeRoutines([configured])).routines[0].speechLineGapSeconds, 1.25);
+  assert.equal(parseRoutinesFile(serializeRoutines([routine()])).routines[0].speechLineGapSeconds, undefined);
+  const backup = JSON.parse(serializeRoutines([routine()]));
+  backup.routines[0].speechLineGapSeconds = 5.25;
+  assert.throws(() => parseRoutinesFile(JSON.stringify(backup)), /invalid speech pause/);
+});
+
 test('routine copies preserve additional details without sharing their arrays', () => {
   const source = routine();
+  source.speechLineGapSeconds = 1.25;
   source.steps[0].additionalDetails = ['Use the saved checklist.'];
   source.steps[0].detailAttachments = [
     [{ id: 'img', name: 'photo.png', uri: 'file:///old/photo.png', mimeType: 'image/png', kind: 'image', contentBase64: 'aGVsbG8=' }],
@@ -314,6 +324,7 @@ test('routine copies preserve additional details without sharing their arrays', 
 
   const copied = makeRoutineCopy(source, [], () => `copy-${nextId++}`);
 
+  assert.equal(copied.speechLineGapSeconds, 1.25);
   assert.equal(copied.steps[0].description, 'Check the plan.');
   assert.deepEqual(copied.steps[0].additionalDetails, ['Use the saved checklist.']);
   assert.notEqual(copied.steps[0].additionalDetails, source.steps[0].additionalDetails);
@@ -516,6 +527,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
     id,
     name,
     speechVoiceId: id === 'me' ? 'com.example.voice.enhanced' : null,
+    defaultSpeechLineGapSeconds: id === 'me' ? 0.25 : 1,
     defaultRateSkillsAtPlaylistEnd,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
     defaultSpeakRoutineDescription: id !== 'me',
@@ -595,6 +607,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
       defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
       defaultSpeakRoutineDescription: false,
+      defaultSpeechLineGapSeconds: 0.25,
     },
     {
       id: 'alex',
@@ -604,6 +617,7 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
       defaultRateSkillsAtPlaylistEnd: false,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: true },
       defaultSpeakRoutineDescription: true,
+      defaultSpeechLineGapSeconds: 1,
     },
   ]);
   const repeatedExport = JSON.parse(serializeAllPeopleBackup('alex', entries));
@@ -658,9 +672,11 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   const olderArchive = JSON.parse(contents);
   delete olderArchive.people[0].profile.speechVoiceId;
   delete olderArchive.people[0].profile.defaultSpeakRoutineDescription;
+  delete olderArchive.people[0].profile.defaultSpeechLineGapSeconds;
   const parsedOlderArchive = parseAllPeopleBackup(JSON.stringify(olderArchive));
   assert.equal(parsedOlderArchive.people[0].profile.speechVoiceId, null);
   assert.equal(parsedOlderArchive.people[0].profile.defaultSpeakRoutineDescription, true);
+  assert.equal(parsedOlderArchive.people[0].profile.defaultSpeechLineGapSeconds, 0.5);
   const mismatchedNumber = JSON.parse(contents);
   mismatchedNumber.people[1].profile.profileNumber = 'different-profile';
   assert.throws(() => parseAllPeopleBackup(JSON.stringify(mismatchedNumber)), /invalid profile number/);
@@ -672,6 +688,7 @@ test('all-people backup rejects duplicate profiles or a missing active profile',
       id: 'me',
       name: 'Me',
       speechVoiceId: null,
+      defaultSpeechLineGapSeconds: 0.5,
       defaultRateSkillsAtPlaylistEnd: true,
       defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
       defaultSpeakRoutineDescription: true,

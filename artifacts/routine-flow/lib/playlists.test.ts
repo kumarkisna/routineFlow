@@ -220,6 +220,9 @@ test('saved playlist parsing keeps ordered identifiers and rejects corrupt stora
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":[12]}]'));
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":["a"],"rateSkillsAtPlaylistEnd":"yes"}]'));
   assert.throws(() => parsePlaylists('[{"id":"p","title":"Morning","routineIds":["a"],"reminderSettings":{"stepCompletion":"yes","routineCompletion":false}}]'));
+  assert.equal(parsePlaylists(JSON.stringify(list))[0].speechLineGapSeconds, undefined);
+  assert.equal(parsePlaylists(JSON.stringify([{ ...list[0], speechLineGapSeconds: 0.75 }]))[0].speechLineGapSeconds, 0.75);
+  assert.throws(() => parsePlaylists(JSON.stringify([{ ...list[0], speechLineGapSeconds: 5.5 }])));
   assert.equal(
     parsePlaylists(JSON.stringify([{
       ...list[0],
@@ -243,6 +246,28 @@ test('saved playlist parsing keeps ordered identifiers and rejects corrupt stora
     ...selected, stepSelections: [{ routineId: 'b', steps: [{ stepId: 'b-1', durationSeconds: 0 }] }],
   }])));
   assert.throws(() => validatePlaylist('Empty selection', ['b'], [{ routineId: 'b', steps: [] }]));
+});
+
+test('playlist launch carries a speech-gap override or explicit profile inheritance', () => {
+  const source = routine('first');
+  const overridden = createPlaylistRunLaunch({
+    id: 'overridden', title: 'Override', routineIds: ['first'], speechLineGapSeconds: 1.5,
+  }, [source]);
+  const inherited = createPlaylistRunLaunch({
+    id: 'inherited', title: 'Inherit', routineIds: ['first'],
+  }, [source]);
+  assert.equal(overridden?.params.playlistSpeechLineGapSeconds, '1.5');
+  assert.equal(inherited?.params.playlistSpeechLineGapSeconds, 'profile');
+});
+
+test('playlist backup imports retain the saved speech-gap override', () => {
+  const imported = mergePlaylistCatalog([], [{
+    id: 'gap-playlist',
+    title: 'Gap playlist',
+    routineIds: ['first'],
+    speechLineGapSeconds: 1.25,
+  }]);
+  assert.equal(imported.playlists[0].speechLineGapSeconds, 1.25);
 });
 
 test('playlist backup imports merge skill links and keep conflicting local playlists intact', () => {

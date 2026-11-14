@@ -22,6 +22,7 @@ import {
   type StepDetailAttachmentWriteFileSystem,
 } from '@/lib/stepDetailAttachmentCleanup';
 import { resolveReflectionTemplateHtml, sanitizeStepDetailHtml } from '@/lib/stepDetailHtml';
+import { isValidSpeechLineGapSeconds } from '@/lib/speechGap';
 
 const ROUTINES_KEY = '@routine-flow/routines';
 const PROGRESS_KEY = '@routine-flow/progress';
@@ -83,9 +84,9 @@ type RoutineContextValue = {
   loading: boolean;
   completeRoutine: (routineId: string, playlistRun?: PlaylistCompletionSource, reflection?: RunReflection | RunReflection[], completedStepIds?: string[]) => Promise<void>;
   saveRunReflection: (day: string, runId: string, responseHtml: string) => Promise<void>;
-  createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => Promise<Routine>;
+  createRoutine: (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string, speechLineGapSeconds?: number | null) => Promise<Routine>;
   copyRoutine: (routineId: string) => Promise<Routine>;
-  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => Promise<void>;
+  updateRoutine: (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string, speechLineGapSeconds?: number | null) => Promise<void>;
   renameCategory: (source: string, target: string) => Promise<void>;
   removeCategory: (source: string) => Promise<void>;
   moveRoutine: (routineId: string, adjacentId: string) => Promise<void>;
@@ -207,7 +208,11 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   }, [saveProgress]);
 
   const createRoutine = useCallback(
-    (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => runRoutineWrite(async () => {
+    (title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string, speechLineGapSeconds?: number | null) => runRoutineWrite(async () => {
+      if (speechLineGapSeconds !== undefined && speechLineGapSeconds !== null
+        && !isValidSpeechLineGapSeconds(speechLineGapSeconds)) {
+        throw new Error('Choose a speech pause between 0 and 5 seconds.');
+      }
       const routine: Routine = {
         id: makeId(),
         title,
@@ -217,6 +222,7 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
         ...(resolveReflectionTemplateHtml(reflectionTemplateHtml, reflectionTemplate)
           ? { reflectionTemplateHtml: resolveReflectionTemplateHtml(reflectionTemplateHtml, reflectionTemplate) } : {}),
         speakSubtitle: speakSubtitle ?? true,
+        ...(speechLineGapSeconds !== undefined && speechLineGapSeconds !== null ? { speechLineGapSeconds } : {}),
         ...(descriptionAttachments?.length ? { descriptionAttachments: [...descriptionAttachments] } : {}),
         ...(category ? { category } : {}),
         ...(skillIds?.length ? { skillIds: [...skillIds] } : {}),
@@ -248,9 +254,13 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateRoutine = useCallback(
-    (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string) => runRoutineWrite(async () => {
+    (routineId: string, title: string, subtitle: string, steps: RoutineStep[], category?: string, skillIds?: string[], subtitleHtml?: string, speakSubtitle?: boolean, descriptionAttachments?: Routine['descriptionAttachments'], reflectionTemplate?: string, reflectionTemplateHtml?: string, speechLineGapSeconds?: number | null) => runRoutineWrite(async () => {
       if (!routines.some((routine) => routine.id === routineId)) {
         throw new Error('Routine not found');
+      }
+      if (speechLineGapSeconds !== undefined && speechLineGapSeconds !== null
+        && !isValidSpeechLineGapSeconds(speechLineGapSeconds)) {
+        throw new Error('Choose a speech pause between 0 and 5 seconds.');
       }
       const nextRoutines = routines.map((routine) =>
         routine.id === routineId ? {
@@ -267,6 +277,9 @@ export function RoutineProvider({ children }: { children: React.ReactNode }) {
               : { reflectionTemplateHtml: undefined }
             : {}),
           ...(speakSubtitle !== undefined ? { speakSubtitle } : {}),
+          ...(speechLineGapSeconds !== undefined
+            ? { speechLineGapSeconds: speechLineGapSeconds ?? undefined }
+            : {}),
           ...(descriptionAttachments !== undefined ? { descriptionAttachments: [...descriptionAttachments] } : {}),
           ...(skillIds !== undefined ? { skillIds: [...skillIds] } : {}),
         } : routine,

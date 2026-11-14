@@ -23,6 +23,7 @@ import {
 import type { AllPeopleBackup } from '@/lib/routineTransfer';
 import type { Person, PersonCopySelection, PersonCopySummary, PersonProfileInput, PersonSnapshot } from '@/types/people';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from '@/lib/playlists';
+import { DEFAULT_SPEECH_LINE_GAP_SECONDS, isValidSpeechLineGapSeconds } from '@/lib/speechGap';
 import * as FileSystem from 'expo-file-system/legacy';
 import { removePersonSavedData } from '@/lib/personRemoval';
 
@@ -263,10 +264,14 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     if (previous.people.some(person => person.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase())) {
       throw new Error('A person with this name already exists.');
     }
+    if (!isValidSpeechLineGapSeconds(profile.defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS)) {
+      throw new Error('Choose a speech pause between 0 and 5 seconds.');
+    }
     const person: Person = {
       id: `person-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       name: trimmed,
       speechVoiceId: profile.speechVoiceId ?? null,
+      defaultSpeechLineGapSeconds: profile.defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS,
       defaultRateSkillsAtPlaylistEnd: profile.defaultRateSkillsAtPlaylistEnd ?? true,
       defaultSpeakRoutineDescription: profile.defaultSpeakRoutineDescription ?? true,
       defaultPlaylistReminderSettings: {
@@ -305,6 +310,10 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
     if (previous.people.some(person => person.id !== id && person.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase())) {
       throw new Error('A person with this name already exists.');
     }
+    if (profile.defaultSpeechLineGapSeconds !== undefined
+      && !isValidSpeechLineGapSeconds(profile.defaultSpeechLineGapSeconds)) {
+      throw new Error('Choose a speech pause between 0 and 5 seconds.');
+    }
 
     const updated: Person = {
       ...existing,
@@ -312,6 +321,9 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       speechVoiceId: profile.speechVoiceId === undefined
         ? existing.speechVoiceId ?? null
         : profile.speechVoiceId,
+      defaultSpeechLineGapSeconds: profile.defaultSpeechLineGapSeconds
+        ?? existing.defaultSpeechLineGapSeconds
+        ?? DEFAULT_SPEECH_LINE_GAP_SECONDS,
       defaultRateSkillsAtPlaylistEnd:
         profile.defaultRateSkillsAtPlaylistEnd ?? existing.defaultRateSkillsAtPlaylistEnd,
       defaultSpeakRoutineDescription:

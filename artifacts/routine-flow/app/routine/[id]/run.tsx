@@ -31,6 +31,7 @@ import { useColors } from '@/hooks/useColors';
 import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { Notifications } from '@/lib/localNotifications';
 import { nextPlaylistCursor, parsePlaylistQueue, parsePlaylistStepQueue } from '@/lib/playlists';
+import { parsePlaylistSpeechLineGapParam, resolveSpeechLineGapSeconds } from '@/lib/speechGap';
 import {
   isRunKeepaliveAvailable,
   startRunKeepalive,
@@ -44,7 +45,7 @@ import {
   getRoutinePlaybackStepSeconds,
 } from '@/lib/routinePlayback';
 import {
-  buildStepAnnouncement,
+  buildStepAnnouncementLines,
   RoutineSpeechQueue,
 } from '@/lib/routineSpeech';
 import { createSkillRatingRun, getPlaylistSkillIds, getRoutineSkillIds, type SkillRatingRun } from '@/lib/skills';
@@ -114,16 +115,18 @@ function parseRatingPeopleParam(value: string | string[] | undefined): string[] 
 }
 
 export default function RoutineRunScreen() {
-  const { id, cursor = '0', queue, stepQueue, playlistId, playlistRateSkillsAtEnd, stepReminder, routineReminder, sessionId: routeSessionId } =
+  const { id, cursor = '0', queue, stepQueue, playlistId, playlistRateSkillsAtEnd,
+    playlistSpeechLineGapSeconds, stepReminder, routineReminder, sessionId: routeSessionId } =
     useLocalSearchParams<{ id: string; cursor?: string; queue?: string; playlistId?: string;
-      stepQueue?: string; playlistRateSkillsAtEnd?: string; stepReminder?: string; routineReminder?: string; sessionId?: string }>();
+      stepQueue?: string; playlistRateSkillsAtEnd?: string; playlistSpeechLineGapSeconds?: string;
+      stepReminder?: string; routineReminder?: string; sessionId?: string }>();
   const [generatedSessionId] = useState(() => `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const sessionId = routeSessionId || generatedSessionId;
   useEffect(() => {
     if (!routeSessionId) router.setParams({ sessionId });
   }, [routeSessionId, sessionId]);
   // A new routine (including a repeated routine) needs fresh timer/speech state.
-  return <RoutinePlayer sessionId={sessionId} key={`${sessionId}:${id}:${cursor}:${queue ?? ''}:${stepQueue ?? ''}:${playlistId ?? ''}:${playlistRateSkillsAtEnd ?? '1'}:${stepReminder ?? '0'}:${routineReminder ?? '0'}`} />;
+  return <RoutinePlayer sessionId={sessionId} key={`${sessionId}:${id}:${cursor}:${queue ?? ''}:${stepQueue ?? ''}:${playlistId ?? ''}:${playlistRateSkillsAtEnd ?? '1'}:${playlistSpeechLineGapSeconds ?? ''}:${stepReminder ?? '0'}:${routineReminder ?? '0'}`} />;
 }
 
 function RoutinePlayer({ sessionId }: { sessionId: string }) {
@@ -132,10 +135,12 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
   const { activePerson, people } = usePeople();
   const speechVoiceId = useSpeechVoice(activePerson.speechVoiceId);
   const { id, queue, stepQueue, cursor = '0', playlistId, playlistTitle, playlistSkills: playlistSkillsParam,
-    playlistRateSkillsAtEnd, autoStart, voice, stepReminder, routineReminder, ratingPeople: ratingPeopleParam, adminMode: adminModeParam } =
+    playlistRateSkillsAtEnd, playlistSpeechLineGapSeconds, autoStart, voice, stepReminder, routineReminder,
+    ratingPeople: ratingPeopleParam, adminMode: adminModeParam } =
     useLocalSearchParams<{ id: string; queue?: string; cursor?: string; playlistId?: string; playlistTitle?: string;
       playlistSkills?: string; stepQueue?: string; playlistRateSkillsAtEnd?: string; autoStart?: string; voice?: string;
-      stepReminder?: string; routineReminder?: string; ratingPeople?: string; adminMode?: string }>();
+      playlistSpeechLineGapSeconds?: string; stepReminder?: string; routineReminder?: string;
+      ratingPeople?: string; adminMode?: string }>();
   const playlistQueue = useMemo(() => parsePlaylistQueue(queue), [queue]);
   const playlistStepQueue = useMemo(() => parsePlaylistStepQueue(stepQueue), [stepQueue]);
   const playlistSkillIds = useMemo(() => parseSkillIdsParam(playlistSkillsParam), [playlistSkillsParam]);
@@ -146,6 +151,9 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
     && (stepQueue === undefined || !!playlistStepQueue);
   const { routines, loading, completeRoutine, saveRunReflection: saveCompletionRunReflection } = useRoutines();
   const { playlists } = usePlaylists();
+  const savedPlaylistSpeechGap = useMemo(() => playlistId
+    ? playlists.find(item => item.id === playlistId)?.speechLineGapSeconds
+    : undefined, [playlistId, playlists]);
   const { skills, reload: reloadSkills } = useSkills();
   const routine = useMemo(() => {
     const savedRoutine = routines.find((item) => item.id === id);
@@ -161,6 +169,14 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
       return sourceStep ? [{ ...sourceStep, durationSeconds: selected.durationSeconds }] : [];
     }) };
   }, [routines, id, inPlaylist, playlistStepQueue, queueCursor, stepQueue]);
+  const playlistSpeechGap = playlistSpeechLineGapSeconds === undefined
+    ? savedPlaylistSpeechGap
+    : parsePlaylistSpeechLineGapParam(playlistSpeechLineGapSeconds);
+  const speechLineGapSeconds = resolveSpeechLineGapSeconds(
+    playlistSpeechGap,
+    routine?.speechLineGapSeconds,
+    activePerson.defaultSpeechLineGapSeconds,
+  );
   const initialRemainingSeconds = routine?.steps.length ? getRoutinePlaybackStepSeconds(routine, 0) : 0;
   const [activeIndex, setActiveIndex] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(initialRemainingSeconds);
@@ -412,6 +428,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
         cursor: String(nextCursor),
         sessionId,
         ...(playlistId ? { playlistId } : {}),
+        playlistSpeechLineGapSeconds: playlistSpeechGap === undefined ? 'profile' : String(playlistSpeechGap),
         playlistTitle: playlistTitle ?? 'Playlist',
         playlistSkills: JSON.stringify(playlistSkillIds),
         playlistRateSkillsAtEnd: rateSkillsAtPlaylistEnd ? '1' : '0',
@@ -424,7 +441,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
       },
     });
   }, [playlistQueue, stepQueue, playlistSkillIds, playlistId, playlistTitle, playlistRateSkillsAtEnd, voiceEnabled,
-    sessionId, ratingPersonIds, adminMode]);
+    playlistSpeechGap, sessionId, ratingPersonIds, adminMode]);
 
   const closeRatingPrompt = useCallback(() => {
     const nextCursor = pendingPlaylistCursor;
@@ -524,7 +541,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
         if (token !== announcementTokenRef.current || !isAnnouncingRef.current) return;
         try {
           const playlistIsStarting = inPlaylist && playlistQueue && queueCursor === nextPlaylistCursor(playlistQueue, -1, routines, playlistStepQueue);
-          void runSpeechQueue.announce(sessionId, buildStepAnnouncement(
+          void runSpeechQueue.announce(sessionId, buildStepAnnouncementLines(
             routine,
             index,
             skills,
@@ -533,7 +550,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
             rate: 0.92,
             pitch: 1,
             voice: speechVoiceId,
-          }).then((result) => {
+          }, speechLineGapSeconds).then((result) => {
             if (result !== 'cancelled') finish(result === 'error');
           }).catch(() => finish(true));
         } catch {
@@ -542,7 +559,8 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
       }).catch(() => finish(true));
     },
     [cancelNotifications, routine, startCountdown, stopAnnouncement, voiceEnabled, skills, inPlaylist, sessionId,
-      playlistQueue, playlistStepQueue, queueCursor, routines, playlistTitle, playlistSkillIds, updateKeepaliveForStep, speechVoiceId],
+      playlistQueue, playlistStepQueue, queueCursor, routines, playlistTitle, playlistSkillIds,
+      updateKeepaliveForStep, speechVoiceId, speechLineGapSeconds],
   );
 
   const finishRoutine = useCallback(() => {
@@ -777,6 +795,9 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
           params: { id: playlistQueue[first], queue: JSON.stringify(playlistQueue),
               ...(stepQueue ? { stepQueue } : {}),
               cursor: String(first), playlistTitle: playlistTitle ?? 'Playlist',
+              playlistSpeechLineGapSeconds: playlistSpeechGap === undefined
+                ? 'profile'
+                : String(playlistSpeechGap),
               playlistSkills: JSON.stringify(playlistSkillIds),
               playlistRateSkillsAtEnd: rateSkillsAtPlaylistEnd ? '1' : '0',
               autoStart: '1',

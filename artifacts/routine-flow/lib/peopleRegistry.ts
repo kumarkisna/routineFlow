@@ -1,6 +1,7 @@
 import { DEFAULT_PERSON_ID } from './personStorage';
 import { DEFAULT_PLAYLIST_REMINDER_SETTINGS } from './playlists';
 import type { Person } from '@/types/people';
+import { DEFAULT_SPEECH_LINE_GAP_SECONDS, isValidSpeechLineGapSeconds } from './speechGap';
 
 export type PeopleRegistry = { version: 1; people: Person[]; activePersonId: string };
 
@@ -10,6 +11,7 @@ export const initialPeopleRegistry: PeopleRegistry = {
     id: DEFAULT_PERSON_ID,
     name: 'Me',
     speechVoiceId: null,
+    defaultSpeechLineGapSeconds: DEFAULT_SPEECH_LINE_GAP_SECONDS,
     defaultRateSkillsAtPlaylistEnd: true,
     defaultPlaylistReminderSettings: { ...DEFAULT_PLAYLIST_REMINDER_SETTINGS },
     defaultSpeakRoutineDescription: true,
@@ -31,6 +33,8 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
         && typeof person.defaultRateSkillsAtPlaylistEnd !== 'boolean')
       || (person.defaultSpeakRoutineDescription !== undefined
         && typeof person.defaultSpeakRoutineDescription !== 'boolean')
+      || (person.defaultSpeechLineGapSeconds !== undefined
+        && !isValidSpeechLineGapSeconds(person.defaultSpeechLineGapSeconds))
       || (person.defaultPlaylistReminderSettings !== undefined && (
         !person.defaultPlaylistReminderSettings
         || typeof person.defaultPlaylistReminderSettings.stepCompletion !== 'boolean'
@@ -47,6 +51,7 @@ export function parsePeopleRegistry(raw: string): PeopleRegistry {
       id: person.id,
       name: person.name,
       speechVoiceId: person.speechVoiceId ?? null,
+      defaultSpeechLineGapSeconds: person.defaultSpeechLineGapSeconds ?? DEFAULT_SPEECH_LINE_GAP_SECONDS,
       defaultRateSkillsAtPlaylistEnd: person.defaultRateSkillsAtPlaylistEnd ?? true,
       defaultSpeakRoutineDescription: person.defaultSpeakRoutineDescription ?? true,
       defaultPlaylistReminderSettings: {

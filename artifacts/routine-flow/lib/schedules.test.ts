@@ -177,6 +177,15 @@ test('date-only editing owns a copied sequence and never changes the original pl
   assert.deepEqual(custom.playlistOverride?.routineIds, ['b', 'c', 'b']);
   assert.deepEqual(custom.playlistOverride?.reminderSettings, playlist.reminderSettings);
 });
+test('scheduled playlist speech gap can override or explicitly inherit instead of using source playlist gap', () => {
+  const saved = { id: 'p', title: 'Original', routineIds: ['a'], speechLineGapSeconds: 0.25 };
+  const scheduled: RoutineSchedule = { ...entry, targetType: 'playlist', targetId: 'p' };
+  const custom = editScheduledPlaylist(scheduled, 'Date only', ['a'], undefined, undefined, undefined, 1.5);
+  assert.equal(scheduledPlaylistSource(custom, [saved])?.speechLineGapSeconds, 1.5);
+  const inherited = editScheduledPlaylist(custom, 'Date only', ['a'], undefined, undefined, undefined, null);
+  assert.equal(scheduledPlaylistSource(inherited, [saved])?.speechLineGapSeconds, undefined);
+  assert.throws(() => editScheduledPlaylist(scheduled, 'Date only', ['a'], undefined, undefined, undefined, 5.5));
+});
 test('a custom date ignores later original edits or deletion; uncustomized dates still follow the source', () => {
   const original = { id: 'p', title: 'Original', routineIds: ['a'] };
   const scheduled: RoutineSchedule = { ...entry, targetType: 'playlist', targetId: 'p' };

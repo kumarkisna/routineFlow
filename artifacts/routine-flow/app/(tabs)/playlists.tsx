@@ -13,7 +13,14 @@ import { useSpeechVoice } from '@/hooks/useSpeechVoice';
 import { SkillTagList } from '@/components/SkillPicker';
 import { RoutinePdfExportButton } from '@/components/RoutinePdfExportButton';
 import { useSkills } from '@/context/SkillContext';
-import { buildPlaylistAnnouncement, buildStepAnnouncement, getSpeechResumeMode } from '@/lib/routineSpeech';
+import {
+  buildPlaylistAnnouncement,
+  buildStepAnnouncementLines,
+  createRoutineSpeechLineSequence,
+  getSpeechResumeMode,
+  type RoutineSpeechLineSequence,
+} from '@/lib/routineSpeech';
+import { resolveSpeechLineGapSeconds } from '@/lib/speechGap';
 import { createPlaylistRunLaunch, getPlaylistDurationSeconds, getPlaylistRoutineStepCounts, getPlaylistRunEntries, getPlaylistSpeechSteps, type RoutinePlaylist } from '@/lib/playlists';
 import { formatDuration } from '@/types/routines';
 
@@ -34,6 +41,7 @@ export default function PlaylistsScreen() {
   const [playlistSpeechPaused, setPlaylistSpeechPaused] = React.useState(false);
   const speechSessionToken = React.useRef(0);
   const speechUtteranceToken = React.useRef(0);
+  const speechSequenceRef = React.useRef<RoutineSpeechLineSequence | null>(null);
   const speakingPlaylistRef = React.useRef<string | null>(null);
   const playlistSpeechPausedRef = React.useRef(false);
   const speechPosition = React.useRef(0);
@@ -46,6 +54,8 @@ export default function PlaylistsScreen() {
     playlistSpeechPausedRef.current = false;
     setSpeakingPlaylistId(null);
     setPlaylistSpeechPaused(false);
+    speechSequenceRef.current?.stop();
+    speechSequenceRef.current = null;
     void Speech.stop();
   }, []);
 
@@ -72,26 +82,34 @@ export default function PlaylistsScreen() {
       && speechUtteranceToken.current === utteranceToken
     );
     try {
-      Speech.speak(buildStepAnnouncement(
-        entry.routine,
-        entry.stepIndex,
-        skills,
-      ), {
-        rate: 0.92,
-        pitch: 1,
-        voice: speechVoiceId,
-        onDone: () => {
-          if (currentUtterance() && !playlistSpeechPausedRef.current) {
+      speechSequenceRef.current = createRoutineSpeechLineSequence(
+        buildStepAnnouncementLines(entry.routine, entry.stepIndex, skills),
+        resolveSpeechLineGapSeconds(
+          playlist.speechLineGapSeconds,
+          entry.routine.speechLineGapSeconds,
+          activePerson.defaultSpeechLineGapSeconds,
+        ),
+        {
+          speak: (text, onFinish) => Speech.speak(text, {
+            rate: 0.92, pitch: 1, voice: speechVoiceId,
+            onDone: () => onFinish('finished'),
+            onStopped: () => onFinish('cancelled'),
+            onError: () => onFinish('error'),
+          }),
+          pause: () => { void Speech.pause(); },
+          resume: () => { void Speech.resume(); },
+          stop: () => { void Speech.stop(); },
+        },
+        result => {
+          if (!currentUtterance()) return;
+          speechSequenceRef.current = null;
+          if (result === 'finished' && !playlistSpeechPausedRef.current) {
             speakPlaylistStepAt(playlist, position + 1, sessionToken);
+          } else if (!playlistSpeechPausedRef.current) {
+            stopPlaylistSpeech();
           }
         },
-        onStopped: () => {
-          if (currentUtterance() && !playlistSpeechPausedRef.current) stopPlaylistSpeech();
-        },
-        onError: () => {
-          if (currentUtterance() && !playlistSpeechPausedRef.current) stopPlaylistSpeech();
-        },
-      });
+      );
     } catch {
       if (currentUtterance()) stopPlaylistSpeech();
     }
@@ -136,9 +154,13 @@ export default function PlaylistsScreen() {
         if (getSpeechResumeMode(Platform.OS) === 'replay-current-step') {
           // Android cannot pause an utterance in place; replay the current summary or step.
           speechUtteranceToken.current += 1;
-          void Speech.stop();
+          if (speechPhase.current === 'steps') {
+            speechSequenceRef.current?.stop();
+            speechSequenceRef.current = null;
+          } else void Speech.stop();
         } else {
-          void Speech.pause();
+          if (speechPhase.current === 'steps') speechSequenceRef.current?.pause();
+          else void Speech.pause();
         }
       } else {
         playlistSpeechPausedRef.current = false;
@@ -147,7 +169,8 @@ export default function PlaylistsScreen() {
           if (speechPhase.current === 'summary') speakPlaylistSummary(playlist, sessionToken);
           else speakPlaylistStepAt(playlist, speechPosition.current, sessionToken);
         } else {
-          void Speech.resume();
+          if (speechPhase.current === 'steps') speechSequenceRef.current?.resume();
+          else void Speech.resume();
         }
       }
       return;
@@ -155,6 +178,8 @@ export default function PlaylistsScreen() {
 
     const sessionToken = ++speechSessionToken.current;
     speechUtteranceToken.current += 1;
+    speechSequenceRef.current?.stop();
+    speechSequenceRef.current = null;
     speechPosition.current = 0;
     speechPhase.current = 'summary';
     speakingPlaylistRef.current = playlist.id;

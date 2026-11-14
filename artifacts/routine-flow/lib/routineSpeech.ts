@@ -6,6 +6,11 @@ import { detailHtmlToText } from './stepDetailHtml';
 import { getPlaylistRoutineStepCounts, getPlaylistRunEntries, type RoutinePlaylist } from './playlists';
 
 export type RoutineSpeechResult = 'finished' | 'cancelled' | 'error';
+export type RoutineSpeechLineSequence = {
+  pause: () => void;
+  resume: () => void;
+  stop: () => void;
+};
 
 export type RoutineSpeechOptions = {
   rate: number;
@@ -13,10 +18,104 @@ export type RoutineSpeechOptions = {
   voice?: string;
 };
 
+export function createRoutineSpeechLineSequence(
+  lines: string[],
+  gapSeconds: number,
+  engine: {
+    speak: (text: string, onFinish: (result: RoutineSpeechResult) => void) => void;
+    pause: () => void;
+    resume: () => void;
+    stop: () => void;
+  },
+  onFinish: (result: RoutineSpeechResult) => void,
+): RoutineSpeechLineSequence {
+  const spokenLines = lines.map(line => line.trim()).filter(Boolean);
+  const gapMilliseconds = Number.isFinite(gapSeconds) ? Math.max(0, gapSeconds) * 1000 : 0;
+  let active = true;
+  let paused: 'gap' | 'utterance' | null = null;
+  let lineIndex = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let timerDeadline = 0;
+  let remainingGapMilliseconds = 0;
+
+  const finish = (result: RoutineSpeechResult) => {
+    if (!active) return;
+    active = false;
+    if (timer) clearTimeout(timer);
+    timer = null;
+    onFinish(result);
+  };
+  const scheduleNextLine = (delay: number) => {
+    if (!active) return;
+    remainingGapMilliseconds = delay;
+    timerDeadline = Date.now() + delay;
+    timer = setTimeout(() => {
+      timer = null;
+      remainingGapMilliseconds = 0;
+      speakCurrentLine();
+    }, delay);
+  };
+  const speakCurrentLine = () => {
+    if (!active || paused) return;
+    if (lineIndex >= spokenLines.length) {
+      finish('finished');
+      return;
+    }
+    try {
+      engine.speak(spokenLines[lineIndex], result => {
+        if (!active || paused) return;
+        if (result !== 'finished') {
+          finish(result);
+          return;
+        }
+        lineIndex += 1;
+        if (lineIndex >= spokenLines.length || gapMilliseconds === 0) speakCurrentLine();
+        else scheduleNextLine(gapMilliseconds);
+      });
+    } catch {
+      finish('error');
+    }
+  };
+
+  if (spokenLines.length) speakCurrentLine();
+  else finish('finished');
+
+  return {
+    pause() {
+      if (!active || paused) return;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+        remainingGapMilliseconds = Math.max(0, timerDeadline - Date.now());
+        paused = 'gap';
+      } else {
+        paused = 'utterance';
+        engine.pause();
+      }
+    },
+    resume() {
+      if (!active || !paused) return;
+      const wasPaused = paused;
+      paused = null;
+      if (wasPaused === 'gap') scheduleNextLine(remainingGapMilliseconds);
+      else engine.resume();
+    },
+    stop() {
+      if (!active) return;
+      active = false;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      engine.stop();
+    },
+  };
+}
+
 type SpeechEntry = {
   sessionId: string;
-  text: string;
+  lines: string[];
   options: RoutineSpeechOptions;
+  gapMilliseconds: number;
+  nextLineIndex: number;
   resolve: (result: RoutineSpeechResult) => void;
 };
 
@@ -27,6 +126,7 @@ type SpeechEntry = {
 export class RoutineSpeechQueue {
   private waiting: SpeechEntry[] = [];
   private active: SpeechEntry | null = null;
+  private gapTimer: ReturnType<typeof setTimeout> | null = null;
   private stopPromise: Promise<void> | null = null;
 
   constructor(
@@ -38,9 +138,21 @@ export class RoutineSpeechQueue {
     private readonly stopSpeech: () => void | Promise<void>,
   ) {}
 
-  announce(sessionId: string, text: string, options: RoutineSpeechOptions): Promise<RoutineSpeechResult> {
+  announce(
+    sessionId: string,
+    lines: string | string[],
+    options: RoutineSpeechOptions,
+    gapSeconds = 0,
+  ): Promise<RoutineSpeechResult> {
     return new Promise((resolve) => {
-      this.waiting.push({ sessionId, text, options, resolve });
+      this.waiting.push({
+        sessionId,
+        lines: (Array.isArray(lines) ? lines : [lines]).map(line => line.trim()).filter(Boolean),
+        options,
+        gapMilliseconds: Math.max(0, gapSeconds) * 1000,
+        nextLineIndex: 0,
+        resolve,
+      });
       this.startNext();
     });
   }
@@ -57,6 +169,8 @@ export class RoutineSpeechQueue {
     if (this.active?.sessionId === sessionId) {
       const active = this.active;
       this.active = null;
+      if (this.gapTimer) clearTimeout(this.gapTimer);
+      this.gapTimer = null;
       active.resolve('cancelled');
       if (!this.stopPromise) {
         const stopPromise = Promise.resolve()
@@ -77,20 +191,51 @@ export class RoutineSpeechQueue {
     if (this.active || this.stopPromise) return;
     const entry = this.waiting.shift();
     if (!entry) return;
+    if (!entry.lines.length) {
+      entry.resolve('finished');
+      this.startNext();
+      return;
+    }
     this.active = entry;
+    this.speakNextLine(entry);
+  }
+
+  private speakNextLine(entry: SpeechEntry) {
+    if (this.active !== entry) return;
     try {
-      this.speak(entry.text, entry.options, (result) => {
+      this.speak(entry.lines[entry.nextLineIndex], entry.options, (result) => {
         if (this.active !== entry) return;
-        this.active = null;
-        entry.resolve(result);
-        this.startNext();
+        if (result === 'error') {
+          this.finishEntry(entry, 'error');
+          return;
+        }
+        entry.nextLineIndex += 1;
+        if (entry.nextLineIndex >= entry.lines.length) {
+          this.finishEntry(entry, 'finished');
+          return;
+        }
+        if (!entry.gapMilliseconds) {
+          this.speakNextLine(entry);
+          return;
+        }
+        this.gapTimer = setTimeout(() => {
+          this.gapTimer = null;
+          this.speakNextLine(entry);
+        }, entry.gapMilliseconds);
       });
     } catch {
       if (this.active !== entry) return;
-      this.active = null;
-      entry.resolve('error');
-      this.startNext();
+      this.finishEntry(entry, 'error');
     }
+  }
+
+  private finishEntry(entry: SpeechEntry, result: Exclude<RoutineSpeechResult, 'cancelled'>) {
+    if (this.active !== entry) return;
+    if (this.gapTimer) clearTimeout(this.gapTimer);
+    this.gapTimer = null;
+    this.active = null;
+    entry.resolve(result);
+    this.startNext();
   }
 }
 
@@ -148,21 +293,34 @@ export function buildStepAnnouncement(
   skills: RoutineSkill[],
   playlist?: { title: string; skillIds: string[] },
 ) {
+  return buildStepAnnouncementLines(routine, index, skills, playlist).join(' ');
+}
+
+export function buildStepAnnouncementLines(
+  routine: Routine,
+  index: number,
+  skills: RoutineSkill[],
+  playlist?: { title: string; skillIds: string[] },
+) {
   const step = getRoutinePlaybackStep(routine, index);
   const details = getSpokenStepDetails(step).map(detailHtmlToText).filter(Boolean);
-  const intro: string[] = [];
+  const lines: string[] = [];
   if (index === 0 && playlist) {
     const names = skillNames(playlist.skillIds, skills);
-    if (names.length) intro.push(`Playlist ${playlist.title}. Skills: ${names.join(', ')}.`);
+    if (names.length) lines.push(`Playlist ${playlist.title}. Skills: ${names.join(', ')}.`);
   }
   if (index === 0) {
     const names = skillNames(routine.skillIds, skills);
-    if (names.length) intro.push(`Routine ${routine.title}. Skills: ${names.join(', ')}.`);
+    if (names.length) lines.push(`Routine ${routine.title}. Skills: ${names.join(', ')}.`);
     const description = routine.speakSubtitle === false
       ? ''
       : (detailHtmlToText(routine.subtitleHtml ?? '').trim() || routine.subtitle.trim());
-    if (description) intro.push(description);
+    if (description) lines.push(description);
   }
   const names = skillNames(step.skillIds, skills);
-  return `${intro.length ? `${intro.join(' ')} ` : ''}Step ${index + 1}. ${step.title}.${names.length ? ` Skills: ${names.join(', ')}.` : ''} ${details.length ? `${details.join('. ')}. ` : ''}You have ${describeDuration(getStepSeconds(step))}.`;
+  lines.push(`Step ${index + 1}. ${step.title}.`);
+  if (names.length) lines.push(`Skills: ${names.join(', ')}.`);
+  lines.push(...details.map(detail => `${detail}.`));
+  lines.push(`You have ${describeDuration(getStepSeconds(step))}.`);
+  return lines;
 }
