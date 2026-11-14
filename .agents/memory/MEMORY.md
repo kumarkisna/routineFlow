@@ -16,6 +16,7 @@
 - [Routine write overlap](routine-write-overlap.md) — reject overlapping routine saves until mutations use fresh state, or one successful edit may silently erase another.
 - [Playlist playback and history](playlist-playback.md) — preserve launch order; person defaults seed playlist ratings and run reminders, while saved playlist choices remain editable.
 - [Routine scheduling](routine-scheduling.md) — manual-start reminders use fixed instants; date-only playlist versions stay isolated from originals and other appointments.
+- [Custom palette placement](custom-palette-placement.md) — keep palette controls inside each profile’s existing Theme settings, not in a separate tab.
 - [Expo appearance API](expo-appearance.md) — newer React Native uses an explicit unspecified scheme to restore system appearance; do not cast older null-based examples.
 - [Expo SDK 57 checks](expo-sdk-57.md) — check legacy splash/Hermes caveats plus local-module, package-manager, and notification compatibility for Android releases.
 - [Expo workspace module resolution](expo-workspace-module-resolution.md) — expose the artifact’s local `node_modules` to Metro when its root config cannot resolve Expo.

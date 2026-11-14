@@ -7,11 +7,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { SpeechVoicePreference } from '@/components/SpeechVoicePreference';
 import { SpeechLineGapControl } from '@/components/SpeechLineGapControl';
+import { ThemeCustomizationControls } from '@/components/ThemeCustomizationControls';
 import { usePeople } from '@/context/PeopleContext';
 import { useColors } from '@/hooks/useColors';
 import { usePersistentDisclosure } from '@/hooks/usePersistentDisclosure';
 import { useAppearance } from '@/context/AppearanceContext';
-import { APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, type ThemeGroup } from '@/lib/appThemes';
+import {
+  APP_THEMES, DEFAULT_THEME_ID, THEME_GROUPS, applyThemeCustomization,
+  defaultThemeCustomization, findAppTheme, parseThemeCustomizationStore, saveThemeCustomizationStore,
+  type ThemeCustomization, type ThemeCustomizationStore, type ThemeGroup,
+} from '@/lib/appThemes';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { capturePersonBackground } from '@/lib/personBackgroundCamera';
@@ -80,7 +85,11 @@ export default function PeopleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { people, activePerson, busy, notice, addPerson, updatePerson, removePerson, switchPerson, loadPerson, copyFromPerson, loadPersonTheme, savePersonTheme } = usePeople();
-  const { theme, loading: appearanceLoading, selectTheme, backgroundImage, setBackgroundImage } = useAppearance();
+  const {
+    theme, loading: appearanceLoading, saving: appearanceSaving, error: appearanceError,
+    selectTheme, customization, previewCustomization, saveCustomization,
+    backgroundImage, setBackgroundImage,
+  } = useAppearance();
   const themeDisclosure = usePersistentDisclosure('person-theme-settings', activePerson.id, false);
   const backgroundDisclosure = usePersistentDisclosure('person-background-settings', activePerson.id, false);
   const [name, setName] = React.useState('');
@@ -106,10 +115,21 @@ export default function PeopleScreen() {
   const [personThemeIds, setPersonThemeIds] = React.useState<Record<string, string>>({});
   const [themeLoadingId, setThemeLoadingId] = React.useState<string | null>(null);
   const [themeSavingId, setThemeSavingId] = React.useState<string | null>(null);
+  const [personThemeCustomizations, setPersonThemeCustomizations] = React.useState<Record<string, ThemeCustomizationStore>>({});
   const [themeSearch, setThemeSearch] = React.useState('');
   const [themeGroup, setThemeGroup] = React.useState<ThemeGroup | 'All'>('All');
   const [themeScheme, setThemeScheme] = React.useState<'all' | 'light' | 'dark'>('all');
   const [themeError, setThemeError] = React.useState('');
+  const [themeRetry, setThemeRetry] = React.useState<
+    | { personId: string; kind: 'selection'; themeId: string }
+    | { personId: string; kind: 'customization'; themeId: string; customization: ThemeCustomization }
+    | null
+  >(null);
+  const themeRequestSequence = React.useRef<Record<string, number>>({});
+  const savedThemePreferences = React.useRef<Record<string, string>>({});
+  const savedPersonThemeCustomizations = React.useRef<Record<string, ThemeCustomizationStore>>({});
+  const loadedPersonThemeCustomizations = React.useRef<Record<string, boolean>>({});
+  const themeWriteQueues = React.useRef(new Map<string, Promise<void>>()).current;
   const [personBackgrounds, setPersonBackgrounds] = React.useState<Record<string, string | null>>({});
   const [backgroundLoadingId, setBackgroundLoadingId] = React.useState<string | null>(null);
   const [backgroundSavingId, setBackgroundSavingId] = React.useState<string | null>(null);
@@ -155,11 +175,20 @@ export default function PeopleScreen() {
     const opening = !themeDisclosure.isExpanded(personId);
     themeDisclosure.toggle(personId);
     setThemeError('');
-    if (opening && !personThemeIds[personId]) {
+    const isActive = personId === activePerson.id;
+    if (opening && (!personThemeIds[personId] || (!isActive && !loadedPersonThemeCustomizations.current[personId]))) {
       setThemeLoadingId(personId);
       try {
-        const id = await loadPersonTheme(personId);
+        const id = personThemeIds[personId] ?? await loadPersonTheme(personId);
         setPersonThemeIds(current => ({ ...current, [personId]: id }));
+        savedThemePreferences.current[personId] = id;
+        if (!isActive) {
+          const raw = await createPersonStorage(personId).getItem(PERSON_DATA_KEYS.appearanceCustomization);
+          const store = parseThemeCustomizationStore(raw);
+          setPersonThemeCustomizations(current => ({ ...current, [personId]: store }));
+          savedPersonThemeCustomizations.current[personId] = store;
+          loadedPersonThemeCustomizations.current[personId] = true;
+        }
       } catch (e) {
         setThemeError(msg(e, 'Could not load this person’s theme.'));
       } finally {
@@ -168,19 +197,85 @@ export default function PeopleScreen() {
     }
   }
 
+  async function queuePersonThemeWrite(personId: string, operation: () => Promise<void>) {
+    const previous = themeWriteQueues.get(personId) ?? Promise.resolve();
+    const write = previous.catch(() => undefined).then(operation);
+    themeWriteQueues.set(personId, write);
+    try {
+      await write;
+    } finally {
+      if (themeWriteQueues.get(personId) === write) themeWriteQueues.delete(personId);
+    }
+  }
+
   async function choosePersonTheme(personId: string, themeId: string) {
+    const request = (themeRequestSequence.current[personId] ?? 0) + 1;
+    themeRequestSequence.current[personId] = request;
+    const previousPreference = savedThemePreferences.current[personId]
+      ?? personThemeIds[personId]
+      ?? (personId === activePerson.id ? theme.id : DEFAULT_THEME_ID);
+    setPersonThemeIds(current => ({ ...current, [personId]: themeId }));
     setThemeSavingId(personId);
     setThemeError('');
     try {
       if (personId === activePerson.id) await selectTheme(themeId);
-      else await savePersonTheme(personId, themeId);
-      setPersonThemeIds(current => ({ ...current, [personId]: themeId }));
+      else await queuePersonThemeWrite(personId, () => savePersonTheme(personId, themeId));
+      savedThemePreferences.current[personId] = themeId;
+      setThemeRetry(null);
       void Haptics.selectionAsync();
     } catch (e) {
-      setThemeError(msg(e, 'Could not save this theme.'));
+      if (themeRequestSequence.current[personId] === request) {
+        setPersonThemeIds(current => ({ ...current, [personId]: previousPreference }));
+        setThemeError(msg(e, 'Could not save this theme.'));
+        setThemeRetry({ personId, kind: 'selection', themeId });
+      }
     } finally {
-      setThemeSavingId(null);
+      if (themeRequestSequence.current[personId] === request) setThemeSavingId(null);
     }
+  }
+
+  async function savePersonThemeCustomization(personId: string, themeId: string, value: ThemeCustomization) {
+    const request = (themeRequestSequence.current[personId] ?? 0) + 1;
+    themeRequestSequence.current[personId] = request;
+    setThemeSavingId(personId);
+    setThemeError('');
+    setThemeRetry({ personId, kind: 'customization', themeId, customization: value });
+    try {
+      if (personId === activePerson.id) {
+        previewCustomization(value);
+        await saveCustomization(value);
+      } else {
+        const previous = savedPersonThemeCustomizations.current[personId] ?? {};
+        const current = personThemeCustomizations[personId] ?? previous;
+        const next = { ...current, [themeId]: value };
+        await queuePersonThemeWrite(personId, async () => {
+          await saveThemeCustomizationStore(
+            createPersonStorage(personId), PERSON_DATA_KEYS.appearanceCustomization, next,
+          );
+        });
+        savedPersonThemeCustomizations.current[personId] = next;
+        setPersonThemeCustomizations(currentStores => ({ ...currentStores, [personId]: next }));
+      }
+      if (themeRequestSequence.current[personId] === request) setThemeRetry(null);
+      void Haptics.selectionAsync();
+    } catch (e) {
+      if (themeRequestSequence.current[personId] === request) {
+        if (personId !== activePerson.id) {
+          const saved = savedPersonThemeCustomizations.current[personId] ?? {};
+          setPersonThemeCustomizations(currentStores => ({ ...currentStores, [personId]: saved }));
+        }
+        setThemeError(msg(e, 'Could not save these colors.'));
+      }
+    } finally {
+      if (themeRequestSequence.current[personId] === request) setThemeSavingId(null);
+    }
+  }
+
+  function retryPersonThemeSave(personId: string) {
+    const retry = themeRetry;
+    if (!retry || retry.personId !== personId) return;
+    if (retry.kind === 'selection') void choosePersonTheme(personId, retry.themeId);
+    else void savePersonThemeCustomization(personId, retry.themeId, retry.customization);
   }
 
   async function togglePersonBackground(personId: string) {
@@ -461,6 +556,14 @@ export default function PeopleScreen() {
         <View style={{ gap: 8 }}>
           {ordered.map((p) => {
             const active = p.id === activePerson.id;
+            const selectedThemeId = personThemeIds[p.id] ?? (active ? theme.id : DEFAULT_THEME_ID);
+            const presetTheme = findAppTheme(selectedThemeId) ?? APP_THEMES[0];
+            const personThemeCustomization = active
+              ? customization
+              : personThemeCustomizations[p.id]?.[selectedThemeId] ?? defaultThemeCustomization(presetTheme);
+            const personTheme = active
+              ? theme
+              : applyThemeCustomization(presetTheme, personThemeCustomization);
             return (
               <View key={p.id} style={{ gap: 8 }}>
                 <View style={[styles.item, { backgroundColor: colors.card, borderColor: active ? colors.primary : colors.border, borderWidth: active ? 2 : 1 }]}>
@@ -581,13 +684,27 @@ export default function PeopleScreen() {
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.itemText, { color: colors.foreground }]}>Theme</Text>
                           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-                            {personThemeIds[p.id] ? APP_THEMES.find(item => item.id === personThemeIds[p.id])?.name ?? 'Saved theme' : 'Choose this person’s colors'}
+                            {personThemeIds[p.id] ? personTheme.name : 'Choose this person’s colors'}
                           </Text>
                         </View>
                         <Ionicons name={themeDisclosure.isExpanded(p.id) ? 'chevron-up' : 'chevron-down'} size={18} color={colors.mutedForeground} />
                       </Pressable>
                       {themeDisclosure.isExpanded(p.id) ? (
                         <View style={{ gap: 8 }}>
+                          <ThemeCustomizationControls
+                            theme={personTheme}
+                            customization={personThemeCustomization}
+                            testIDPrefix={`person-theme-${p.id}`}
+                            disabled={themeLoadingId === p.id || themeSavingId === p.id || (active && appearanceSaving)}
+                            onPreview={value => {
+                              if (active) previewCustomization(value);
+                              else setPersonThemeCustomizations(current => ({
+                                ...current,
+                                [p.id]: { ...(current[p.id] ?? {}), [selectedThemeId]: value },
+                              }));
+                            }}
+                            onCommit={value => { void savePersonThemeCustomization(p.id, selectedThemeId, value); }}
+                          />
                           <TextInput
                             testID={`person-theme-search-${p.id}`}
                             accessibilityLabel={`Search ${p.name} themes`}
@@ -627,11 +744,26 @@ export default function PeopleScreen() {
                             Showing {filteredThemes.length} of {APP_THEMES.length} themes
                           </Text>
                           {themeLoadingId === p.id ? <ActivityIndicator color={colors.primary} /> : null}
-                          {themeError ? <Text accessibilityRole="alert" style={[styles.sub, { color: colors.destructive }]}>{themeError}</Text> : null}
+                          {(themeError || (active ? appearanceError : '')) ? (
+                            <View style={{ gap: 6 }}>
+                              <Text accessibilityRole="alert" style={[styles.sub, { color: colors.destructive }]}>
+                                {themeError || appearanceError}
+                              </Text>
+                              {themeRetry?.personId === p.id ? (
+                                <Pressable testID={`person-theme-retry-${p.id}`} accessibilityRole="button"
+                                  accessibilityLabel={`Retry saving ${p.name} theme`}
+                                  disabled={themeSavingId === p.id}
+                                  onPress={() => retryPersonThemeSave(p.id)}
+                                  style={[styles.backgroundAction, { alignSelf: 'flex-start', borderColor: colors.border, borderWidth: 1 }]}>
+                                  <Text style={[styles.linkText, { color: colors.primary }]}>Retry</Text>
+                                </Pressable>
+                              ) : null}
+                            </View>
+                          ) : null}
                           <ScrollView nestedScrollEnabled style={styles.themeChoices}>
                             <View style={styles.themeChoiceGrid}>
                               {filteredThemes.map(item => {
-                                const selected = (personThemeIds[p.id] ?? (p.id === activePerson.id ? theme.id : DEFAULT_THEME_ID)) === item.id;
+                                const selected = personTheme.id === item.id;
                                 return (
                                   <Pressable
                                     key={item.id}
