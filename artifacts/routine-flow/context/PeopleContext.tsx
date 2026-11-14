@@ -3,7 +3,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import {
-  APP_THEMES, DEFAULT_THEME_ID, findAppTheme, migrateLegacyThemePreference, saveThemePreference,
+  APP_THEMES, DEFAULT_THEME_ID, findAppTheme, migrateLegacyThemePreference,
+  saveThemePreference, serializeThemeCustomizationStore,
 } from '@/lib/appThemes';
 import {
   buildPersonCopy, readPersonExportSnapshot, readPersonSnapshot, repairPersonRoutineDurations,
@@ -512,6 +513,10 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
       expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.skills), JSON.stringify(snapshot.skills));
       expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.skillRatingWindow), String(snapshot.skillRatingWindow));
       expectedValues.set(personStorageKey(profile.id, PERSON_DATA_KEYS.appearance), snapshot.selectedThemeId);
+      expectedValues.set(
+        personStorageKey(profile.id, PERSON_DATA_KEYS.appearanceCustomization),
+        serializeThemeCustomizationStore(snapshot.themeCustomizations),
+      );
     }
 
     try {

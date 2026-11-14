@@ -44,7 +44,12 @@ function skill(id: string, name: string, ratingId: string, note: string) {
   };
 }
 
-function backup(includeProgress = true): AllPeopleBackup {
+const importedPalettes = {
+  forest: { tone: 76, primary: '#1657a8', accent: '#83b6ff' },
+  nordic: { tone: 34, primary: '#6633a8', accent: '#c6a6ff' },
+};
+
+function backup(includeProgress = true, includeThemeCustomizations = true): AllPeopleBackup {
   const profile = {
     ...activeProfile,
     defaultRateSkillsAtPlaylistEnd: false,
@@ -83,6 +88,7 @@ function backup(includeProgress = true): AllPeopleBackup {
           }],
           selectedThemeId: 'routine-flow',
           skillRatingWindow: 7,
+          ...(includeThemeCustomizations ? { themeCustomizations: importedPalettes } : {}),
         },
       },
     }],
@@ -98,6 +104,10 @@ function currentSnapshot(): PersonRestoreSnapshot {
     skillRatingWindow: 3,
     progress: { [day]: { 'same:water': false } },
     selectedThemeId: 'routine-flow',
+    themeCustomizations: {
+      forest: { tone: 52, primary: '#28653d', accent: '#a5c7ad' },
+      'midnight-navy': { tone: 45, primary: '#83b6ff', accent: '#c6a6ff' },
+    },
   };
 }
 
@@ -113,6 +123,7 @@ test('all-profile restore adds conflicting routine copies and merges skill refle
     ['backup-rating', 'Backup reflection.'],
   ]);
   assert.equal(result.snapshot.skillRatingWindow, 7);
+  assert.deepEqual(result.snapshot.themeCustomizations, importedPalettes);
   assert.equal(result.snapshot.routines.length, 2);
   assert.equal(result.snapshot.routines[0].title, 'Local routine');
   assert.equal(result.snapshot.routines[1].title, 'Backup routine');
@@ -138,4 +149,12 @@ test('all-profile restore can leave imported progress out while preserving local
   assert.deepEqual(result.snapshot.progress, current.progress);
   assert.equal(result.counts.progressAdded, 0);
   assert.equal(result.counts.progressKept, 0);
+});
+
+test('older profile backups without custom palettes preserve the local palette store', () => {
+  const current = currentSnapshot();
+  const localPalettes = structuredClone(current.themeCustomizations);
+  const imported = backup(true, false);
+  const result = mergePersonRestore(current, imported.people[0].profile, imported.people[0], true);
+  assert.deepEqual(result.snapshot.themeCustomizations, localPalettes);
 });

@@ -4,6 +4,7 @@ import { detachedHistoryId, progressRoutineIds, splitProgressKey } from '@/lib/h
 import { parsePlaylists, type RoutinePlaylist } from './playlists';
 import { parseSchedules, type RoutineSchedule } from './schedules';
 import { parseSkillRatingWindow, parseSkills, type RoutineSkill } from './skills';
+import { parseThemeCustomizationStore, type ThemeCustomizationStore } from './appThemes';
 import type { Person } from '@/types/people';
 import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
 import { DEFAULT_SPEECH_LINE_GAP_SECONDS, isValidSpeechLineGapSeconds } from './speechGap';
@@ -23,6 +24,7 @@ export type PersonBackupData = {
   playlists: RoutinePlaylist[];
   schedules: RoutineSchedule[];
   selectedThemeId: string;
+  themeCustomizations?: ThemeCustomizationStore;
   skills: RoutineSkill[];
   skillRatingWindow: number;
 };
@@ -325,6 +327,17 @@ function parsePersonBackupData(value: unknown): Omit<PersonBackupData, 'skills'>
   if (!isRecord(value) || !Array.isArray(value.playlists) || !Array.isArray(value.schedules) || !isText(value.selectedThemeId)) {
     throw new Error('The full person backup has invalid playlists, schedules, or selected theme data.');
   }
+  let themeCustomizations: ThemeCustomizationStore | undefined;
+  if (value.themeCustomizations !== undefined) {
+    try {
+      themeCustomizations = parseThemeCustomizationStore(JSON.stringify({
+        version: 1,
+        themes: value.themeCustomizations,
+      }));
+    } catch {
+      throw new Error('The full person backup has invalid custom theme data.');
+    }
+  }
   return {
     playlists: parsePlaylists(JSON.stringify(value.playlists)),
     schedules: parseSchedules(JSON.stringify(value.schedules)),
@@ -332,6 +345,7 @@ function parsePersonBackupData(value: unknown): Omit<PersonBackupData, 'skills'>
     skillRatingWindow: parseSkillRatingWindow(
       value.skillRatingWindow === undefined ? null : String(value.skillRatingWindow),
     ),
+    ...(themeCustomizations !== undefined ? { themeCustomizations } : {}),
   };
 }
 

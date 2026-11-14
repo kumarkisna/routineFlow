@@ -1,8 +1,9 @@
 import type { Routine } from './routines';
-import type { RoutineNotificationSettings } from './routines';
+import type { CompletionMap, RoutineNotificationSettings } from './routines';
 import type { RoutinePlaylist } from '@/lib/playlists';
 import type { RoutineSchedule } from '@/lib/schedules';
 import type { RoutineSkill } from '@/lib/skills';
+import type { ThemeCustomizationStore } from '@/lib/appThemes';
 
 export type Person = {
   id: string;
@@ -31,6 +32,11 @@ export type PersonSnapshot = {
   schedules: RoutineSchedule[];
   skills: RoutineSkill[];
   skillRatingWindow: number;
+};
+export type PersonExportSnapshot = PersonSnapshot & {
+  progress: CompletionMap;
+  selectedThemeId: string;
+  themeCustomizations: ThemeCustomizationStore;
 };
 export type PersonCopySelection = {
   routineIds: string[];

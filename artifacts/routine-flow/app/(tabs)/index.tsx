@@ -352,6 +352,7 @@ export default function HomeScreen() {
         playlists: personData.playlists,
         schedules: personData.schedules,
         selectedThemeId: personData.selectedThemeId,
+        themeCustomizations: personData.themeCustomizations,
         skills: personData.skills,
         skillRatingWindow: personData.skillRatingWindow,
       },
@@ -375,6 +376,7 @@ export default function HomeScreen() {
           playlists: snapshot.playlists,
           schedules: snapshot.schedules,
           selectedThemeId: snapshot.selectedThemeId,
+          themeCustomizations: snapshot.themeCustomizations,
           skills: snapshot.skills,
           skillRatingWindow: snapshot.skillRatingWindow,
         },
@@ -417,7 +419,7 @@ export default function HomeScreen() {
         await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export person backup' });
       }
       setTransferStatus({
-        message: `Person backup ready: ${personData.routines.length} routines, ${personData.playlists.length} playlists, ${personData.schedules.length} schedules, ${personData.skills.length} skills with rating history, the shared average window, and the selected theme${includeHistory ? ' with daily progress' : ''}.`,
+        message: `Person backup ready: ${personData.routines.length} routines, ${personData.playlists.length} playlists, ${personData.schedules.length} schedules, ${personData.skills.length} skills with rating history, the shared average window, the selected theme, and custom palettes${includeHistory ? ' with daily progress' : ''}.`,
         error: false,
       });
     } catch (error) {

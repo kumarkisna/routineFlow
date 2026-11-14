@@ -5,10 +5,12 @@ import { mergeImportedSchedules, type RoutineSchedule } from '@/lib/schedules';
 import { mergeSkillCatalog, remapRoutineSkillIds } from '@/lib/skills';
 import type { CompletionMap } from '@/types/routines';
 import type { Person, PersonSnapshot } from '@/types/people';
+import type { ThemeCustomizationStore } from './appThemes';
 
 export type PersonRestoreSnapshot = PersonSnapshot & {
   progress: CompletionMap;
   selectedThemeId: string;
+  themeCustomizations: ThemeCustomizationStore;
 };
 
 export type PersonRestoreResult = {
@@ -91,6 +93,7 @@ export function mergePersonRestore(
       skillRatingWindow: backup.personData.skillRatingWindow,
       progress: progress.progress,
       selectedThemeId: backup.personData.selectedThemeId,
+      themeCustomizations: backup.personData.themeCustomizations ?? current.themeCustomizations,
     },
     schedulesToEnable,
     counts: {

@@ -1,19 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { DEFAULT_THEME_ID, findAppTheme } from './appThemes';
+import { DEFAULT_THEME_ID, findAppTheme, parseThemeCustomizationStore } from './appThemes';
 import { parsePlaylists } from './playlists';
 import { PERSON_DATA_KEYS, personStorageKey, waitForPersonWrites } from './personStorage';
 import { parseRoutinesFile, repairStoredRoutineDurations, ROUTINE_BACKUP_VERSION } from './routineTransfer';
 import { parseSchedules } from './schedules';
 import { parseSkillRatingWindow, parseSkills, skillNameKey } from './skills';
-import type { PersonCopySelection, PersonCopySummary, PersonSnapshot } from '@/types/people';
-import type { CompletionMap, Routine } from '@/types/routines';
+import type { PersonCopySelection, PersonCopySummary, PersonExportSnapshot, PersonSnapshot } from '@/types/people';
+import type { Routine } from '@/types/routines';
 import type { RoutineSkill } from './skills';
 
-export type PersonExportSnapshot = PersonSnapshot & {
-  progress: CompletionMap;
-  selectedThemeId: string;
-};
 import type { RoutinePlaylist } from './playlists';
 import type { RoutineSchedule } from './schedules';
 
@@ -257,9 +253,10 @@ export async function readPersonSnapshot(personId: string): Promise<PersonSnapsh
 export async function readPersonExportSnapshot(personId: string): Promise<PersonExportSnapshot> {
   await waitForPersonWrites(personId);
   const snapshot = await readPersonSnapshot(personId);
-  const [progressValue, themeValue] = await Promise.all([
+  const [progressValue, themeValue, themeCustomizationsValue] = await Promise.all([
     AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.progress)),
     AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.appearance)),
+    AsyncStorage.getItem(personStorageKey(personId, PERSON_DATA_KEYS.appearanceCustomization)),
   ]);
   const progress = progressValue === null
     ? {}
@@ -271,7 +268,8 @@ export async function readPersonExportSnapshot(personId: string): Promise<Person
     })).progress ?? {};
   const selectedThemeId = themeValue ?? DEFAULT_THEME_ID;
   if (!findAppTheme(selectedThemeId)) throw new Error('The selected theme could not be validated for export.');
-  return { ...snapshot, progress, selectedThemeId };
+  const themeCustomizations = parseThemeCustomizationStore(themeCustomizationsValue);
+  return { ...snapshot, progress, selectedThemeId, themeCustomizations };
 }
 
 export async function repairPersonRoutineDurations(personId: string): Promise<number> {

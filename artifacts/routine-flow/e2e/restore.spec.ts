@@ -1481,9 +1481,12 @@ test('all-profiles import adds profiles and merges saved history without replaci
     id: 'casey',
     name: 'Alex',
     speechVoiceId: null,
+    defaultSpeechLineGapSeconds: 0.5,
     defaultRateSkillsAtPlaylistEnd: false,
     defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
     defaultSpeakRoutineDescription: false,
+    defaultStepPhotoSlideshow: true,
+    defaultStepPhotoSlideshowIntervalSeconds: 5,
   };
   const caseyRoutine = { ...second, id: 'casey-routine', title: 'Casey morning' };
   const caseySkill = {
@@ -1553,6 +1556,10 @@ test('all-profiles import adds profiles and merges saved history without replaci
     }],
     '@routine-flow/skill-rating-window': '3',
     '@routine-flow/appearance': localThemeId,
+    '@routine-flow/appearance-customization': {
+      version: 1,
+      themes: { sandstone: { tone: 44, primary: '#1657a8', accent: '#83b6ff' } },
+    },
     '@routine-flow/person/casey/@routine-flow/routines': [caseyRoutine],
     '@routine-flow/person/casey/@routine-flow/progress': {
       [day]: { 'casey-routine:unpack': true },
@@ -1562,6 +1569,10 @@ test('all-profiles import adds profiles and merges saved history without replaci
     '@routine-flow/person/casey/@routine-flow/skills': [caseySkill],
     '@routine-flow/person/casey/@routine-flow/skill-rating-window': '6',
     '@routine-flow/person/casey/@routine-flow/appearance': caseyThemeId,
+    '@routine-flow/person/casey/@routine-flow/appearance-customization': {
+      version: 1,
+      themes: { linen: { tone: 61, primary: '#28653d', accent: '#a5c7ad' } },
+    },
   };
   const allPeopleBackup = JSON.stringify({
     format: 'routine-flow-all-people',
@@ -1603,6 +1614,10 @@ test('all-profiles import adds profiles and merges saved history without replaci
               notifications: [{ id: 'old-playlist-device-notification', offsetMinutes: 0 }],
             }],
             selectedThemeId: meThemeId,
+            themeCustomizations: {
+              forest: { tone: 73, primary: '#1657a8', accent: '#83b6ff' },
+              nordic: { tone: 38, primary: '#6633a8', accent: '#c6a6ff' },
+            },
             skillRatingWindow: 7,
           },
         },
@@ -1653,6 +1668,9 @@ test('all-profiles import adds profiles and merges saved history without replaci
               notifications: [{ id: 'old-device-notification', offsetMinutes: 0 }],
             }],
             selectedThemeId: alexThemeId,
+            themeCustomizations: {
+              'midnight-navy': { tone: 42, primary: '#c6a6ff', accent: '#83b6ff' },
+            },
             skillRatingWindow: 12,
           },
         },
@@ -1723,6 +1741,7 @@ test('all-profiles import adds profiles and merges saved history without replaci
     meSchedules: JSON.parse(localStorage.getItem('@routine-flow/schedules') ?? '[]'),
     meWindow: localStorage.getItem('@routine-flow/skill-rating-window'),
     meTheme: localStorage.getItem('@routine-flow/appearance'),
+    mePalettes: JSON.parse(localStorage.getItem('@routine-flow/appearance-customization') ?? 'null'),
     alexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/routines') ?? '[]'),
     alexProgress: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/progress') ?? '{}'),
     alexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/skills') ?? '[]'),
@@ -1730,13 +1749,16 @@ test('all-profiles import adds profiles and merges saved history without replaci
     alexSchedules: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/schedules') ?? '[]'),
     alexWindow: localStorage.getItem('@routine-flow/person/alex/@routine-flow/skill-rating-window'),
     alexTheme: localStorage.getItem('@routine-flow/person/alex/@routine-flow/appearance'),
+    alexPalettes: JSON.parse(localStorage.getItem('@routine-flow/person/alex/@routine-flow/appearance-customization') ?? 'null'),
     caseyRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/routines') ?? '[]'),
     caseyProgress: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/progress') ?? '{}'),
     caseySkills: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/skills') ?? '[]'),
     caseyTheme: localStorage.getItem('@routine-flow/person/casey/@routine-flow/appearance'),
+    caseyPalettes: JSON.parse(localStorage.getItem('@routine-flow/person/casey/@routine-flow/appearance-customization') ?? 'null'),
     lowerAlexRoutines: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/routines') ?? '[]'),
     lowerAlexSkills: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/skills') ?? '[]'),
     lowerAlexTheme: localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/appearance'),
+    lowerAlexPalettes: JSON.parse(localStorage.getItem('@routine-flow/person/alex-lower/@routine-flow/appearance-customization') ?? 'null'),
   }));
 
   expect(restored.registry.activePersonId).toBe('alex');
@@ -1786,6 +1808,13 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.meSchedules[0].notifications).toBeUndefined();
   expect(restored.meWindow).toBe('7');
   expect(restored.meTheme).toBe(meThemeId);
+  expect(restored.mePalettes).toEqual({
+    version: 1,
+    themes: {
+      forest: { tone: 73, primary: '#1657a8', accent: '#83b6ff' },
+      nordic: { tone: 38, primary: '#6633a8', accent: '#c6a6ff' },
+    },
+  });
   expect(restored.alexRoutines.map((routine: { id: string }) => routine.id)).toEqual(['travel-reset']);
   expect(restored.alexProgress[day]['travel-reset:unpack']).toBe(true);
   expect(restored.alexSkills).toHaveLength(1);
@@ -1797,6 +1826,15 @@ test('all-profiles import adds profiles and merges saved history without replaci
   expect(restored.alexPlaylists[0].title).toBe('Travel list');
   expect(restored.alexWindow).toBe('12');
   expect(restored.alexTheme).toBe(alexThemeId);
+  expect(restored.alexPalettes).toEqual({
+    version: 1,
+    themes: { 'midnight-navy': { tone: 42, primary: '#c6a6ff', accent: '#83b6ff' } },
+  });
+  expect(restored.caseyPalettes).toEqual({
+    version: 1,
+    themes: { linen: { tone: 61, primary: '#28653d', accent: '#a5c7ad' } },
+  });
+  expect(restored.lowerAlexPalettes).toEqual({ version: 1, themes: {} });
   expect(restored.caseyRoutines).toEqual([caseyRoutine]);
   expect(restored.caseyProgress).toEqual({ [day]: { 'casey-routine:unpack': true } });
   expect(restored.caseySkills).toEqual([caseySkill]);

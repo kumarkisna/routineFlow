@@ -21,6 +21,7 @@ import { getSpokenStepDetails, getStepDetails } from '@/types/routines';
 import { getHistoryForDay } from './progressHistory';
 import { buildStepAnnouncement } from './routineSpeech';
 import { detailHtmlToText, sanitizeStepDetailHtml } from './stepDetailHtml';
+import type { ThemeCustomizationStore } from './appThemes';
 import {
   buildStepDetailFields,
   createStepDetailDraft,
@@ -463,7 +464,7 @@ test('editing one imported additional detail keeps each link with its original n
   ]);
 });
 
-test('person backup includes playlists, schedules, selected theme, and optional daily progress', () => {
+test('person backup includes playlists, schedules, selected theme, custom palettes, and optional daily progress', () => {
   const personData = {
     playlists: [{
       id: 'focus',
@@ -483,6 +484,10 @@ test('person backup includes playlists, schedules, selected theme, and optional 
       reminder: false,
     }],
     selectedThemeId: 'routine-flow',
+    themeCustomizations: {
+      forest: { tone: 73, primary: '#1657a8', accent: '#83b6ff' },
+      nordic: { tone: 38, primary: '#6633a8', accent: '#c6a6ff' },
+    },
     skills: [{
       id: 'skill-focus',
       name: 'Focus',
@@ -518,9 +523,14 @@ test('person backup includes playlists, schedules, selected theme, and optional 
     schedules: personData.schedules,
     selectedThemeId: personData.selectedThemeId,
     skillRatingWindow: personData.skillRatingWindow,
+    themeCustomizations: personData.themeCustomizations,
   });
   assert.deepEqual(imported.skills, personData.skills);
   assert.deepEqual(imported.progress, progress);
+
+  const olderBackup = JSON.parse(exported);
+  delete olderBackup.personData.themeCustomizations;
+  assert.equal(parseRoutinesFile(JSON.stringify(olderBackup)).personData?.themeCustomizations, undefined);
 });
 
 test('all-people backup keeps each profile, skill history, settings, and optional progress separate', () => {
@@ -535,23 +545,29 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
     defaultStepPhotoSlideshow: id !== 'me',
     defaultStepPhotoSlideshowIntervalSeconds: id === 'me' ? 2 : 8,
   });
-  const personData = (skillId: string, rating: number, skillRatingWindow: number) => ({
-    playlists: [],
-    schedules: [],
-    selectedThemeId: 'routine-flow',
-    skills: [{
-      id: skillId,
-      name: skillId,
-      ratings: [{
-        id: `rating-${skillId}`,
-        rating,
-        ratedAt: '2030-06-12T12:00:00.000Z',
-        routineTitle: 'Morning',
-        note: `Reflection for ${skillId}.`,
+  const personData = (skillId: string, rating: number, skillRatingWindow: number) => {
+    const themeCustomizations: ThemeCustomizationStore = skillId === 'me-focus'
+      ? { forest: { tone: 73, primary: '#1657a8', accent: '#83b6ff' } }
+      : { 'midnight-navy': { tone: 42, primary: '#c6a6ff', accent: '#83b6ff' } };
+    return {
+      playlists: [],
+      schedules: [],
+      selectedThemeId: 'routine-flow',
+      themeCustomizations,
+      skills: [{
+        id: skillId,
+        name: skillId,
+        ratings: [{
+          id: `rating-${skillId}`,
+          rating,
+          ratedAt: '2030-06-12T12:00:00.000Z',
+          routineTitle: 'Morning',
+          note: `Reflection for ${skillId}.`,
+        }],
       }],
-    }],
-    skillRatingWindow,
-  });
+      skillRatingWindow,
+    };
+  };
   const entries = [
     {
       person: profile('me', 'Me', true),
@@ -639,6 +655,9 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   assert.equal(meBackup.routines[0].id, 'me-morning');
   assert.equal(meBackup.skills?.[0].ratings?.[0].note, 'Reflection for me-focus.');
   assert.equal(meBackup.personData?.skillRatingWindow, 5);
+  assert.deepEqual(meBackup.personData?.themeCustomizations, {
+    forest: { tone: 73, primary: '#1657a8', accent: '#83b6ff' },
+  });
   assert.deepEqual(meBackup.progress, { [day]: { 'me-morning:water': true } });
   assert.equal(meBackup.routines[0].steps[0].detailAttachments?.[0][0].contentBase64, 'aGVsbG8=');
   assert.equal(
@@ -647,6 +666,9 @@ test('all-people backup keeps each profile, skill history, settings, and optiona
   );
   assert.equal(meBackup.routines[0].steps[0].detailHtml?.[1], '<p><a href="mailto:me@example.com">Email Me</a></p>');
   assert.equal(alexBackup.routines[0].id, 'alex-morning');
+  assert.deepEqual(alexBackup.personData?.themeCustomizations, {
+    'midnight-navy': { tone: 42, primary: '#c6a6ff', accent: '#83b6ff' },
+  });
   assert.equal(alexBackup.routines[0].steps[0].detailHtml?.[0],
     '<p><a href="https://example.org/alex">Alex guide</a> <a href="mailto:alex@example.org">Email Alex</a> <a>Unsafe</a></p>');
   assert.equal(alexBackup.skills?.[0].ratings?.[0].note, 'Reflection for alex-focus.');
