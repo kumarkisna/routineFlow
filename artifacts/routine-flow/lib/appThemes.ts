@@ -12,6 +12,10 @@ export type AppTheme = {
 export type ThemeCustomization = { tone: number; primary: string; accent: string };
 export type ThemeCustomizationStore = Record<string, ThemeCustomization>;
 export type ThemeColorSwatch = { name: string; color: string };
+export type PersonThemeSaveRetry =
+  | { kind: 'selection'; themeId: string }
+  | { kind: 'customization'; themeId: string; customization: ThemeCustomization };
+export type PersonThemeSaveState = { error: string; retry: PersonThemeSaveRetry | null };
 export const DEFAULT_THEME_TONE = 50;
 const LIGHT_SWATCHES: ThemeColorSwatch[] = [
   { name: 'Coral', color: '#b8322a' },
@@ -286,6 +290,21 @@ export function createThemeCustomizationWriteQueue() {
       if (writes.get(personId) === write) writes.delete(personId);
     }
   };
+}
+
+export function updatePersonThemeSaveState(
+  current: Record<string, PersonThemeSaveState>,
+  personId: string,
+  update: Partial<PersonThemeSaveState>,
+): Record<string, PersonThemeSaveState> {
+  const next = { ...current };
+  const state: PersonThemeSaveState = {
+    ...(current[personId] ?? { error: '', retry: null }),
+    ...update,
+  };
+  if (!state.error && !state.retry) delete next[personId];
+  else next[personId] = state;
+  return next;
 }
 
 function blend(hex: string, target: string, amount: number): string {

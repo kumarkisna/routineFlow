@@ -17,6 +17,8 @@ import {
   saveThemePreference,
   serializeThemeCustomizationStore,
   themeColorSwatches,
+  updatePersonThemeSaveState,
+  type PersonThemeSaveState,
 } from './appThemes';
 
 test('the catalog contains 90 uniquely named themes, retaining the original families', () => {
@@ -223,6 +225,83 @@ test('queued palette edits keep the latest confirmed colors visible and retry th
   assert.deepEqual(visibleByPerson.get('person-a'), { forest: latestEdit });
   assert.deepEqual(parseThemeCustomizationStore(rawByPerson.get('person-a')!), { forest: latestEdit });
   assert.equal(rawByPerson.get('person-b'), otherProfileBefore);
+});
+
+test('palette save errors and retries stay with their profile across interleaved failures', async () => {
+  const initialA = { forest: { tone: 50, primary: '#28653d', accent: '#a5c7ad' } };
+  const initialB = { forest: { tone: 50, primary: '#006b68', accent: '#6fe2c1' } };
+  const choiceA = { tone: 72, primary: '#1657a8', accent: '#83b6ff' };
+  const choiceB = { tone: 68, primary: '#6633a8', accent: '#c6a6ff' };
+  const confirmed = new Map([['person-a', initialA], ['person-b', initialB]]);
+  const raw = new Map([
+    ['person-a', serializeThemeCustomizationStore(initialA)],
+    ['person-b', serializeThemeCustomizationStore(initialB)],
+  ]);
+  const queue = createThemeCustomizationWriteQueue();
+  const failOnce = new Set(['person-a', 'person-b']);
+  let state: Record<string, PersonThemeSaveState> = {};
+  let releaseA!: () => void;
+  let firstAWriteStarted!: () => void;
+  const aWriteGate = new Promise<void>(resolve => { releaseA = resolve; });
+  const aWriteStarted = new Promise<void>(resolve => { firstAWriteStarted = resolve; });
+
+  async function save(personId: string, customization: typeof choiceA) {
+    state = updatePersonThemeSaveState(state, personId, {
+      error: '',
+      retry: { kind: 'customization', themeId: 'forest', customization },
+    });
+    try {
+      await queue(personId, async () => {
+        const next = { ...(confirmed.get(personId) ?? {}), forest: customization };
+        await saveThemeCustomizationStore({
+          getItem: async () => raw.get(personId) ?? null,
+          setItem: async (_key, serialized) => {
+            if (failOnce.has(personId)) {
+              failOnce.delete(personId);
+              if (personId === 'person-a') {
+                firstAWriteStarted();
+                await aWriteGate;
+              }
+              throw new Error(`${personId} storage unavailable`);
+            }
+            raw.set(personId, serialized);
+          },
+        }, 'custom', next);
+        confirmed.set(personId, next);
+      });
+      state = updatePersonThemeSaveState(state, personId, { error: '', retry: null });
+    } catch (error) {
+      state = updatePersonThemeSaveState(state, personId, {
+        error: error instanceof Error ? error.message : 'Palette save failed.',
+      });
+    }
+  }
+
+  const pendingA = save('person-a', choiceA);
+  await aWriteStarted;
+  await save('person-b', choiceB);
+  assert.ok(state['person-b'].error);
+  assert.equal(state['person-b'].retry?.kind, 'customization');
+  releaseA();
+  await pendingA;
+
+  assert.ok(state['person-a'].error);
+  assert.equal(state['person-a'].retry?.kind, 'customization');
+  const retryA = state['person-a'].retry;
+  const retryB = state['person-b'].retry;
+  assert.equal(retryA?.kind, 'customization');
+  assert.equal(retryB?.kind, 'customization');
+  if (retryA?.kind === 'customization') assert.deepEqual(retryA.customization, choiceA);
+  if (retryB?.kind === 'customization') assert.deepEqual(retryB.customization, choiceB);
+
+  await save('person-a', choiceA);
+  assert.equal(state['person-a'], undefined);
+  assert.ok(state['person-b'].error);
+  assert.deepEqual(parseThemeCustomizationStore(raw.get('person-a')!), { forest: choiceA });
+
+  await save('person-b', choiceB);
+  assert.deepEqual(state, {});
+  assert.deepEqual(parseThemeCustomizationStore(raw.get('person-b')!), { forest: choiceB });
 });
 
 test('legacy inline palette preferences migrate without losing other saved themes', async () => {
