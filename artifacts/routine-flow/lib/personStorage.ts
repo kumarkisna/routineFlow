@@ -33,10 +33,16 @@ export class PersonBackgroundStateUncertainError extends Error {}
 
 async function waitForDevelopmentStorageRead(key: string) {
   if (typeof window === 'undefined' || process.env.NODE_ENV === 'production') return;
-  // PeopleProvider reads these keys before mounting the app-level startup gate.
-  if (key === PERSON_DATA_KEYS.appearance || key === PERSON_DATA_KEYS.progress) return;
   const delayMs = Number(window.localStorage.getItem('@routine-flow/test-storage-read-delay-ms'));
   if (!Number.isFinite(delayMs) || delayMs <= 0 || delayMs > 10_000) return;
+  // Let PeopleProvider's preflight finish; delay the provider reads guarded by
+  // the startup screen, including appearance and routine progress.
+  if (key === PERSON_DATA_KEYS.appearance || key === PERSON_DATA_KEYS.progress) {
+    const countKey = `@routine-flow/test-storage-read-count:${key}`;
+    const readCount = Number(window.localStorage.getItem(countKey) ?? '0');
+    window.localStorage.setItem(countKey, String(readCount + 1));
+    if (readCount === 0) return;
+  }
   await new Promise<void>(resolve => setTimeout(resolve, delayMs));
 }
 
