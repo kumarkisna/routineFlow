@@ -940,7 +940,7 @@ function RoutinePlayer({ sessionId }: { sessionId: string }) {
 
         <View style={[styles.timerCard, { backgroundColor: colors.hero }]}>
           {inPlaylist ? (
-            <View style={styles.playlistContext}>
+            <View style={styles.playlistContext} testID="routine-play-context">
               <Text style={[styles.playlistContextLine, { color: colors.heroForeground }]} numberOfLines={2}>
                 <Text style={styles.playlistContextPrefix}>PLAYLIST · </Text>
                 <Text style={styles.playlistContextName}>{playlistTitle ?? 'Playlist'}</Text>

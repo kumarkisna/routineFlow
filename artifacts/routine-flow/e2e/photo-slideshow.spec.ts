@@ -139,6 +139,90 @@ test('profile default and per-step slideshow choices save and inherit correctly'
   await expect(page.getByTestId('step-photo-slideshow-image')).toHaveAttribute('aria-label', 'last-photo.png');
 });
 
+test('playlist runs replace the slideshow at routine transitions and close it at completion', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  const routines: Routine[] = [
+    {
+      id: 'playlist-slideshow-one',
+      title: 'Playlist slideshow one',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'coral',
+      createdAt: '2026-11-14T08:00:00.000Z',
+      steps: [{
+        id: 'playlist-step-one',
+        title: 'First playlist step',
+        durationSeconds: 3,
+        description: 'First instructions.',
+        detailAttachments: [[image('playlist-photo-one', 'playlist-one.png')]],
+      }],
+    },
+    {
+      id: 'playlist-slideshow-two',
+      title: 'Playlist slideshow two',
+      subtitle: '',
+      icon: 'sunny-outline',
+      tone: 'sage',
+      createdAt: '2026-11-14T08:00:00.000Z',
+      steps: [{
+        id: 'playlist-step-two',
+        title: 'Second playlist step',
+        durationSeconds: 60,
+        description: 'Second instructions.',
+        detailAttachments: [[image('playlist-photo-two', 'playlist-two.png')]],
+      }],
+    },
+  ];
+  const queue = routines.map(routine => routine.id);
+  await page.addInitScript(({ savedRoutines, routineIds }) => {
+    localStorage.setItem('@routine-flow/people', JSON.stringify({
+      version: 1,
+      people: [{
+        id: 'me',
+        name: 'Me',
+        speechVoiceId: null,
+        defaultSpeechLineGapSeconds: 0.5,
+        defaultRateSkillsAtPlaylistEnd: true,
+        defaultPlaylistReminderSettings: { stepCompletion: false, routineCompletion: false },
+        defaultSpeakRoutineDescription: true,
+        defaultStepPhotoSlideshow: true,
+      }],
+      activePersonId: 'me',
+    }));
+    localStorage.setItem('@routine-flow/routines', JSON.stringify(savedRoutines));
+    localStorage.setItem('@routine-flow/playlists', JSON.stringify([{
+      id: 'playlist-slideshow',
+      title: 'Playlist slideshow',
+      routineIds,
+      rateSkillsAtPlaylistEnd: false,
+    }]));
+    localStorage.setItem('@routine-flow/progress', '{}');
+    localStorage.setItem('@routine-flow/skills', '[]');
+    localStorage.setItem('@routine-flow/schedules', '[]');
+  }, { savedRoutines: routines, routineIds: queue });
+
+  const params = new URLSearchParams({
+    queue: JSON.stringify(queue),
+    cursor: '0',
+    playlistId: 'playlist-slideshow',
+    playlistTitle: 'Playlist slideshow',
+    playlistSkills: '[]',
+    playlistRateSkillsAtEnd: '0',
+    voice: '0',
+    autoStart: '1',
+  });
+  await page.goto(`/routine/${queue[0]}/run?${params.toString()}`);
+  const slide = page.getByTestId('step-photo-slideshow-image');
+  await expect(slide).toHaveAttribute('aria-label', 'playlist-one.png');
+  await expect(page.getByTestId('photo-slideshow-countdown')).toBeVisible();
+  await expect(page.getByTestId('routine-play-context')).toContainText('Playlist slideshow two', { timeout: 8_000 });
+  await expect(slide).toHaveAttribute('aria-label', 'playlist-two.png');
+  await page.getByTestId('close-step-photo-slideshow').click();
+  await page.getByLabel('Skip current step').click();
+  await expect(page.getByRole('button', { name: 'Run playlist again' })).toBeVisible({ timeout: 8_000 });
+  await expect(slide).toHaveCount(0);
+});
+
 function countdownTextToSeconds(value: string | null): number {
   const parts = (value ?? '').split(':').map(Number);
   return parts.reduce((total, part) => total * 60 + part, 0);
