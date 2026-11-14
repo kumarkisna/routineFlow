@@ -33,6 +33,12 @@ const DARK_SWATCHES: ThemeColorSwatch[] = [
   { name: 'Teal', color: '#6fe2c1' },
   { name: 'Green', color: '#82d092' },
 ];
+const LEGACY_PRIMARY_COLORS = [
+  '#d9574f', '#c65b13', '#a66d00', '#34734b', '#087f80', '#3867bd', '#6550b6', '#bd3f70',
+];
+const LEGACY_ACCENT_COLORS = [
+  '#f0bd55', '#ff9559', '#83b58b', '#74b6d1', '#a99bd1', '#e58b9d', '#e8c7b5', '#91a0b3',
+];
 export const THEME_GROUPS: ThemeGroup[] = ['Classic', 'Nature', 'Warm', 'Bright', 'Night'];
 
 function hsl(hue: number, saturation: number, lightness: number): string {
@@ -172,6 +178,37 @@ export function findAppTheme(id: string): AppTheme | undefined {
 
 export function defaultThemeCustomization(theme: AppTheme): ThemeCustomization {
   return { tone: DEFAULT_THEME_TONE, primary: theme.colors.primary, accent: theme.colors.accent };
+}
+
+export function parseLegacyThemePreference(raw: string | null | undefined): {
+  themeId: string;
+  customization: ThemeCustomization;
+} | undefined {
+  if (!raw) return undefined;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const preference = value as Record<string, unknown>;
+    if (preference.version !== 1 || typeof preference.themeId !== 'string') return undefined;
+    const theme = findAppTheme(preference.themeId);
+    const primaryColor = preference.primaryColor;
+    const accentColor = preference.accentColor;
+    if (!theme || !Number.isInteger(preference.tone) || Number(preference.tone) < 0 || Number(preference.tone) > 100
+      || !(primaryColor === null || (typeof primaryColor === 'string' && LEGACY_PRIMARY_COLORS.includes(primaryColor)))
+      || !(accentColor === null || (typeof accentColor === 'string' && LEGACY_ACCENT_COLORS.includes(accentColor)))) {
+      return undefined;
+    }
+    return {
+      themeId: theme.id,
+      customization: {
+        tone: Number(preference.tone),
+        primary: typeof primaryColor === 'string' ? primaryColor : theme.colors.primary,
+        accent: typeof accentColor === 'string' ? accentColor : theme.colors.accent,
+      },
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export function themeColorSwatches(scheme: AppTheme['scheme'], presetColor: string): ThemeColorSwatch[] {
@@ -325,4 +362,27 @@ export async function saveThemePreference(
     throw new Error('Your theme could not be saved. Your previous appearance is still shown. Please try again.');
   }
   return theme;
+}
+
+export async function migrateLegacyThemePreference(
+  storage: {
+    setItem: (key: string, value: string) => Promise<void>;
+    getItem: (key: string) => Promise<string | null>;
+  },
+  themeKey: string,
+  customizationKey: string,
+  rawPreference: string | null,
+): Promise<string> {
+  const savedId = rawPreference ?? DEFAULT_THEME_ID;
+  if (findAppTheme(savedId)) return savedId;
+  const legacy = parseLegacyThemePreference(savedId);
+  if (!legacy) throw new Error('This person’s saved theme could not load.');
+  const previousCustomizations = parseThemeCustomizationStore(await storage.getItem(customizationKey));
+  const migratedCustomizations = {
+    ...previousCustomizations,
+    [legacy.themeId]: legacy.customization,
+  };
+  await saveThemeCustomizationStore(storage, customizationKey, migratedCustomizations);
+  await saveThemePreference(storage, themeKey, legacy.themeId);
+  return legacy.themeId;
 }

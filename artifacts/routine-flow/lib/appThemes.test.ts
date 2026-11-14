@@ -9,6 +9,8 @@ import {
   contrastRatio,
   defaultThemeCustomization,
   findAppTheme,
+  migrateLegacyThemePreference,
+  parseLegacyThemePreference,
   parseThemeCustomizationStore,
   saveThemeCustomizationStore,
   saveThemePreference,
@@ -145,4 +147,44 @@ test('custom palette preferences serialize, validate, and restore by theme', asy
   assert.equal(serializeThemeCustomizationStore(store), saved);
   assert.throws(() => parseThemeCustomizationStore('{"version":1,"themes":{"missing":{"tone":50,"primary":"#123456","accent":"#123456"}}}'), /invalid/);
   assert.throws(() => parseThemeCustomizationStore('{"version":1,"themes":{"forest":{"tone":101,"primary":"#123456","accent":"#123456"}}}'), /invalid/);
+});
+
+test('legacy inline palette preferences migrate without losing other saved themes', async () => {
+  const values = new Map<string, string>();
+  const legacy = JSON.stringify({
+    version: 1,
+    themeId: 'forest',
+    tone: 80,
+    primaryColor: '#3867bd',
+    accentColor: null,
+  });
+  const previous = { nordic: { tone: 65, primary: '#1657a8', accent: '#74b6d1' } };
+  values.set('appearance', legacy);
+  values.set('customizations', JSON.stringify({ version: 1, themes: previous }));
+  const storage = {
+    getItem: async (key: string) => values.get(key) ?? null,
+    setItem: async (key: string, value: string) => { values.set(key, value); },
+  };
+
+  const parsed = parseLegacyThemePreference(legacy);
+  assert.deepEqual(parsed, {
+    themeId: 'forest',
+    customization: {
+      tone: 80,
+      primary: '#3867bd',
+      accent: findAppTheme('forest')!.colors.accent,
+    },
+  });
+  assert.equal(await migrateLegacyThemePreference(storage, 'appearance', 'customizations', legacy), 'forest');
+  assert.equal(await storage.getItem('appearance'), 'forest');
+  assert.deepEqual(parseThemeCustomizationStore(await storage.getItem('customizations')), {
+    ...previous,
+    forest: parsed!.customization,
+  });
+  assert.equal(parseLegacyThemePreference('forest'), undefined);
+  assert.equal(parseLegacyThemePreference('{"version":1,"themeId":"missing","tone":50,"primaryColor":null,"accentColor":null}'), undefined);
+  await assert.rejects(
+    migrateLegacyThemePreference(storage, 'appearance', 'customizations', 'not a saved theme'),
+    /saved theme could not load/,
+  );
 });

@@ -2,7 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { APP_THEMES, DEFAULT_THEME_ID, findAppTheme, saveThemePreference } from '@/lib/appThemes';
+import {
+  APP_THEMES, DEFAULT_THEME_ID, findAppTheme, migrateLegacyThemePreference, saveThemePreference,
+} from '@/lib/appThemes';
 import {
   buildPersonCopy, readPersonExportSnapshot, readPersonSnapshot, repairPersonRoutineDurations,
 } from '@/lib/personCopy';
@@ -124,7 +126,9 @@ async function validatePersonSettings(personId: string) {
   const [appearance, progress] = await Promise.all([
     store.getItem(PERSON_DATA_KEYS.appearance), store.getItem(PERSON_DATA_KEYS.progress),
   ]);
-  if (!findAppTheme(appearance ?? DEFAULT_THEME_ID)) throw new Error('This person’s saved theme could not load.');
+  await migrateLegacyThemePreference(
+    store, PERSON_DATA_KEYS.appearance, PERSON_DATA_KEYS.appearanceCustomization, appearance,
+  );
   if (progress) {
     const parsed: unknown = JSON.parse(progress);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
@@ -404,10 +408,11 @@ export function PeopleProvider({ children }: { children: React.ReactNode }) {
   const loadPersonTheme = useCallback(async (id: string) => {
     if (!current.current.people.some(person => person.id === id)) throw new Error('Person not found.');
     await waitForPersonWrites(id);
-    const savedId = await createPersonStorage(id).getItem(PERSON_DATA_KEYS.appearance);
-    const themeId = savedId ?? DEFAULT_THEME_ID;
-    if (!findAppTheme(themeId)) throw new Error('This person’s saved theme is not available.');
-    return themeId;
+    const storage = createPersonStorage(id);
+    const savedId = await storage.getItem(PERSON_DATA_KEYS.appearance);
+    return migrateLegacyThemePreference(
+      storage, PERSON_DATA_KEYS.appearance, PERSON_DATA_KEYS.appearanceCustomization, savedId,
+    );
   }, []);
 
   const savePersonTheme = useCallback(async (id: string, themeId: string) => {

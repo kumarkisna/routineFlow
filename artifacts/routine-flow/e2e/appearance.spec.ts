@@ -105,3 +105,31 @@ test('custom palettes remain separate when switching between people', async ({ p
   expect(savedThemes.me.themes['routine-flow']).toMatchObject({ primary: '#1657a8', tone: 80 });
   expect(savedThemes.other.themes['routine-flow'].primary).toBe('#8a3b00');
 });
+
+test('older saved palettes migrate and no longer block the web preview', async ({ page }) => {
+  if (!baseURL) throw new Error('Set RESTORE_TEST_BASE_URL to the running Expo web preview URL.');
+  await page.addInitScript(() => {
+    if (localStorage.getItem('@routine-flow/appearance')) return;
+    localStorage.setItem('@routine-flow/appearance', JSON.stringify({
+      version: 1,
+      themeId: 'forest',
+      tone: 80,
+      primaryColor: '#3867bd',
+      accentColor: null,
+    }));
+    localStorage.setItem('@routine-flow/progress', '{}');
+  });
+  await page.goto(`${baseURL}/people`);
+  await expect(page.getByTestId('active-person')).toContainText('Active: Me');
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('@routine-flow/appearance'))).toBe('forest');
+  await expect.poll(() => page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem('@routine-flow/appearance-customization') ?? '{}');
+    return store.themes?.forest?.primary;
+  })).toBe('#3867bd');
+
+  await page.getByTestId('person-edit-me').click();
+  await page.getByTestId('person-theme-toggle-me').click();
+  await expect(page.getByTestId('person-theme-me-customization')).toBeVisible();
+  await expect(page.getByTestId('person-theme-me-primary-color-saved')).toBeVisible();
+  await expect(page.getByText('80%', { exact: true })).toBeVisible();
+});

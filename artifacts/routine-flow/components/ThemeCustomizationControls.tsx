@@ -95,11 +95,14 @@ function ColorSwatchRow({ label, id, swatches, value, disabled, onSelect, colors
   colors: AppTheme['colors'];
   testIDPrefix: string;
 }) {
+  const choices = swatches.some(swatch => swatch.color.toLowerCase() === value.toLowerCase())
+    ? swatches
+    : [{ name: 'Saved', color: value }, ...swatches];
   return (
     <View style={styles.swatchSection}>
       <Text style={[styles.controlLabel, { color: colors.foreground }]}>{label}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatchChoices}>
-        {swatches.map(swatch => {
+        {choices.map(swatch => {
           const selected = swatch.color.toLowerCase() === value.toLowerCase();
           const checkColor = contrastRatio(swatch.color, '#ffffff') > contrastRatio(swatch.color, '#101820')
             ? '#ffffff' : '#101820';
