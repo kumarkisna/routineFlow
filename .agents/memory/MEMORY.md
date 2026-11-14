@@ -31,3 +31,4 @@
 - [Run reflection templates](run-reflection-templates.md) — templates prefill an editable per-run reflection; save each response separately and associate it with that run's outcomes.
 - [Restore test rebases](restore-test-rebases.md) — use the latest restore suite as the base, reapply only focused changes, and rerun the full browser suite after rebasing.
 - [About guide maintenance](about-guide-maintenance.md) — keep screen topics, jump targets, and printable instructions based on the same guide content.
+- [Native browser-storage guards](native-browser-storage.md) — React Native may define `window` without `localStorage`; guard development-only browser storage access.

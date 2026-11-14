@@ -39,6 +39,19 @@ function makeBackend(initial: Record<string, string> = {}) {
   };
 }
 
+test('person storage reads do not assume native window has localStorage', async () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
+  try {
+    const backend = makeBackend({ [PERSON_DATA_KEYS.routines]: 'saved routines' });
+    const storage = createPersonStorage('me', backend.backend);
+    assert.equal(await storage.getItem(PERSON_DATA_KEYS.routines), 'saved routines');
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+    else Reflect.deleteProperty(globalThis, 'window');
+  }
+});
+
 test('a failed background save restores the selected profile and can be retried without changing another profile', async () => {
   const backend = makeBackend({
     [PERSON_DATA_KEYS.backgroundImage]: 'me-old-photo',
